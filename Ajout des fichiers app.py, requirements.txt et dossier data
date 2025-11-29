@@ -1,3 +1,11 @@
+streamlit
+pandas
+numpy
+rasterio
+matplotlib
+pillow
+reportlab
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -107,11 +115,3 @@ if st.button("📄 Générer le PDF"):
         file_name="Rapport_CH4_HassiRmel.pdf",
         mime="application/pdf"
     )
-
-streamlit
-pandas
-numpy
-rasterio
-matplotlib
-pillow
-reportlab
