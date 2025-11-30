@@ -37,8 +37,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 TIF_PATH  = os.path.join(DATA_DIR, "CH4_2023_Hassi_Rmel.tif")
-STATS_CSV = os.path.join(DATA_DIR, "CH4_Stats_Hassi_Rmel.csv")
-FIRMS_CSV = os.path.join(DATA_DIR, "FIRMS_Hassi_Rmel_2023.csv")
+STATS_CSV = os.path.join(DATA_DIR, "CH4_Stats_Hassi_Rmel (1).csv")
+FIRMS_CSV = os.path.join(DATA_DIR, "FIRMS_Hassi_Rmel_2023 (2).csv")
+
 
 st.title("Surveillance du Méthane – Hassi R'mel")
 st.markdown("## Dashboard interactif CH₄ + FIRMS")
