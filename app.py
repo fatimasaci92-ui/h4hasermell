@@ -8,48 +8,32 @@ import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
-st.set_page_config(page_title="Surveillance CH₄ – Multi-sites", layout="wide")
-
-st.title("Surveillance du Méthane – Multi-sites")
-st.markdown("## Dashboard automatique CH₄ + FIRMS")
+st.set_page_config(page_title="CH4 Hassi R'mel", layout="wide")
 
 # ------------------------
-# Choix de la localisation
+# Chemins fichiers
 # ------------------------
-DATA_DIR = "data"
+DATA_DIR = "data"  # dossier contenant tes fichiers
+TIF_PATH = os.path.join(DATA_DIR, "CH4_2023_Hassi_Rmel.tif")
+STATS_CSV = os.path.join(DATA_DIR, "CH4_Stats_Hassi_Rmel (1).csv")
+FIRMS_CSV = os.path.join(DATA_DIR, "FIRMS_Hassi_Rmel_2023 (2).csv")
 
-# Lister automatiquement les sites disponibles à partir des fichiers CSV
-sites = []
-for f in os.listdir(DATA_DIR):
-    if f.startswith("CH4_Stats_") and f.endswith(".csv"):
-        site_name = f.replace("CH4_Stats_", "").replace(".csv", "").replace("_", " ")
-        sites.append(site_name)
-
-if not sites:
-    st.error("❌ Aucun site disponible dans le dossier data/")
-    st.stop()
-
-site = st.selectbox("Choisissez le site :", sites)
+st.title("Surveillance du Méthane – Hassi R'mel")
+st.markdown("## Dashboard interactif CH₄ + FIRMS")
 
 # ------------------------
-# Construire les chemins fichiers automatiquement
+# Vérifier si le dossier et fichiers existent
 # ------------------------
-tif_path = os.path.join(DATA_DIR, f"CH4_2023_{site.replace(' ', '_')}.tif")
-stats_csv = os.path.join(DATA_DIR, f"CH4_Stats_{site.replace(' ', '_')}.csv")
-firms_csv = os.path.join(DATA_DIR, f"FIRMS_{site.replace(' ', '_')}_2023.csv")
-
-# ------------------------
-# Vérifier l'existence des fichiers
-# ------------------------
-for f in [tif_path, stats_csv, firms_csv]:
-    if not os.path.exists(f):
-        st.warning(f"❌ Fichier introuvable : {f}")
+if os.path.exists(DATA_DIR):
+    st.write("Contenu du dossier data :", os.listdir(DATA_DIR))
+else:
+    st.warning("❌ Dossier 'data' introuvable sur le serveur")
 
 # ------------------------
 # Charger les données
 # ------------------------
-df_stats = pd.read_csv(stats_csv) if os.path.exists(stats_csv) else pd.DataFrame()
-df_firms = pd.read_csv(firms_csv) if os.path.exists(firms_csv) else pd.DataFrame()
+df_stats = pd.read_csv(STATS_CSV) if os.path.exists(STATS_CSV) else pd.DataFrame()
+df_firms = pd.read_csv(FIRMS_CSV) if os.path.exists(FIRMS_CSV) else pd.DataFrame()
 
 # ------------------------
 # Affichage des tableaux
@@ -57,20 +41,20 @@ df_firms = pd.read_csv(firms_csv) if os.path.exists(firms_csv) else pd.DataFrame
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader(f"Statistiques CH₄ – {site}")
+    st.subheader("Statistiques CH₄")
     st.dataframe(df_stats.head(15))
 
 with col2:
-    st.subheader(f"Détections FIRMS (Torchage) – {site}")
+    st.subheader("Détections FIRMS (Torchage)")
     st.dataframe(df_firms.head(15))
 
 # ------------------------
-# Carte CH₄
+# Carte CH4
 # ------------------------
-st.markdown(f"## Carte CH₄ – {site}")
+st.markdown("## Carte CH₄ (TROPOMI)")
 
-if os.path.exists(tif_path):
-    with rasterio.open(tif_path) as src:
+if os.path.exists(TIF_PATH):
+    with rasterio.open(TIF_PATH) as src:
         arr = src.read(1)
     arr[arr <= 0] = np.nan
 
@@ -79,7 +63,7 @@ if os.path.exists(tif_path):
     ax.axis('off')
     st.pyplot(fig)
 else:
-    st.warning(f"❌ Fichier TIFF introuvable pour {site}")
+    st.warning("❌ Fichier TIFF introuvable dans data/")
 
 # ------------------------
 # Analyse automatique
@@ -107,13 +91,13 @@ else:
 # ------------------------
 st.markdown("## Export PDF")
 
-def generate_pdf_bytes(site, mean_ch4, n_fires):
+def generate_pdf_bytes(mean_ch4, n_fires):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     w, h = A4
 
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(40, h - 60, f"Rapport CH₄ – {site}")
+    c.drawString(40, h - 60, "Rapport CH₄ – Hassi R'mel")
 
     c.setFont("Helvetica", 10)
     c.drawString(40, h - 90, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
@@ -125,10 +109,10 @@ def generate_pdf_bytes(site, mean_ch4, n_fires):
     return buffer
 
 if st.button("📄 Générer le PDF"):
-    pdf_bytes = generate_pdf_bytes(site, mean_ch4 if mean_ch4 else 0, n_fires)
+    pdf_bytes = generate_pdf_bytes(mean_ch4 if mean_ch4 else 0, n_fires)
     st.download_button(
         label="Télécharger le rapport PDF",
         data=pdf_bytes,
-        file_name=f"Rapport_CH4_{site.replace(' ', '_')}.pdf",
+        file_name="Rapport_CH4_HassiRmel.pdf",
         mime="application/pdf"
     )
