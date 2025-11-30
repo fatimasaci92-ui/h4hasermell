@@ -17,6 +17,8 @@ import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
+import os
+st.write("Contenu du dossier data :", os.listdir(DATA_DIR))
 
 import streamlit as st
 import pandas as pd
