@@ -14,17 +14,20 @@ st.set_page_config(page_title="CH4 Hassi R'mel", layout="wide")
 # Chemins fichiers
 # ------------------------
 DATA_DIR = "data"  # dossier contenant tes fichiers
-TIF_PATH = os.path.join(DATA_DIR, "CH4_2023_Hassi_Rmel.tif")  # Vérifie que le nom est exact
-STATS_CSV = os.path.join(DATA_DIR, "CH4_Stats_Hassi_Rmel(1).csv")
+TIF_PATH = os.path.join(DATA_DIR, "CH4_2023_Hassi_Rmel.tif")
+STATS_CSV = os.path.join(DATA_DIR, "CH4_Stats_Hassi_Rmel (1).csv")
 FIRMS_CSV = os.path.join(DATA_DIR, "FIRMS_Hassi_Rmel_2023 (2).csv")
 
 st.title("Surveillance du Méthane – Hassi R'mel")
 st.markdown("## Dashboard interactif CH₄ + FIRMS")
 
 # ------------------------
-# Vérifier si les fichiers existent
+# Vérifier si le dossier et fichiers existent
 # ------------------------
-st.write("Contenu du dossier data :", os.listdir(DATA_DIR))
+if os.path.exists(DATA_DIR):
+    st.write("Contenu du dossier data :", os.listdir(DATA_DIR))
+else:
+    st.warning("❌ Dossier 'data' introuvable sur le serveur")
 
 # ------------------------
 # Charger les données
