@@ -1,3 +1,6 @@
+system:index,CH4_background,CH4_site,Diff,.geo
+0,1910.3689036754752,1907.0080056238203,-3.3608980516548854,"{""type"":""MultiPoint"",""coordinates"":[]}"
+
 system:index,system:asset_size,system:band_names,system:bands,system:footprint,system:id,system:time_end,system:time_start,system:version,.geo
 2023001,863892,"[T21, confidence, line_number]",<Element>,"LinearRing(-180.0,-90.0, 180.0,-90.0, 180.0,90.0, -180.0,90.0, -180.0,-90.0)",FIRMS/2023001,1672617600000,1672531200000,1738186495566759,"{""type"":""Polygon"",""coordinates"":[[[-180.0,-90.0],[180.0,-90.0],[180.0,90.0],[-180.0,90.0],[-180.0,-90.0]]]}"
 2023002,837128,"[T21, confidence, line_number]",<Element>,"LinearRing(-180.0,-90.0, 180.0,-90.0, 180.0,90.0, -180.0,90.0, -180.0,-90.0)",FIRMS/2023002,1672704000000,1672617600000,1738186038875313,"{""type"":""Polygon"",""coordinates"":[[[-180.0,-90.0],[180.0,-90.0],[180.0,90.0],[-180.0,90.0],[-180.0,-90.0]]]}"
@@ -363,6 +366,3 @@ system:index,system:asset_size,system:band_names,system:bands,system:footprint,s
 2023362,1043514,"[T21, confidence, line_number]",<Element>,"LinearRing(-180.0,-90.0, 180.0,-90.0, 180.0,90.0, -180.0,90.0, -180.0,-90.0)",FIRMS/2023362,1703808000000,1703721600000,1738227221389660,"{""type"":""Polygon"",""coordinates"":[[[-180.0,-90.0],[180.0,-90.0],[180.0,90.0],[-180.0,90.0],[-180.0,-90.0]]]}"
 2023363,1099337,"[T21, confidence, line_number]",<Element>,"LinearRing(-180.0,-90.0, 180.0,-90.0, 180.0,90.0, -180.0,90.0, -180.0,-90.0)",FIRMS/2023363,1703894400000,1703808000000,1738227488099788,"{""type"":""Polygon"",""coordinates"":[[[-180.0,-90.0],[180.0,-90.0],[180.0,90.0],[-180.0,90.0],[-180.0,-90.0]]]}"
 2023364,1051749,"[T21, confidence, line_number]",<Element>,"LinearRing(-180.0,-90.0, 180.0,-90.0, 180.0,90.0, -180.0,90.0, -180.0,-90.0)",FIRMS/2023364,1703980800000,1703894400000,1738227159374043,"{""type"":""Polygon"",""coordinates"":[[[-180.0,-90.0],[180.0,-90.0],[180.0,90.0],[-180.0,90.0],[-180.0,-90.0]]]}"
-
-system:index,CH4_background,CH4_site,Diff,.geo
-0,1910.3689036754752,1907.0080056238203,-3.3608980516548854,"{""type"":""MultiPoint"",""coordinates"":[]}"
