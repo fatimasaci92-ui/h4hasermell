@@ -12,14 +12,13 @@ from datetime import datetime
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 
 # ------------------------
-# 1) Sélection de la localisation
+# 1) Choix de la localisation
 # ------------------------
 st.title("Surveillance du Méthane – HSE")
-st.markdown("## Dashboard interactif CH₄ + FIRMS")
+st.markdown("## Dashboard interactif CH₄ + HSE")
 
 latitude = st.number_input("Latitude du site", value=32.93)
 longitude = st.number_input("Longitude du site", value=3.3)
-
 site_name = st.text_input("Nom du site", value="Hassi R'mel")
 site_geom = (latitude, longitude)
 
@@ -27,15 +26,21 @@ site_geom = (latitude, longitude)
 # 2) Chemins fichiers
 # ------------------------
 DATA_DIR = "data"
-TIF_FILE = "CH4_2023_Hassi_Rmel.tif"
-STATS_FILE = "CH4_Stats_Hassi_Rmel (1).csv"
-FIRMS_FILE = "FIRMS_Hassi_Rmel_2023 (2).csv"
 
-TIF_PATH = os.path.join(DATA_DIR, TIF_FILE)
-STATS_CSV = os.path.join(DATA_DIR, STATS_FILE)
-FIRMS_CSV = os.path.join(DATA_DIR, FIRMS_FILE)
+# Moyennes annuelles
+mean_files = [f"CH4_mean_{year}.tif" for year in range(2020, 2025)]
+# Anomalies annuelles
+anomaly_files = [f"CH4_anomaly_{year}.tif" for year in range(2020, 2025)]
+# CSV données
+csv_files = {
+    "global": "CH4_HassiRmel_2020_2024.csv",
+    "annual": "CH4_HassiRmel_annual_2020_2024.csv",
+    "monthly": "CH4_HassiRmel_monthly_2020_2024.csv"
+}
 
-# Vérifier fichiers
+# ------------------------
+# 3) Vérifier contenu dossier
+# ------------------------
 st.subheader("Contenu du dossier data")
 if os.path.exists(DATA_DIR):
     st.write(os.listdir(DATA_DIR))
@@ -43,87 +48,102 @@ else:
     st.error("Dossier 'data' introuvable")
 
 # ------------------------
-# 3) Charger les données
+# 4) Charger CSV
 # ------------------------
-df_stats = pd.read_csv(STATS_CSV) if os.path.exists(STATS_CSV) else pd.DataFrame()
-df_firms = pd.read_csv(FIRMS_CSV) if os.path.exists(FIRMS_CSV) else pd.DataFrame()
+df_global = pd.read_csv(os.path.join(DATA_DIR, csv_files["global"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["global"])) else pd.DataFrame()
+df_annual = pd.read_csv(os.path.join(DATA_DIR, csv_files["annual"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["annual"])) else pd.DataFrame()
+df_monthly = pd.read_csv(os.path.join(DATA_DIR, csv_files["monthly"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["monthly"])) else pd.DataFrame()
 
 # ------------------------
-# 4) Affichage des tableaux
+# 5) Graphiques CH₄
 # ------------------------
+st.markdown("## Évolution CH₄ (2020-2024)")
+if not df_annual.empty:
+    years = df_annual['Year'] if 'Year' in df_annual.columns else range(2020, 2025)
+    ch4_values = df_annual['CH4_mean'] if 'CH4_mean' in df_annual.columns else [0]*len(years)
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(years, ch4_values, marker='o')
+    ax.set_title(f"Évolution CH₄ – {site_name}")
+    ax.set_xlabel("Année")
+    ax.set_ylabel("CH₄ (ppb)")
+    ax.grid(True)
+    st.pyplot(fig)
+else:
+    st.info("Pas de données annuelles pour graphique.")
+
+# ------------------------
+# 6) Affichage cartes par année
+# ------------------------
+st.markdown("## Cartes Moyennes et Anomalies CH₄")
+
+year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024])
+mean_path = os.path.join(DATA_DIR, f"CH4_mean_{year_choice}.tif")
+anomaly_path = os.path.join(DATA_DIR, f"CH4_anomaly_{year_choice}.tif")
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Statistiques CH₄")
-    st.dataframe(df_stats.head(15))
+    st.subheader(f"CH₄ moyen {year_choice}")
+    if os.path.exists(mean_path):
+        with rasterio.open(mean_path) as src:
+            arr = src.read(1)
+        arr[arr <= 0] = np.nan
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.imshow(arr, cmap='viridis')
+        ax.set_title(f"CH₄ moyen {year_choice}")
+        ax.axis('off')
+        st.pyplot(fig)
+    else:
+        st.warning("Fichier CH₄ moyen introuvable.")
 
 with col2:
-    st.subheader("Détections FIRMS (Torchage)")
-    st.dataframe(df_firms.head(15))
+    st.subheader(f"Anomalie CH₄ {year_choice}")
+    if os.path.exists(anomaly_path):
+        with rasterio.open(anomaly_path) as src:
+            arr = src.read(1)
+        arr[arr == 0] = np.nan
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.imshow(arr, cmap='coolwarm')
+        ax.set_title(f"Anomalie CH₄ {year_choice}")
+        ax.axis('off')
+        st.pyplot(fig)
+    else:
+        st.warning("Fichier anomalie CH₄ introuvable.")
 
 # ------------------------
-# 5) Carte CH4
-# ------------------------
-st.markdown("## Carte CH₄ (TROPOMI)")
-if os.path.exists(TIF_PATH):
-    with rasterio.open(TIF_PATH) as src:
-        arr = src.read(1)
-    arr[arr <= 0] = np.nan
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.imshow(arr, cmap='viridis')
-    ax.set_title(f"Carte CH₄ – {site_name}")
-    ax.axis('off')
-    st.pyplot(fig)
-else:
-    st.warning("❌ Fichier TIFF introuvable")
-
-# ------------------------
-# 6) Analyse HSE automatique
+# 7) Analyse HSE automatique par année
 # ------------------------
 st.markdown("## Analyse HSE automatique")
 
-if df_stats.empty or df_firms.empty:
-    st.info("Pas assez de données pour analyser.")
-else:
-    mean_ch4 = float(df_stats.select_dtypes(include=[np.number]).mean().iloc[0])
-    n_fires = len(df_firms)
-
+if not df_annual.empty:
+    mean_ch4_year = float(df_annual[df_annual['Year']==year_choice]['CH4_mean'].values[0])
     # Niveau de risque
-    if mean_ch4 < 1800:
+    if mean_ch4_year < 1800:
         risk = "Faible"
         action = "Surveillance continue."
-    elif mean_ch4 < 1850:
+    elif mean_ch4_year < 1850:
         risk = "Modéré"
         action = "Vérifier les torches et informer l'équipe HSE."
-    elif mean_ch4 < 1900:
+    elif mean_ch4_year < 1900:
         risk = "Élevé"
         action = "Inspection urgente du site et mesures de sécurité immédiates."
     else:
         risk = "Critique"
         action = "Alerter la direction, sécuriser la zone, stopper les opérations si nécessaire."
 
-    # Conclusion
-    if mean_ch4 > 1850 and n_fires == 0:
-        conclusion = "Fuite probable de CH₄ (pas de torchage détecté)"
-    elif mean_ch4 > 1850 and n_fires > 0:
-        conclusion = "Torchage actif avec CH₄ élevé"
-    else:
-        conclusion = "Situation normale"
-
-    # Affichage
-    st.write(f"**Concentration moyenne CH₄ :** {mean_ch4:.2f} ppb")
-    st.write(f"**Détections FIRMS :** {n_fires}")
+    st.write(f"**Année :** {year_choice}")
+    st.write(f"**Moyenne CH₄ :** {mean_ch4_year:.2f} ppb")
     st.write(f"**Niveau de risque HSE :** {risk}")
     st.write(f"**Actions recommandées :** {action}")
-    st.write(f"**Conclusion :** {conclusion}")
+else:
+    st.info("Pas assez de données HSE pour cette année.")
 
 # ------------------------
-# 7) Export PDF HSE complet
+# 8) Export PDF HSE complet
 # ------------------------
 st.markdown("## Générer le rapport HSE complet")
 
-def generate_pdf_bytes(mean_ch4, n_fires, risk, action, conclusion):
+def generate_pdf_bytes(year, mean_ch4, risk, action):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     w, h = A4
@@ -132,37 +152,27 @@ def generate_pdf_bytes(mean_ch4, n_fires, risk, action, conclusion):
     c.setFont("Helvetica-Bold", 16)
     c.drawString(40, h - 60, f"Rapport HSE – {site_name}")
     c.setFont("Helvetica", 10)
-    c.drawString(40, h - 80, f"Date : {datetime.now().strftime('%d/%m/%Y')}")
+    c.drawString(40, h - 80, f"Année : {year}")
+    c.drawString(40, h - 100, f"Date de génération : {datetime.now().strftime('%d/%m/%Y')}")
 
-    # Données CH4
-    c.drawString(40, h - 110, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
-    c.drawString(40, h - 130, f"Détections FIRMS : {n_fires}")
-
-    # Analyse HSE
-    c.drawString(40, h - 160, f"Niveau de risque HSE : {risk}")
-    c.drawString(40, h - 180, f"Actions recommandées : {action}")
-    c.drawString(40, h - 200, f"Conclusion : {conclusion}")
+    # Statistiques
+    c.drawString(40, h - 130, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
+    c.drawString(40, h - 150, f"Niveau de risque HSE : {risk}")
+    c.drawString(40, h - 170, f"Actions recommandées : {action}")
 
     # Footer
     c.setFont("Helvetica-Oblique", 9)
     c.drawString(40, 40, "Rapport généré automatiquement via le dashboard HSE CH₄")
-
     c.showPage()
     c.save()
     buffer.seek(0)
     return buffer
 
 if st.button("📄 Générer le PDF HSE"):
-    pdf_bytes = generate_pdf_bytes(
-        mean_ch4 if not df_stats.empty else 0,
-        n_fires,
-        risk if not df_stats.empty else "N/A",
-        action if not df_stats.empty else "N/A",
-        conclusion if not df_stats.empty else "N/A"
-    )
+    pdf_bytes = generate_pdf_bytes(year_choice, mean_ch4_year, risk, action)
     st.download_button(
         label="Télécharger le rapport HSE PDF",
         data=pdf_bytes,
-        file_name=f"Rapport_HSE_{site_name}.pdf",
+        file_name=f"Rapport_HSE_{site_name}_{year_choice}.pdf",
         mime="application/pdf"
     )
