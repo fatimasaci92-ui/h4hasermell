@@ -8,6 +8,43 @@ import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from datetime import datetime
+from datetime import datetime
+
+def generate_pdf_bytes(year, mean_ch4, risk, action, site_name):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    w, h = A4
+
+    # Titre
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(40, h - 60, f"Rapport HSE – {site_name}")
+
+    # Infos principales
+    c.setFont("Helvetica", 12)
+    c.drawString(40, h - 110, f"Année analysée : {year}")
+    c.drawString(40, h - 140, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
+    c.drawString(40, h - 170, f"Niveau de risque : {risk}")
+
+    # Actions
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, h - 210, "Actions recommandées :")
+
+    c.setFont("Helvetica", 11)
+    text = c.beginText(60, h - 240)
+
+    for line in action.split("\n"):
+        text.textLine(line)
+
+    c.drawText(text)
+
+    # Pied de page
+    c.setFont("Helvetica-Oblique", 10)
+    c.drawString(40, 40, f"Rapport généré le {datetime.now().strftime('%d/%m/%Y')}")
+
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 
@@ -144,6 +181,27 @@ if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annu
         st.info("Pas de données CH₄ pour cette année.")
 else:
     st.info("Pas assez de données HSE pour cette année.")
+# ----------- PDF HSE -----------
+st.markdown("## 📄 Génération du rapport HSE PDF")
+
+if mean_ch4_year and risk and action:
+    if st.button("Générer le rapport HSE complet"):
+        pdf_bytes = generate_pdf_bytes(
+            year=year_choice,
+            mean_ch4=mean_ch4_year,
+            risk=risk,
+            action=action,
+            site_name=site_name
+        )
+
+        st.download_button(
+            label="📥 Télécharger le PDF",
+            data=pdf_bytes,
+            file_name=f"Rapport_HSE_{site_name}_{year_choice}.pdf",
+            mime="application/pdf"
+        )
+else:
+    st.info("Impossible de générer le PDF : données manquantes.")
 
 # ------------------------
 # 8) Export PDF HSE
