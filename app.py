@@ -203,36 +203,4 @@ if mean_ch4_year and risk and action:
 else:
     st.info("Impossible de générer le PDF : données manquantes.")
 
-# ------------------------
-# 8) Export PDF HSE
-# ------------------------
-st.markdown("## Générer le rapport HSE complet")
 
-def generate_pdf_bytes(year, mean_ch4, risk, action):
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    w, h = A4
-
-    # Titre
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(40, h - 60, f"Rapport HSE – {site_name}")
-    c.setFont("Helvetica", 10)
-    c.drawString(40, h - 80, f"Année : {year}")
-    c.drawString(40, h - 100, f"Date de génération : {datetime.now().strftime('%d/%m/%Y')}")
-
-    # Statistiques
-    c.drawString(40, h - 130, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
-    c.drawString(40, h - 150, f"Niveau de risque HSE : {risk}")
-    c.drawString(40, h - 170, f"Actions recommandées : {action}")
-
-    # Footer
-    c.setFont("Helvetica-Oblique", 9)
-    c.drawString(40, 40, "Rapport généré automatiquement via le dashboard HSE CH₄")
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
-
-if mean_ch4_year is not None:
-    if st.button("📄 Générer le PDF HSE"):
-        pdf_bytes = generate_pdf_bytes(year_choice, mean_ch4_year, risk, action)
