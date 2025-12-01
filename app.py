@@ -1,16 +1,3 @@
-import streamlit as st
-import pandas as pd
-import io
-from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-
-# ============================================================
-#  PDF PROFESSIONNEL – VERSION DÉFINITIVE
-# ============================================================
-
 def generate_pdf_bytes(site_name, latitude, longitude, year, mean_ch4, risk_level, actions_reco):
     buffer = io.BytesIO()
 
@@ -60,9 +47,9 @@ def generate_pdf_bytes(site_name, latitude, longitude, year, mean_ch4, risk_leve
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 12),
         ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F3F4F6")),
         ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
     ]))
 
     story.append(table)
@@ -80,7 +67,7 @@ def generate_pdf_bytes(site_name, latitude, longitude, year, mean_ch4, risk_leve
     • L’instabilité opérationnelle<br/>
     • Le risque d’incendie continu<br/><br/>
 
-    Cette analyse suit les référentiels : API, OSHA, ISO 45001.
+    Analyse conforme aux référentiels : API, OSHA, ISO 45001.
     """
     story.append(Paragraph(risk_text, styles["Normal"]))
     story.append(Spacer(1, 25))
@@ -109,42 +96,3 @@ def generate_pdf_bytes(site_name, latitude, longitude, year, mean_ch4, risk_leve
     buffer.close()
 
     return pdf_data
-
-
-# ============================================================
-#  INTERFACE STREAMLIT (EXEMPLE)
-# ============================================================
-
-st.title("Analyse HSE automatique")
-
-site_name = st.text_input("Nom du site :", "Hassi R'mel")
-latitude = st.number_input("Latitude", value=32.92)
-longitude = st.number_input("Longitude", value=3.23)
-year_choice = st.number_input("Année :", value=2020)
-
-mean_ch4_year = st.number_input("Moyenne CH₄ (ppb)", value=1908.04)
-risk = st.selectbox("Niveau de risque HSE :", ["Faible", "Modéré", "Élevé", "Critique"], index=3)
-action = st.text_area("Actions recommandées :", "Alerter la direction, sécuriser la zone, stopper les opérations si nécessaire.")
-
-st.write("### Résumé analyse")
-st.write(f"Moyenne CH₄ : **{mean_ch4_year} ppb**")
-st.write(f"Niveau de risque : **{risk}**")
-
-# ---------------------- BOUTON PDF ----------------------
-if st.button("📄 Générer le fichier PDF HSE"):
-    pdf_bytes = generate_pdf_bytes(
-        site_name=site_name,
-        latitude=latitude,
-        longitude=longitude,
-        year=year_choice,
-        mean_ch4=mean_ch4_year,
-        risk_level=risk,
-        actions_reco=action
-    )
-
-    st.download_button(
-        label="⬇ Télécharger le rapport PDF",
-        data=pdf_bytes,
-        file_name=f"Rapport_HSE_{site_name}_{year_choice}.pdf",
-        mime="application/pdf"
-    )
