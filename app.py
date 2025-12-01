@@ -36,21 +36,30 @@ csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
 csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2024.csv")
 csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
 
-# Vérifier fichiers
+# ------------------------
+# 3) Vérification contenu dossier
+# ------------------------
 st.subheader("Contenu des sous-dossiers")
-st.write("Moyenne CH4 :", os.listdir(MEAN_DIR))
-st.write("Anomalies CH4 :", os.listdir(ANOMALY_DIR))
-st.write("CSV 2020-2024 :", os.listdir(CSV_DIR))
+st.write("Moyenne CH4 :", os.listdir(MEAN_DIR) if os.path.exists(MEAN_DIR) else "Introuvable")
+st.write("Anomalies CH4 :", os.listdir(ANOMALY_DIR) if os.path.exists(ANOMALY_DIR) else "Introuvable")
+st.write("CSV 2020-2024 :", os.listdir(CSV_DIR) if os.path.exists(CSV_DIR) else "Introuvable")
 
 # ------------------------
-# 3) Charger CSV
+# 4) Charger CSV
 # ------------------------
 df_global = pd.read_csv(csv_global) if os.path.exists(csv_global) else pd.DataFrame()
 df_annual = pd.read_csv(csv_annual) if os.path.exists(csv_annual) else pd.DataFrame()
 df_monthly = pd.read_csv(csv_monthly) if os.path.exists(csv_monthly) else pd.DataFrame()
 
+# Affichage rapide CSV pour debug
+st.write("Aperçu CSV annuel :")
+if not df_annual.empty:
+    st.write(df_annual.head())
+else:
+    st.info("CSV annuel introuvable ou vide.")
+
 # ------------------------
-# 4) Graphique évolution CH4
+# 5) Graphique évolution CH4
 # ------------------------
 st.markdown("## Évolution CH₄ (2020-2024)")
 if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
@@ -67,7 +76,7 @@ else:
     st.info("Pas de données annuelles pour graphique.")
 
 # ------------------------
-# 5) Affichage cartes par année
+# 6) Affichage cartes par année
 # ------------------------
 st.markdown("## Cartes Moyennes et Anomalies CH₄")
 year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024])
@@ -103,34 +112,42 @@ with col2:
         st.warning("Fichier anomalie CH₄ introuvable.")
 
 # ------------------------
-# 6) Analyse HSE automatique
+# 7) Analyse HSE automatique
 # ------------------------
 st.markdown("## Analyse HSE automatique")
-if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
-    mean_ch4_year = float(df_annual[df_annual['Year']==year_choice]['CH4_mean'].values[0])
-    # Niveau de risque
-    if mean_ch4_year < 1800:
-        risk = "Faible"
-        action = "Surveillance continue."
-    elif mean_ch4_year < 1850:
-        risk = "Modéré"
-        action = "Vérifier les torches et informer l'équipe HSE."
-    elif mean_ch4_year < 1900:
-        risk = "Élevé"
-        action = "Inspection urgente du site et mesures de sécurité immédiates."
-    else:
-        risk = "Critique"
-        action = "Alerter la direction, sécuriser la zone, stopper les opérations si nécessaire."
 
-    st.write(f"**Année :** {year_choice}")
-    st.write(f"**Moyenne CH₄ :** {mean_ch4_year:.2f} ppb")
-    st.write(f"**Niveau de risque HSE :** {risk}")
-    st.write(f"**Actions recommandées :** {action}")
+mean_ch4_year = None
+risk = None
+action = None
+
+if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
+    if year_choice in df_annual['Year'].values:
+        mean_ch4_year = float(df_annual[df_annual['Year']==year_choice]['CH4_mean'].values[0])
+        # Niveau de risque
+        if mean_ch4_year < 1800:
+            risk = "Faible"
+            action = "Surveillance continue."
+        elif mean_ch4_year < 1850:
+            risk = "Modéré"
+            action = "Vérifier les torches et informer l'équipe HSE."
+        elif mean_ch4_year < 1900:
+            risk = "Élevé"
+            action = "Inspection urgente du site et mesures de sécurité immédiates."
+        else:
+            risk = "Critique"
+            action = "Alerter la direction, sécuriser la zone, stopper les opérations si nécessaire."
+
+        st.write(f"**Année :** {year_choice}")
+        st.write(f"**Moyenne CH₄ :** {mean_ch4_year:.2f} ppb")
+        st.write(f"**Niveau de risque HSE :** {risk}")
+        st.write(f"**Actions recommandées :** {action}")
+    else:
+        st.info("Pas de données CH₄ pour cette année.")
 else:
     st.info("Pas assez de données HSE pour cette année.")
 
 # ------------------------
-# 7) Export PDF HSE
+# 8) Export PDF HSE
 # ------------------------
 st.markdown("## Générer le rapport HSE complet")
 
@@ -151,19 +168,4 @@ def generate_pdf_bytes(year, mean_ch4, risk, action):
     c.drawString(40, h - 150, f"Niveau de risque HSE : {risk}")
     c.drawString(40, h - 170, f"Actions recommandées : {action}")
 
-    # Footer
-    c.setFont("Helvetica-Oblique", 9)
-    c.drawString(40, 40, "Rapport généré automatiquement via le dashboard HSE CH₄")
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
-
-if st.button("📄 Générer le PDF HSE"):
-    pdf_bytes = generate_pdf_bytes(year_choice, mean_ch4_year, risk, action)
-    st.download_button(
-        label="Télécharger le rapport HSE PDF",
-        data=pdf_bytes,
-        file_name=f"Rapport_HSE_{site_name}_{year_choice}.pdf",
-        mime="application/pdf"
-    )
+    # Foo
