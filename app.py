@@ -151,29 +151,89 @@ else:
 st.markdown("## Générer le rapport HSE complet")
 
 def generate_pdf_bytes(year, mean_ch4, risk, action):
+    import io
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from datetime import datetime
+
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    w, h = A4
 
-    # Titre
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(40, h - 60, f"Rapport HSE – {site_name}")
-    c.setFont("Helvetica", 10)
-    c.drawString(40, h - 80, f"Année : {year}")
-    c.drawString(40, h - 100, f"Date de génération : {datetime.now().strftime('%d/%m/%Y')}")
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        title=f"Rapport_HSE_{year}.pdf"
+    )
 
-    # Statistiques
-    c.drawString(40, h - 130, f"Moyenne CH₄ : {mean_ch4:.2f} ppb")
-    c.drawString(40, h - 150, f"Niveau de risque HSE : {risk}")
-    c.drawString(40, h - 170, f"Actions recommandées : {action}")
+    styles = getSampleStyleSheet()
+    style_normal = styles["Normal"]
+    story = []
 
-    # Footer
-    c.setFont("Helvetica-Oblique", 9)
-    c.drawString(40, 40, "Rapport généré automatiquement via le dashboard HSE CH₄")
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
+    # ---------------------- TITRE ----------------------
+    title = f"""
+    <para align='center'>
+    <b><font size=18>RAPPORT TECHNIQUE HSE – SURVEILLANCE MÉTHANE</font></b><br/><br/>
+    <font size=14>Site : {site_name}</font><br/>
+    <font size=12>Année : {year}</font><br/>
+    <font size=10>Date de génération : {datetime.now().strftime('%d/%m/%Y %H:%M')}</font>
+    </para>
+    """
+    story.append(Paragraph(title, style_normal))
+    story.append(Spacer(1, 20))
+
+    # ---------------------- TABLEAU ----------------------
+    table_data = [
+        ["Paramètre", "Valeur"],
+        ["Concentration moyenne CH₄", f"{mean_ch4:.2f} ppb"],
+        ["Niveau de risque HSE", risk],
+        ["Actions recommandées", action]
+    ]
+
+    table = Table(table_data, colWidths=[200, 300])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F3F4F6")),
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 20))
+
+    # ---------------------- ANALYSE RISQUE ----------------------
+    risk_text = f"""
+    <b>Analyse du risque :</b><br/>
+    Le niveau de risque détecté est : <b>{risk}</b>.<br/><br/>
+    Une concentration élevée de méthane peut entraîner :<br/>
+    • Risque d’explosion<br/>
+    • Asphyxie en zone confinée<br/>
+    • Instabilité opérationnelle<br/>
+    • Incendie continu<br/><br/>
+    Références : API, OSHA, ISO 45001
+    """
+    story.append(Paragraph(risk_text, style_normal))
+    story.append(Spacer(1, 20))
+
+    # ---------------------- FOOTER ----------------------
+    footer = f"""
+    <para align='center'>
+    <font size=10 color="#555555">
+    Rapport généré automatiquement — Système HSE CH₄<br/>
+    Site : {site_name} — Année : {year}
+    </font>
+    </para>
+    """
+    story.append(Paragraph(footer, style_normal))
+
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return pdf_bytes
+
 
 if mean_ch4_year is not None:
     if st.button("📄 Générer le PDF HSE"):
