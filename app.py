@@ -12,7 +12,7 @@ from datetime import datetime
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 
 # ------------------------
-# 1) Choix de la localisation
+# 1) Informations site
 # ------------------------
 st.title("Surveillance du Méthane – HSE")
 st.markdown("## Dashboard interactif CH₄ + HSE")
@@ -23,7 +23,7 @@ site_name = st.text_input("Nom du site", value="Hassi R'mel")
 site_geom = (latitude, longitude)
 
 # ------------------------
-# 2) Chemins fichiers (sous-dossiers)
+# 2) Chemins fichiers
 # ------------------------
 DATA_DIR = "data"
 MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
@@ -51,7 +51,6 @@ df_global = pd.read_csv(csv_global) if os.path.exists(csv_global) else pd.DataFr
 df_annual = pd.read_csv(csv_annual) if os.path.exists(csv_annual) else pd.DataFrame()
 df_monthly = pd.read_csv(csv_monthly) if os.path.exists(csv_monthly) else pd.DataFrame()
 
-# Affichage rapide CSV pour debug
 st.write("Aperçu CSV annuel :")
 if not df_annual.empty:
     st.write(df_annual.head())
@@ -62,8 +61,8 @@ else:
 # 5) Graphique évolution CH4
 # ------------------------
 st.markdown("## Évolution CH₄ (2020-2024)")
-if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
-    years = df_annual['Year']
+if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
+    years = df_annual['year']
     ch4_values = df_annual['CH4_mean']
     fig, ax = plt.subplots(figsize=(8,4))
     ax.plot(years, ch4_values, marker='o')
@@ -120,10 +119,10 @@ mean_ch4_year = None
 risk = None
 action = None
 
-if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
-    if year_choice in df_annual['Year'].values:
-        mean_ch4_year = float(df_annual[df_annual['Year']==year_choice]['CH4_mean'].values[0])
-        # Niveau de risque
+if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
+    if year_choice in df_annual['year'].values:
+        mean_ch4_year = float(df_annual[df_annual['year']==year_choice]['CH4_mean'].values[0])
+        # Niveau de risque HSE
         if mean_ch4_year < 1800:
             risk = "Faible"
             action = "Surveillance continue."
@@ -168,4 +167,14 @@ def generate_pdf_bytes(year, mean_ch4, risk, action):
     c.drawString(40, h - 150, f"Niveau de risque HSE : {risk}")
     c.drawString(40, h - 170, f"Actions recommandées : {action}")
 
-    # Foo
+    # Footer
+    c.setFont("Helvetica-Oblique", 9)
+    c.drawString(40, 40, "Rapport généré automatiquement via le dashboard HSE CH₄")
+    c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+if mean_ch4_year is not None:
+    if st.button("📄 Générer le PDF HSE"):
+        pdf_bytes = generate_pdf_bytes(year_choice, mean_ch4_year, risk, action)
