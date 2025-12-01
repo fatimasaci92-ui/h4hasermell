@@ -203,4 +203,104 @@ if mean_ch4_year and risk and action:
 else:
     st.info("Impossible de générer le PDF : données manquantes.")
 
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from datetime import datetime
+import io
+
+def generate_pdf_bytes(site_name, latitude, longitude, year, mean_ch4, risk_level, actions_reco):
+    buffer = io.BytesIO()
+
+    # Nom PDF
+    file_name = f"Rapport_HSE_CH4_{site_name}_{year}.pdf"
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        title=file_name
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    # === TITRE ===
+    titre = f"<para align='center'><b><font size=18>RAPPORT TECHNIQUE HSE – SURVEILLANCE MÉTHANE</font></b></para>"
+    story.append(Paragraph(titre, styles["Title"]))
+    story.append(Spacer(1, 20))
+
+    # === MÉTADONNÉES ===
+    date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    meta = f"""
+    <b>Date du rapport :</b> {date_str}<br/>
+    <b>Site analysé :</b> {site_name}<br/>
+    <b>Latitude :</b> {latitude}<br/>
+    <b>Longitude :</b> {longitude}<br/>
+    <b>Année analysée :</b> {year}<br/>
+    """
+    story.append(Paragraph(meta, styles["Normal"]))
+    story.append(Spacer(1, 20))
+
+    # === TABLEAU TECHNIQUE ===
+    table_data = [
+        ["Paramètre", "Valeur"],
+        ["Concentration moyenne CH₄", f"{mean_ch4:.2f} ppb"],
+        ["Niveau de risque HSE", risk_level],
+    ]
+
+    table = Table(table_data, colWidths=[200, 250])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 12),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F3F4F6")),
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+    ]))
+
+    story.append(table)
+    story.append(Spacer(1, 25))
+
+    # === RISQUES HSE ===
+    risque_txt = f"""
+    <b>Analyse du risque :</b><br/><br/>
+    Le niveau de risque détecté pour l’année <b>{year}</b> est classé comme :  
+    <b>{risk_level}</b>.<br/><br/>
+
+    Selon les standards internationaux (API, OSHA, ISO-45001),
+    une concentration élevée de méthane dans l’atmosphère peut entraîner :  
+    • risques d’explosion<br/>
+    • asphyxie<br/>
+    • défaillances opérationnelles<br/>
+    • augmentation du niveau d’inflammabilité<br/><br/>
+    """
+    story.append(Paragraph(risque_txt, styles["Normal"]))
+    story.append(Spacer(1, 25))
+
+    # === ACTIONS RECOMMANDÉES ===
+    actions_txt = f"""
+    <b>Actions recommandées :</b><br/><br/>
+    {actions_reco}<br/><br/>
+    """
+    story.append(Paragraph(actions_txt, styles["Normal"]))
+    story.append(Spacer(1, 25))
+
+    # === PIED DE PAGE ===
+    footer = """
+    <para align='center'>
+    <font size=10 color="#6B7280">
+    Rapport généré automatiquement par le système HSE – Surveillance CH₄<br/>
+    Conforme aux bonnes pratiques HSE / ISO 45001
+    </font>
+    </para>
+    """
+    story.append(Paragraph(footer, styles["Normal"]))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
