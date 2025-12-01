@@ -18,7 +18,7 @@ st.markdown("## Dashboard interactif CH₄ + FIRMS")
 # ------------------------
 # Chemins fichiers
 # ------------------------
-DATA_DIR = "Data"
+DATA_DIR = "data"  # minuscule !
 
 # CSV
 CSV_FOLDER = os.path.join(DATA_DIR, "2020-2024")
@@ -27,7 +27,7 @@ CSV_ANNUAL = os.path.join(CSV_FOLDER, "CH4-annuel-2020-2024-CSV.csv")
 CSV_MONTHLY = os.path.join(CSV_FOLDER, "CH4-mensuel-2020-2024-CSV.csv")
 
 # GeoTIFF Moyenne
-MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
+MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")  # garder exact nom du dossier
 mean_tifs = [os.path.join(MEAN_DIR, f"CH4-{y}-TIF.tif") for y in range(2020, 2025)]
 
 # GeoTIFF Anomalie
