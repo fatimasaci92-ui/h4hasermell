@@ -23,44 +23,39 @@ site_name = st.text_input("Nom du site", value="Hassi R'mel")
 site_geom = (latitude, longitude)
 
 # ------------------------
-# 2) Chemins fichiers
+# 2) Chemins fichiers (sous-dossiers)
 # ------------------------
 DATA_DIR = "data"
+MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
+ANOMALY_DIR = os.path.join(DATA_DIR, "anomaly CH4")
+CSV_DIR = os.path.join(DATA_DIR, "2020 2024")
 
-# Moyennes annuelles
-mean_files = [f"CH4_mean_{year}.tif" for year in range(2020, 2025)]
-# Anomalies annuelles
-anomaly_files = [f"CH4_anomaly_{year}.tif" for year in range(2020, 2025)]
-# CSV données
-csv_files = {
-    "global": "CH4_HassiRmel_2020_2024.csv",
-    "annual": "CH4_HassiRmel_annual_2020_2024.csv",
-    "monthly": "CH4_HassiRmel_monthly_2020_2024.csv"
-}
+mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2025)}
+anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2025)}
+csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
+csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2024.csv")
+csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
 
-# ------------------------
-# 3) Vérifier contenu dossier
-# ------------------------
-st.subheader("Contenu du dossier data")
-if os.path.exists(DATA_DIR):
-    st.write(os.listdir(DATA_DIR))
-else:
-    st.error("Dossier 'data' introuvable")
+# Vérifier fichiers
+st.subheader("Contenu des sous-dossiers")
+st.write("Moyenne CH4 :", os.listdir(MEAN_DIR))
+st.write("Anomalies CH4 :", os.listdir(ANOMALY_DIR))
+st.write("CSV 2020-2024 :", os.listdir(CSV_DIR))
 
 # ------------------------
-# 4) Charger CSV
+# 3) Charger CSV
 # ------------------------
-df_global = pd.read_csv(os.path.join(DATA_DIR, csv_files["global"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["global"])) else pd.DataFrame()
-df_annual = pd.read_csv(os.path.join(DATA_DIR, csv_files["annual"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["annual"])) else pd.DataFrame()
-df_monthly = pd.read_csv(os.path.join(DATA_DIR, csv_files["monthly"])) if os.path.exists(os.path.join(DATA_DIR, csv_files["monthly"])) else pd.DataFrame()
+df_global = pd.read_csv(csv_global) if os.path.exists(csv_global) else pd.DataFrame()
+df_annual = pd.read_csv(csv_annual) if os.path.exists(csv_annual) else pd.DataFrame()
+df_monthly = pd.read_csv(csv_monthly) if os.path.exists(csv_monthly) else pd.DataFrame()
 
 # ------------------------
-# 5) Graphiques CH₄
+# 4) Graphique évolution CH4
 # ------------------------
 st.markdown("## Évolution CH₄ (2020-2024)")
-if not df_annual.empty:
-    years = df_annual['Year'] if 'Year' in df_annual.columns else range(2020, 2025)
-    ch4_values = df_annual['CH4_mean'] if 'CH4_mean' in df_annual.columns else [0]*len(years)
+if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
+    years = df_annual['Year']
+    ch4_values = df_annual['CH4_mean']
     fig, ax = plt.subplots(figsize=(8,4))
     ax.plot(years, ch4_values, marker='o')
     ax.set_title(f"Évolution CH₄ – {site_name}")
@@ -72,20 +67,17 @@ else:
     st.info("Pas de données annuelles pour graphique.")
 
 # ------------------------
-# 6) Affichage cartes par année
+# 5) Affichage cartes par année
 # ------------------------
 st.markdown("## Cartes Moyennes et Anomalies CH₄")
-
 year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024])
-mean_path = os.path.join(DATA_DIR, f"CH4_mean_{year_choice}.tif")
-anomaly_path = os.path.join(DATA_DIR, f"CH4_anomaly_{year_choice}.tif")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader(f"CH₄ moyen {year_choice}")
-    if os.path.exists(mean_path):
-        with rasterio.open(mean_path) as src:
+    if os.path.exists(mean_files[year_choice]):
+        with rasterio.open(mean_files[year_choice]) as src:
             arr = src.read(1)
         arr[arr <= 0] = np.nan
         fig, ax = plt.subplots(figsize=(6,5))
@@ -98,8 +90,8 @@ with col1:
 
 with col2:
     st.subheader(f"Anomalie CH₄ {year_choice}")
-    if os.path.exists(anomaly_path):
-        with rasterio.open(anomaly_path) as src:
+    if os.path.exists(anomaly_files[year_choice]):
+        with rasterio.open(anomaly_files[year_choice]) as src:
             arr = src.read(1)
         arr[arr == 0] = np.nan
         fig, ax = plt.subplots(figsize=(6,5))
@@ -111,11 +103,10 @@ with col2:
         st.warning("Fichier anomalie CH₄ introuvable.")
 
 # ------------------------
-# 7) Analyse HSE automatique par année
+# 6) Analyse HSE automatique
 # ------------------------
 st.markdown("## Analyse HSE automatique")
-
-if not df_annual.empty:
+if not df_annual.empty and 'Year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
     mean_ch4_year = float(df_annual[df_annual['Year']==year_choice]['CH4_mean'].values[0])
     # Niveau de risque
     if mean_ch4_year < 1800:
@@ -139,7 +130,7 @@ else:
     st.info("Pas assez de données HSE pour cette année.")
 
 # ------------------------
-# 8) Export PDF HSE complet
+# 7) Export PDF HSE
 # ------------------------
 st.markdown("## Générer le rapport HSE complet")
 
