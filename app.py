@@ -12,9 +12,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
 # ================= CONFIG =================
+
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 
 # ================= INFORMATIONS SITE =================
+
 st.title("Surveillance du Méthane – HSE")
 st.markdown("## Dashboard interactif CH₄ + HSE")
 
@@ -24,43 +26,50 @@ site_name = st.text_input("Nom du site", value="Hassi R'mel")
 site_geom = (latitude, longitude)
 
 # ================= PATHS =================
+
 DATA_DIR = "data"
 MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
 ANOMALY_DIR = os.path.join(DATA_DIR, "anomaly CH4")
 CSV_DIR = os.path.join(DATA_DIR, "2020 2024")
 
-mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2026)}
-anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2026)}
+mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2025)}
+anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2025)}
 
 csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
 csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2024.csv")
 csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
-csv_daily = os.path.join(CSV_DIR, "CH4_daily_2025.csv")
+csv_daily = os.path.join(CSV_DIR, "CH4_daily_2024.csv")
 csv_anomalies = os.path.join(CSV_DIR, "Anomalies_CH4_HassiRmel.csv")
 
 # ================= SESSION STATE INIT =================
+
 if 'analysis_today' not in st.session_state:
-    st.session_state['analysis_today'] = None
+st.session_state['analysis_today'] = None
 
 # ================= UTIL FUNCTIONS =================
+
 def hazop_analysis(ch4_value):
-    data = []
-    if ch4_value < 1800:
-        data.append(["CH₄", "Normal", "Pas d’anomalie", "Fonctionnement normal", "Surveillance continue"])
-    elif ch4_value < 1850:
-        data.append(["CH₄", "Modérément élevé", "Torchage possible", "Risque faible d’incident", "Vérifier torches et informer l'équipe HSE"])
-    elif ch4_value < 1900:
-        data.append(["CH₄", "Élevé", "Fuite probable", "Risque d’explosion accru", "Inspection urgente du site et mesures de sécurité immédiates"])
-    else:
-        data.append(["CH₄", "Critique", "Fuite majeure", "Risque critique d’explosion/incendie", "Alerter direction, sécuriser zone, stopper les opérations si nécessaire"])
-    return pd.DataFrame(data, columns=["Paramètre","Déviation","Cause","Conséquence","Action HSE"])
+data = []
+if ch4_value < 1800:
+data.append(["CH₄", "Normal", "Pas d’anomalie", "Fonctionnement normal", "Surveillance continue"])
+elif ch4_value < 1850:
+data.append(["CH₄", "Modérément élevé", "Torchage possible", "Risque faible d’incident", "Vérifier torches et informer l'équipe HSE"])
+elif ch4_value < 1900:
+data.append(["CH₄", "Élevé", "Fuite probable", "Risque d’explosion accru", "Inspection urgente du site et mesures de sécurité immédiates"])
+else:
+data.append(["CH₄", "Critique", "Fuite majeure", "Risque critique d’explosion/incendie", "Alerter direction, sécuriser zone, stopper les opérations si nécessaire"])
+return pd.DataFrame(data, columns=["Paramètre","Déviation","Cause","Conséquence","Action HSE"])
+
+def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date, ch4_value, anomaly_flag, action_hse, hazop_df=None):
+buffer = io.BytesIO()
+doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"Rapport_HSE_{site_name}_{report_date}")
+styles = getSampleStyleSheet()
+story = []
 
 ```
-# TITRE
 story.append(Paragraph("<para align='center'><b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b></para>", styles["Title"]))
 story.append(Spacer(1, 12))
 
-# META
 date_str = report_date
 time_str = datetime.now().strftime("%H:%M")
 meta = f"""
@@ -73,7 +82,6 @@ meta = f"""
 story.append(Paragraph(meta, styles["Normal"]))
 story.append(Spacer(1, 12))
 
-# EXPLICATION
 explanation = (
     "Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté "
     f"sur le site <b>{site_name}</b>. La surveillance du CH₄ permet d'identifier les anomalies, "
@@ -82,7 +90,6 @@ explanation = (
 story.append(Paragraph(explanation, styles["Normal"]))
 story.append(Spacer(1, 12))
 
-# TABLEAU PRINCIPAL
 table_data = [
     ["Paramètre", "Valeur"],
     ["Concentration CH₄ (ppb)", f"{ch4_value}"],
@@ -101,7 +108,6 @@ table.setStyle(TableStyle([
 story.append(table)
 story.append(Spacer(1, 16))
 
-# CAUSES POSSIBLES
 cause_text = (
     "<b>Causes possibles d'une anomalie CH₄ :</b><br/>"
     "- Fuite sur canalisation ou bride endommagée<br/>"
@@ -112,7 +118,6 @@ cause_text = (
 story.append(Paragraph(cause_text, styles["Normal"]))
 story.append(Spacer(1, 12))
 
-# INTERPRETATION / RECOMMANDATIONS
 if anomaly_flag:
     action_text = (
         "<b>Actions recommandées (niveau critique) :</b><br/>"
@@ -130,7 +135,6 @@ else:
 story.append(Paragraph(action_text, styles["Normal"]))
 story.append(Spacer(1, 12))
 
-# HAZOP (optionnel)
 if hazop_df is not None and not hazop_df.empty:
     hazop_data = [list(hazop_df.columns)] + hazop_df.values.tolist()
     hazop_table = Table(hazop_data, colWidths=[100]*len(hazop_df.columns))
@@ -148,7 +152,6 @@ if hazop_df is not None and not hazop_df.empty:
     story.append(hazop_table)
     story.append(Spacer(1, 12))
 
-# FOOTER
 footer = "<para align='center'><font size=9 color='#6B7280'>Rapport généré automatiquement — Système HSE CH₄</font></para>"
 story.append(Paragraph(footer, styles["Normal"]))
 
@@ -158,22 +161,33 @@ buffer.close()
 return pdf_data
 ```
 
-# ===================== SECTION A-G =====================
+# ===================== ANALYSE DU JOUR =====================
 
-# (Les sections A à G restent identiques mais en ajoutant 2025 dans year_choice et les dictionnaires)
+def analyse_du_jour(ch4_value):
+df = hazop_analysis(ch4_value)
+st.session_state['analysis_today'] = df
+return df
 
-# Pour éviter de surcharger, les modifications principales :
+# ===================== DASHBOARD =====================
 
-# - year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024,2025])
+st.header("Analyse du jour")
+ch4_input = st.number_input("Entrer la concentration CH₄ actuelle (ppb)", value=1750)
+df_today = analyse_du_jour(ch4_input)
+st.dataframe(df_today)
 
-# - mean_files et anomaly_files incluent 2025
+st.header("Génération PDF")
+if st.button("Télécharger PDF professionnel"):
+pdf_bytes = generate_pdf_bytes_professional(
+site_name=site_name,
+latitude=latitude,
+longitude=longitude,
+report_date=datetime.today().strftime("%Y-%m-%d"),
+ch4_value=ch4_input,
+anomaly_flag=ch4_input>1850,
+action_hse=df_today.iloc[0]['Action HSE'],
+hazop_df=df_today
+)
+st.download_button("Télécharger PDF", data=pdf_bytes, file_name=f"Rapport_HSE_{site_name}.pdf", mime="application/pdf")
 
-# - csv_daily = "CH4_daily_2025.csv"
-
-# Le reste du code fonctionne comme avant pour cartes, analyses HSE, PDF journalier et annuel,
-
-# ainsi que dashboard historique et graphiques.
-
-# Pour les sections historiques et graphiques, 2025 est automatiquement inclus car les fichiers CSV
-
-# et colonnes sont détectés dynamiquement.
+st.header("Historique CH₄")
+st.markdown("Graphiques et cartes seront ici (section à compléter selon vos fichiers CSV et tif).")
