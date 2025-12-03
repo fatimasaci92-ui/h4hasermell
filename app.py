@@ -402,3 +402,258 @@ if st.button("Générer rapport PDF professionnel (année sélectionnée)"):
             st.error(f"Erreur génération PDF annuel: {e}")
     else:
         st.warning("CSV annuel introuvable, impossible de générer le PDF annuel.")
+# ------------------------ ETAPE 5 : DASHBOARD HISTORIQUE & ANALYSES ------------------------
+st.markdown("## 📈 Dashboard Historique CH₄ (2020-2024)")
+
+# --- 1) Charger (ou valider) les CSV historiques ---
+# On réutilise csv_global, csv_annual, csv_monthly définis plus haut ; sinon on essaie de les lire à la volée.
+df_hist = pd.DataFrame()
+if os.path.exists(csv_global):
+    try:
+        df_hist = pd.read_csv(csv_global)
+    except Exception as e:
+        st.error(f"Erreur lecture {csv_global}: {e}")
+
+# Si pas de csv_global, essayer csv_monthly/annual to build basic frame
+if df_hist.empty and os.path.exists(csv_monthly):
+    try:
+        df_hist = pd.read_csv(csv_monthly)
+    except Exception:
+        df_hist = pd.DataFrame()
+
+# --- 2) Normaliser colonne date si présente ---
+def find_date_col(df):
+    if df is None or df.empty:
+        return None
+    for c in df.columns:
+        if 'date' in c.lower() or 'time' in c.lower():
+            return c
+    # fallback: try parse first column
+    try:
+        pd.to_datetime(df.iloc[:, 0])
+        return df.columns[0]
+    except Exception:
+        return None
+
+date_col = find_date_col(df_hist)
+if date_col:
+    try:
+        df_hist['__date'] = pd.to_datetime(df_hist[date_col])
+    except Exception:
+        # try infer
+        df_hist['__date'] = pd.to_datetime(df_hist[date_col], errors='coerce')
+else:
+    df_hist['__date'] = pd.NaT
+
+# --- 3) UI : filtres (période, anomalie, année) ---
+st.markdown("### 🔎 Filtres historiques")
+colf1, colf2, colf3 = st.columns([2,2,2])
+
+with colf1:
+    if not df_hist.empty and df_hist['__date'].notna().any():
+        min_date = df_hist['__date'].min().date()
+        max_date = df_hist['__date'].max().date()
+    else:
+        # fallback dates
+        min_date = datetime(2020,1,1).date()
+        max_date = datetime.now().date()
+    date_range = st.date_input("Période", [min_date, max_date])
+
+with colf2:
+    anomaly_filter = st.selectbox("Filtrer par anomalie", ["Tous","Anomalies seulement","Normales seulement"])
+
+with colf3:
+    year_filter = st.selectbox("Filtrer par année (optionnel)", ["Toutes"] + [2020,2021,2022,2023,2024])
+
+# --- 4) Appliquer filtres ---
+filtered = df_hist.copy() if not df_hist.empty else pd.DataFrame()
+if not filtered.empty and '__date' in filtered.columns:
+    start_d, end_d = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
+    filtered = filtered[(filtered['__date'] >= pd.to_datetime(start_d)) & (filtered['__date'] <= pd.to_datetime(end_d + pd.Timedelta(days=1)))]
+# anomaly column detection
+anomaly_col = None
+for c in filtered.columns:
+    if 'anomal' in c.lower() or 'alert' in c.lower() or 'flag' in c.lower():
+        anomaly_col = c
+        break
+# try common names
+if anomaly_col is None:
+    for c in filtered.columns:
+        if 'ch4' in c.lower() and 'mean' not in c.lower():
+            # leave
+            pass
+
+if anomaly_filter != "Tous" and not filtered.empty:
+    if anomaly_col:
+        if anomaly_filter == "Anomalies seulement":
+            filtered = filtered[filtered[anomaly_col].astype(bool)]
+        elif anomaly_filter == "Normales seulement":
+            filtered = filtered[~filtered[anomaly_col].astype(bool)]
+
+if year_filter != "Toutes" and not filtered.empty:
+    if '__date' in filtered.columns:
+        filtered = filtered[filtered['__date'].dt.year == int(year_filter)]
+
+# --- 5) Afficher tableau historique filtré et options d'export ---
+st.markdown("### 🗂️ Historique filtré")
+if filtered.empty:
+    st.info("Aucune donnée historique trouvée pour les critères sélectionnés.")
+else:
+    # show dataframe (remove internal __date if present)
+    to_show = filtered.copy()
+    if '__date' in to_show.columns:
+        to_show['Date'] = to_show['__date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        to_show = to_show.drop(columns=['__date'])
+    st.dataframe(to_show, use_container_width=True)
+
+    # Export CSV du filtre
+    csv_bytes = to_show.to_csv(index=False).encode('utf-8')
+    st.download_button("⬇ Exporter historique filtré (CSV)", data=csv_bytes, file_name=f"Historique_CH4_{date_range[0]}_to_{date_range[1]}.csv", mime="text/csv")
+
+# --- 6) Graphiques : mensuel / anomalies / comparatif annuel ---
+st.markdown("### 📊 Graphiques")
+
+# 6a) Série temporelle mensuelle (si monthly CSV disponible)
+if os.path.exists(csv_monthly):
+    try:
+        df_month = pd.read_csv(csv_monthly)
+        # chercher colonnes
+        # supposer colonnes 'year','month','CH4_mean' ou 'date' et 'CH4'...
+        if 'year' in df_month.columns and 'month' in df_month.columns and 'CH4_mean' in df_month.columns:
+            # créer date
+            df_month['__date'] = pd.to_datetime(df_month['year'].astype(str) + '-' + df_month['month'].astype(str) + '-01')
+            fig, ax = plt.subplots(figsize=(8,3))
+            ax.plot(df_month['__date'], df_month['CH4_mean'], marker='o')
+            ax.set_title("CH₄ mensuel (moyenne)")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("CH₄ (ppb)")
+            ax.grid(True)
+            st.pyplot(fig)
+        else:
+            st.info("CSV monthly présent mais format inattendu pour le graphique mensuel.")
+    except Exception as e:
+        st.error(f"Erreur génération graphique mensuel: {e}")
+else:
+    st.info("CSV mensuel introuvable pour graphique mensuel.")
+
+# 6b) Anomalies over time (count per month) built from df_hist if exists
+if not df_hist.empty and '__date' in df_hist.columns:
+    try:
+        tmp = df_hist.copy()
+        # try find ch4 value column
+        val_col = None
+        for c in tmp.columns:
+            if 'ch4' in c.lower() and ('mean' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()):
+                val_col = c
+                break
+        if val_col is None:
+            # fallback numeric column
+            numeric_cols = tmp.select_dtypes(include=[np.number]).columns.tolist()
+            val_col = numeric_cols[0] if numeric_cols else None
+
+        if val_col:
+            tmp['year_month'] = tmp['__date'].dt.to_period('M').dt.to_timestamp()
+            # anomaly if >1900 or if anomaly column present
+            if anomaly_col:
+                tmp['is_anomaly'] = tmp[anomaly_col].astype(bool)
+            else:
+                tmp['is_anomaly'] = tmp[val_col].astype(float) >= 1900
+            monthly = tmp.groupby('year_month')['is_anomaly'].sum().reset_index()
+            fig2, ax2 = plt.subplots(figsize=(8,3))
+            ax2.bar(monthly['year_month'].dt.strftime('%Y-%m'), monthly['is_anomaly'], color='red')
+            ax2.set_title("Nombre d'anomalies détectées par mois")
+            ax2.set_xticklabels(monthly['year_month'].dt.strftime('%Y-%m'), rotation=45, ha='right')
+            st.pyplot(fig2)
+        else:
+            st.info("Impossible de déterminer la colonne CH₄ pour le graphique anomalies.")
+    except Exception as e:
+        st.error(f"Erreur génération graphique anomalies: {e}")
+else:
+    st.info("Données historiques insuffisantes pour graphique anomalies.")
+
+# 6c) Comparatif annuel (utilise csv_annual si disponible ou agrégé de df_hist)
+st.markdown("### 📈 Comparatif annuel")
+df_ann_local = pd.DataFrame()
+if os.path.exists(csv_annual):
+    try:
+        df_ann_local = pd.read_csv(csv_annual)
+    except Exception as e:
+        st.error(f"Erreur lecture CSV annuel: {e}")
+
+if df_ann_local.empty and not df_hist.empty and '__date' in df_hist.columns:
+    try:
+        tmp2 = df_hist.copy()
+        # detect val column
+        val_col = None
+        for c in tmp2.columns:
+            if 'ch4' in c.lower() and ('mean' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()):
+                val_col = c
+                break
+        if val_col:
+            tmp2['year'] = tmp2['__date'].dt.year
+            df_ann_local = tmp2.groupby('year')[val_col].mean().reset_index().rename(columns={val_col:'CH4_mean'})
+    except Exception:
+        df_ann_local = pd.DataFrame()
+
+if not df_ann_local.empty and 'year' in df_ann_local.columns and 'CH4_mean' in df_ann_local.columns:
+    fig3, ax3 = plt.subplots(figsize=(8,3))
+    ax3.plot(df_ann_local['year'], df_ann_local['CH4_mean'], marker='o')
+    ax3.set_title("Comparatif annuel CH₄")
+    ax3.set_xlabel("Année")
+    ax3.set_ylabel("CH₄ (ppb)")
+    ax3.grid(True)
+    st.pyplot(fig3)
+else:
+    st.info("Pas de données annuelles disponibles pour comparatif.")
+
+# --- 7) Exporter une période en PDF (synthèse période) ---
+st.markdown("## 📝 Générer un rapport PDF pour une période")
+colp1, colp2 = st.columns([2,1])
+with colp1:
+    pdf_date_range = st.date_input("Choisir période pour le rapport", [min_date, max_date])
+with colp2:
+    if st.button("Générer rapport période (PDF)"):
+        if filtered.empty:
+            st.warning("Aucune donnée pour la période sélectionnée.")
+        else:
+            # calcul synthèse
+            # choose ch4 mean from filtered numeric column
+            val_col = None
+            for c in filtered.columns:
+                if 'ch4' in c.lower() and ('mean' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()):
+                    val_col = c
+                    break
+            if val_col is None:
+                numeric_cols = filtered.select_dtypes(include=[np.number]).columns.tolist()
+                val_col = numeric_cols[0] if numeric_cols else None
+
+            if val_col:
+                mean_period = float(filtered[val_col].mean())
+            else:
+                mean_period = 0.0
+
+            anomaly_flag_period = mean_period >= 1900
+            action_period = ("Alerter, sécuriser la zone et stopper opérations" if anomaly_flag_period else "Surveillance continue")
+            # Create HAZOP summary
+            hazop_df_period = hazop_analysis(mean_period)
+
+            report_date_str = f"{pdf_date_range[0]}_to_{pdf_date_range[1]}"
+            pdf_bytes_period = generate_pdf_bytes_professional(
+                site_name=site_name,
+                latitude=latitude,
+                longitude=longitude,
+                report_date=report_date_str,
+                ch4_value=round(mean_period,2),
+                anomaly_flag=anomaly_flag_period,
+                action_hse=action_period,
+                hazop_df=hazop_df_period
+            )
+            st.download_button(
+                label="⬇ Télécharger le rapport PDF (période sélectionnée)",
+                data=pdf_bytes_period,
+                file_name=f"Rapport_HSE_CH4_{site_name}_{report_date_str}.pdf",
+                mime="application/pdf"
+            )
+
+st.markdown("---")
+st.info("Dashboard historique prêt. Utilise les boutons pour afficher / exporter les données.")
