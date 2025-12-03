@@ -40,9 +40,8 @@ csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
 csv_daily = os.path.join(CSV_DIR, "Anomalies_CH4_HassiRmel.csv")
 
 # ================= SESSION STATE INIT =================
-
 if 'analysis_today' not in st.session_state:
-st.session_state['analysis_today'] = None  # will hold dict with ch4_today, threshold, action, date
+    st.session_state['analysis_today'] = None  # will hold dict with ch4_today, threshold, action, date
 
 # ================= UTIL FUNCTIONS =================
 
