@@ -153,6 +153,23 @@ if mean_ch4_year is not None:
     st.table(df_hazop)
 else:
     st.info("Impossible de générer HAZOP : données manquantes pour cette année.")
+# ------------------------ 9) Bouton Analyse CH4 du jour ------------------------
+st.markdown("## 🔍 Analyse CH₄ du jour")
+
+if st.button("Analyser aujourd'hui"):
+    # Simulation récupération CH4 du jour
+    ch4_today = 1935  # ppb, tu peux changer selon les données réelles
+    threshold = 1900  # seuil critique
+    
+    st.write(f"**CH₄ du jour :** {ch4_today} ppb")
+    
+    # Détection simple d'anomalie
+    if ch4_today > threshold:
+        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+    elif ch4_today > threshold - 50:
+        st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
+    else:
+        st.success("CH₄ normal, aucune anomalie détectée.")
 
 # ------------------------ 8) Génération PDF professionnel ------------------------
 def generate_pdf_bytes_professional(site_name, latitude, longitude, year, mean_ch4, risk_level, actions_reco, hazop_df):
