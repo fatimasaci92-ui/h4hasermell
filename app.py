@@ -265,77 +265,86 @@ if st.button("Afficher l'analyse HSE pour l'année sélectionnée"):
         st.warning("CSV annuel introuvable.")
 
 # ===================== SECTION E: Analyse CH4 du jour (bouton) =====================
+
 st.markdown("## 🔍 Analyse CH₄ du jour")
 if st.button("Analyser aujourd'hui"):
-    # Priorité: lire le CSV daily si présent (export GEE)
-    if os.path.exists(csv_daily):
+ch4_today = 0.0  # valeur par défaut
+date_now = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+```
+if os.path.exists(csv_daily):
+    try:
+        # Essayer avec ',' puis ';' si erreur
         try:
             df_daily_local = pd.read_csv(csv_daily)
-            # on prend la dernière ligne si elle contient colonnes valides
-            if not df_daily_local.empty:
-                last = df_daily_local.iloc[-1]
-                # Cherche une colonne plausible pour valeur CH4 : 'CH4' ou 'value' ou 'CH4_mean' ou 'CH4_ppb'
-                ch4_candidates = [c for c in df_daily_local.columns if 'ch4' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()]
-                if ch4_candidates:
-                    ch4_col = ch4_candidates[0]
-                    ch4_today = float(last[ch4_col])
-                else:
-                    # fallback : essayer colonnes numériques
-                    numeric_cols = df_daily_local.select_dtypes(include=[np.number]).columns.tolist()
-                    if numeric_cols:
-                        ch4_today = float(last[numeric_cols[-1]])
-                    else:
-                        ch4_today = 0.0
+        except:
+            df_daily_local = pd.read_csv(csv_daily, sep=';')
+        
+        if not df_daily_local.empty:
+            last = df_daily_local.iloc[-1]
+            # Cherche automatiquement une colonne plausible
+            ch4_candidates = [c for c in df_daily_local.columns if any(k in c.lower() for k in ['ch4','value','ppb'])]
+            if ch4_candidates:
+                ch4_col = ch4_candidates[0]
+                ch4_today = float(last[ch4_col])
             else:
-                ch4_today = 0.0
-        except Exception as e:
-            st.error(f"Erreur lecture CSV daily: {e}")
+                # fallback : dernière colonne numérique
+                numeric_cols = df_daily_local.select_dtypes(include=[np.number]).columns.tolist()
+                if numeric_cols:
+                    ch4_today = float(last[numeric_cols[-1]])
+                else:
+                    st.warning("Aucune colonne CH₄ détectée dans le CSV daily.")
+                    ch4_today = 0.0
+        else:
+            st.warning("CSV daily vide.")
             ch4_today = 0.0
-    else:
-        # Si pas de CSV daily, on simule (ou tu peux remplacer par appel GEE)
-        ch4_today = 1935.0
+    except Exception as e:
+        st.error(f"Erreur lecture CSV daily: {e}")
+        ch4_today = 0.0
+else:
+    st.warning("CSV daily introuvable. Valeur simulée utilisée.")
+    ch4_today = 1935.0  # valeur simulée si CSV absent
 
-    threshold = 1900.0
-    date_now = datetime.now().strftime("%d/%m/%Y %H:%M")
+# Seuils et actions HSE
+threshold = 1900.0
+if ch4_today > threshold:
+    action_hse = "Alerter, sécuriser la zone et stopper opérations"
+elif ch4_today > threshold - 50:
+    action_hse = "Surveillance renforcée et vérification des torches"
+else:
+    action_hse = "Surveillance continue"
 
-    # Déterminer l'action HSE
-    if ch4_today > threshold:
-        action_hse = "Alerter, sécuriser la zone et stopper opérations"
-    elif ch4_today > threshold - 50:
-        action_hse = "Surveillance renforcée et vérification des torches"
-    else:
-        action_hse = "Surveillance continue"
+# Stocker en session pour PDF
+st.session_state['analysis_today'] = {
+    "date": date_now,
+    "ch4": ch4_today,
+    "anomaly": ch4_today > threshold,
+    "action": action_hse,
+    "threshold": threshold
+}
 
-    # Stocker en session pour PDF
-    st.session_state['analysis_today'] = {
-        "date": date_now,
-        "ch4": ch4_today,
-        "anomaly": ch4_today > threshold,
-        "action": action_hse,
-        "threshold": threshold
-    }
+# Affichage
+st.write(f"**CH₄ du jour :** {ch4_today} ppb ({date_now})")
+if ch4_today > threshold:
+    st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+elif ch4_today > threshold - 50:
+    st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
+else:
+    st.success("CH₄ normal, aucune anomalie détectée.")
 
-    # Affichage
-    st.write(f"**CH₄ du jour :** {ch4_today} ppb  ({date_now})")
-    if ch4_today > threshold:
-        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
-    elif ch4_today > threshold - 50:
-        st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
-    else:
-        st.success("CH₄ normal, aucune anomalie détectée.")
-
-    # Tableau
-    anomalies_today_df = pd.DataFrame([{
-        "Date": date_now.split()[0],
-        "Heure": date_now.split()[1],
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH4 (ppb)": ch4_today,
-        "Anomalie": "Oui" if ch4_today > threshold else "Non",
-        "Action HSE": action_hse
-    }])
-    st.table(anomalies_today_df)
+# Tableau récap
+anomalies_today_df = pd.DataFrame([{
+    "Date": date_now.split()[0],
+    "Heure": date_now.split()[1],
+    "Site": site_name,
+    "Latitude": latitude,
+    "Longitude": longitude,
+    "CH4 (ppb)": ch4_today,
+    "Anomalie": "Oui" if ch4_today > threshold else "Non",
+    "Action HSE": action_hse
+}])
+st.table(anomalies_today_df)
+```
 
 # ===================== SECTION F: Générer PDF du jour (bouton) =====================
 st.markdown("## 📄 Générer rapport PDF du jour (professionnel)")
