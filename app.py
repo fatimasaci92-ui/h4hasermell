@@ -44,22 +44,16 @@ if 'analysis_today' not in st.session_state:
 
 # ================= UTIL FUNCTIONS =================
 def hazop_analysis(ch4_value):
-data = []
-if ch4_value < 1800:
-data.append(["CH₄", "Normal", "Pas d’anomalie", "Fonctionnement normal", "Surveillance continue"])
-elif ch4_value < 1850:
-data.append(["CH₄", "Modérément élevé", "Torchage possible", "Risque faible d’incident", "Vérifier torches et informer l'équipe HSE"])
-elif ch4_value < 1900:
-data.append(["CH₄", "Élevé", "Fuite probable", "Risque d’explosion accru", "Inspection urgente du site et mesures de sécurité immédiates"])
-else:
-data.append(["CH₄", "Critique", "Fuite majeure", "Risque critique d’explosion/incendie", "Alerter direction, sécuriser zone, stopper les opérations si nécessaire"])
-return pd.DataFrame(data, columns=["Paramètre","Déviation","Cause","Conséquence","Action HSE"])
-
-def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date, ch4_value, anomaly_flag, action_hse, hazop_df=None):
-buffer = io.BytesIO()
-doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"Rapport_HSE_{site_name}_{report_date}")
-styles = getSampleStyleSheet()
-story = []
+    data = []
+    if ch4_value < 1800:
+        data.append(["CH₄", "Normal", "Pas d’anomalie", "Fonctionnement normal", "Surveillance continue"])
+    elif ch4_value < 1850:
+        data.append(["CH₄", "Modérément élevé", "Torchage possible", "Risque faible d’incident", "Vérifier torches et informer l'équipe HSE"])
+    elif ch4_value < 1900:
+        data.append(["CH₄", "Élevé", "Fuite probable", "Risque d’explosion accru", "Inspection urgente du site et mesures de sécurité immédiates"])
+    else:
+        data.append(["CH₄", "Critique", "Fuite majeure", "Risque critique d’explosion/incendie", "Alerter direction, sécuriser zone, stopper les opérations si nécessaire"])
+    return pd.DataFrame(data, columns=["Paramètre","Déviation","Cause","Conséquence","Action HSE"])
 
 ```
 # TITRE
