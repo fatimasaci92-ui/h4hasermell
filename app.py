@@ -41,7 +41,7 @@ csv_annual_extended = os.path.join(CSV_DIR, "CH4_annual_2020_2025.csv") # NOUVEA
 
 # ================= SESSION STATE INIT =================
 if 'analysis_today' not in st.session_state:
-st.session_state['analysis_today'] = None
+    st.session_state['analysis_today'] = None
 
 # ================= UTIL FUNCTIONS =================
 def hazop_analysis(ch4_value):
