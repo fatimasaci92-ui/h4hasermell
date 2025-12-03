@@ -67,50 +67,51 @@ if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annu
 else:
     st.info("Pas de données annuelles pour graphique.")
 
-# ------------------------ 6) Affichage cartes par année ------------------------
-st.markdown("## Cartes Moyennes et Anomalies CH₄")
-year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024])
+# ------------------------ 6) Cartes affichées seulement après clic ------------------------
+st.markdown("## 🗺️ Afficher les cartes CH₄ par année")
 
-col1, col2 = st.columns(2)
+year_choice = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024])
 
-with col1:
-    st.subheader(f"CH₄ moyen {year_choice}")
-    if os.path.exists(mean_files[year_choice]):
-        with rasterio.open(mean_files[year_choice]) as src:
-            arr = src.read(1)
-        arr[arr <= 0] = np.nan
-        fig, ax = plt.subplots(figsize=(6,5))
-        ax.imshow(arr, cmap='viridis')
-        ax.set_title(f"CH₄ moyen {year_choice}")
-        ax.axis('off')
-        st.pyplot(fig)
-    else:
-        st.warning("Fichier CH₄ moyen introuvable.")
+if st.button("📌 Afficher les cartes de l'année sélectionnée"):
+    col1, col2 = st.columns(2)
 
-with col2:
-    st.subheader(f"Anomalie CH₄ {year_choice}")
-    if os.path.exists(anomaly_files[year_choice]):
-        with rasterio.open(anomaly_files[year_choice]) as src:
-            arr = src.read(1)
-        arr[arr == 0] = np.nan
-        fig, ax = plt.subplots(figsize=(6,5))
-        ax.imshow(arr, cmap='coolwarm')
-        ax.set_title(f"Anomalie CH₄ {year_choice}")
-        ax.axis('off')
-        st.pyplot(fig)
-    else:
-        st.warning("Fichier anomalie CH₄ introuvable.")
+    with col1:
+        st.subheader(f"CH₄ moyen {year_choice}")
+        if os.path.exists(mean_files[year_choice]):
+            with rasterio.open(mean_files[year_choice]) as src:
+                arr = src.read(1)
+            arr[arr <= 0] = np.nan
+            fig, ax = plt.subplots(figsize=(6, 5))
+            ax.imshow(arr, cmap='viridis')
+            ax.set_title(f"CH₄ moyen {year_choice}")
+            ax.axis('off')
+            st.pyplot(fig)
+        else:
+            st.warning("Fichier CH₄ moyen introuvable.")
 
-# ------------------------ 7) Analyse HSE automatique ------------------------
-st.markdown("## Analyse HSE automatique")
+    with col2:
+        st.subheader(f"Anomalie CH₄ {year_choice}")
+        if os.path.exists(anomaly_files[year_choice]):
+            with rasterio.open(anomaly_files[year_choice]) as src:
+                arr = src.read(1)
+            arr[arr == 0] = np.nan
+            fig, ax = plt.subplots(figsize=(6, 5))
+            ax.imshow(arr, cmap='coolwarm')
+            ax.set_title(f"Anomalie CH₄ {year_choice}")
+            ax.axis('off')
+            st.pyplot(fig)
+        else:
+            st.warning("Fichier anomalie CH₄ introuvable.")
 
-mean_ch4_year = None
-risk = None
-action = None
 
-if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annual.columns:
-    if year_choice in df_annual['year'].values:
-        mean_ch4_year = float(df_annual[df_annual['year']==year_choice]['CH4_mean'].values[0])
+# ------------------------ 7) Analyse HSE automatique après clic ------------------------
+st.markdown("## 🔎 Analyse HSE pour l'année sélectionnée")
+
+if st.button("📘 Afficher l'analyse HSE"):
+    if not df_annual.empty and year_choice in df_annual['year'].values:
+
+        mean_ch4_year = float(df_annual[df_annual['year'] == year_choice]['CH4_mean'].values[0])
+
         if mean_ch4_year < 1800:
             risk = "Faible"
             action = "Surveillance continue."
@@ -124,14 +125,18 @@ if not df_annual.empty and 'year' in df_annual.columns and 'CH4_mean' in df_annu
             risk = "Critique"
             action = "Alerter la direction, sécuriser la zone, stopper les opérations si nécessaire."
 
-        st.write(f"**Année :** {year_choice}")
+        st.success(f"Année analysée : {year_choice}")
         st.write(f"**Moyenne CH₄ :** {mean_ch4_year:.2f} ppb")
-        st.write(f"**Niveau de risque HSE :** {risk}")
-        st.write(f"**Actions recommandées :** {action}")
+        st.write(f"**Risque HSE :** {risk}")
+        st.write(f"**Action recommandée :** {action}")
+
+        # HAZOP
+        df_hazop = hazop_analysis(mean_ch4_year)
+        st.markdown("### 📊 Tableau HAZOP")
+        st.table(df_hazop)
+
     else:
-        st.info("Pas de données CH₄ pour cette année.")
-else:
-    st.info("Pas assez de données HSE pour cette année.")
+        st.warning("Les données CH₄ pour cette année sont manquantes.")
 
 # ------------------------ 7bis) Analyse HAZOP ------------------------
 def hazop_analysis(ch4_value):
