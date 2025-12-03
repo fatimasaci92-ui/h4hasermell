@@ -339,10 +339,11 @@ if st.button("Analyser aujourd'hui"):
     st.table(anomalies_today_df)
 
 # ===================== SECTION F: Générer PDF du jour (bouton) =====================
-st.markdown("## 📄 Générer rapport PDF du jour (professionnel)")
-if st.button("Générer rapport PDF du jour"):
-    analysis = st.session_state.get('analysis_today')
-   with colp2:
+colp1, colp2 = st.columns([2,1])
+with colp1:
+    pdf_date_range = st.date_input("Choisir période pour le rapport", [min_date, max_date])
+
+with colp2:
     if st.button("Générer rapport période (PDF)"):
         if filtered.empty:
             st.warning("Aucune donnée pour la période sélectionnée.")
