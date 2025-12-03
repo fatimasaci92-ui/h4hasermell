@@ -1,181 +1,92 @@
-# app.py complet – Surveillance CH4 HSE
+import os
 import streamlit as st
 import pandas as pd
-import numpy as np
 import rasterio
+from rasterio.plot import show
 import matplotlib.pyplot as plt
-import os
-import io
-from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-
-# ================= CONFIG =================
-st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
-
-# ================= INFORMATIONS SITE =================
-st.title("Surveillance du Méthane – HSE")
-st.markdown("## Dashboard interactif CH₄ + HSE")
-
-latitude = st.number_input("Latitude du site", value=32.93, format="%.6f")
-longitude = st.number_input("Longitude du site", value=3.3, format="%.6f")
-site_name = st.text_input("Nom du site", value="Hassi R'mel")
-site_geom = (latitude, longitude)
 
 # ================= PATHS =================
+
 DATA_DIR = "data"
 MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
 ANOMALY_DIR = os.path.join(DATA_DIR, "anomaly CH4")
-CSV_DIR = os.path.join(DATA_DIR, "2020 2025")
+CSV_DIR = os.path.join(DATA_DIR, "2020 2025")  # mis à jour pour inclure 2025
 
-mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2024)}
-anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2025)}
+# Fichiers tifs moyens et anomalies 2020-2025
+
+mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2026)}
+anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2026)}
+
+# CSV
+
 csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2025.csv")
-csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2024.csv")
-csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
-csv_daily = os.path.join(CSV_DIR, "Anomalies_CH4_HassiRmel.csv")
+csv_annual = os.path.join(CSV_DIR, "CH4_annual_2020_2025.csv")
+csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2025.csv")
+csv_daily = os.path.join(CSV_DIR, "CH4_daily_2025.csv")
 
-# ================= SESSION STATE =================
-if 'analysis_today' not in st.session_state:
-    st.session_state['analysis_today'] = None
+# ================== Titre ==================
 
-# ================= FONCTIONS UTILITAIRES =================
-def hazop_analysis(ch4_value):
-    data = []
-    if ch4_value < 1800:
-        data.append(["CH₄", "Normal", "Pas d’anomalie", "Fonctionnement normal", "Surveillance continue"])
-    elif ch4_value < 1850:
-        data.append(["CH₄", "Modérément élevé", "Torchage possible", "Risque faible d’incident", "Vérifier torches et informer l'équipe HSE"])
-    elif ch4_value < 1900:
-        data.append(["CH₄", "Élevé", "Fuite probable", "Risque d’explosion accru", "Inspection urgente du site et mesures de sécurité immédiates"])
-    else:
-        data.append(["CH₄", "Critique", "Fuite majeure", "Risque critique d’explosion/incendie", "Alerter direction, sécuriser zone, stopper les opérations si nécessaire"])
-    return pd.DataFrame(data, columns=["Paramètre","Déviation","Cause","Conséquence","Action HSE"])
+st.title("📊 Analyse des données CH4 – Hassi R'mel 2020-2025")
 
-def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date, ch4_value, anomaly_flag, action_hse, hazop_df=None):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, title=f"Rapport_HSE_{site_name}_{report_date}")
-    styles = getSampleStyleSheet()
-    story = []
+# ================== Section A: Données globales ==================
 
-    story.append(Paragraph("<para align='center'><b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b></para>", styles["Title"]))
-    story.append(Spacer(1, 12))
+st.header("📄 Données globales")
+if os.path.exists(csv_global):
+df_global = pd.read_csv(csv_global)
+st.dataframe(df_global)
+else:
+st.warning(f"Le fichier {csv_global} est introuvable.")
 
-    date_str = report_date
-    time_str = datetime.now().strftime("%H:%M")
-    meta = f"<b>Date :</b> {date_str}<br/><b>Heure :</b> {time_str}<br/><b>Site :</b> {site_name}<br/><b>Latitude :</b> {latitude}<br/><b>Longitude :</b> {longitude}<br/>"
-    story.append(Paragraph(meta, styles["Normal"]))
-    story.append(Spacer(1, 12))
+# ================== Section B: Données annuelles et mensuelles ==================
 
-    explanation = f"Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté sur le site <b>{site_name}</b>. La surveillance du CH₄ permet d'identifier les anomalies, d'évaluer le niveau de risque HSE et de recommander des actions."
-    story.append(Paragraph(explanation, styles["Normal"]))
-    story.append(Spacer(1, 12))
+st.header("📆 Données annuelles et mensuelles")
+if os.path.exists(csv_annual):
+df_annual = pd.read_csv(csv_annual)
+st.line_chart(df_annual.set_index("Year")["CH4_mean"])
+else:
+st.warning(f"Le fichier {csv_annual} est introuvable.")
 
-    table_data = [
-        ["Paramètre", "Valeur"],
-        ["Concentration CH₄ (ppb)", f"{ch4_value}"],
-        ["Anomalie détectée", "Oui" if anomaly_flag else "Non"],
-        ["Action recommandée HSE", action_hse],
-    ]
-    table = Table(table_data, colWidths=[180, 260])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0B4C6E")),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
-        ('GRID', (0, 0), (-1, -1), 0.8, colors.grey)
-    ]))
-    story.append(table)
-    story.append(Spacer(1, 16))
+if os.path.exists(csv_monthly):
+df_monthly = pd.read_csv(csv_monthly)
+st.line_chart(df_monthly.set_index("Month")["CH4_mean"])
+else:
+st.warning(f"Le fichier {csv_monthly} est introuvable.")
 
-    cause_text = "<b>Causes possibles d'une anomalie CH₄ :</b><br/>- Fuite sur canalisation ou bride endommagée<br/>- Torchage défaillant<br/>- Purge de gaz ou opération de maintenance<br/>- Pression anormale dans le réseau<br/>"
-    story.append(Paragraph(cause_text, styles["Normal"]))
-    story.append(Spacer(1, 12))
+# ================== Section C: Cartes par année ==================
 
-    action_text = ("<b>Actions recommandées (niveau critique) :</b><br/>- Alerter immédiatement la direction HSE<br/>- Sécuriser/évacuer la zone si nécessaire<br/>- Localiser la fuite avec OGI / capteurs portables<br/>- Réparer ou isoler la section affectée, stopper opérations si besoin"
-                  if anomaly_flag else "<b>Actions recommandées :</b><br/>- Surveillance continue<br/>- Contrôles périodiques et maintenance préventive")
-    story.append(Paragraph(action_text, styles["Normal"]))
-    story.append(Spacer(1, 12))
+st.header("🗺️ Cartes Moyenne & Anomalie par année")
+year_choice = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
 
-    if hazop_df is not None and not hazop_df.empty:
-        hazop_data = [list(hazop_df.columns)] + hazop_df.values.tolist()
-        hazop_table = Table(hazop_data, colWidths=[100]*len(hazop_df.columns))
-        hazop_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0B4C6E")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BACKGROUND', (0,1), (-1,-1), colors.whitesmoke),
-            ('GRID', (0,0), (-1,-1), 0.8, colors.grey)
-        ]))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph("<b>Tableau HAZOP :</b>", styles["Normal"]))
-        story.append(Spacer(1, 6))
-        story.append(hazop_table)
-        story.append(Spacer(1, 12))
+# Affichage moyenne
 
-    story.append(Paragraph("<para align='center'><font size=9 color='#6B7280'>Rapport généré automatiquement — Système HSE CH₄</font></para>", styles["Normal"]))
+mean_path = mean_files.get(year_choice)
+if mean_path and os.path.exists(mean_path):
+with rasterio.open(mean_path) as src:
+fig, ax = plt.subplots(figsize=(6,6))
+show(src, ax=ax)
+ax.set_title(f"CH4 moyenne {year_choice}")
+st.pyplot(fig)
+else:
+st.warning(f"Fichier moyen pour {year_choice} introuvable.")
 
-    doc.build(story)
-    pdf_data = buffer.getvalue()
-    buffer.close()
-    return pdf_data
+# Affichage anomalie
 
-# ===================== SECTIONS =================
-st.markdown("## 📁 Contenu des sous-dossiers")
-if st.button("Afficher le contenu des sous-dossiers"):
-    st.write("Moyenne CH4 :", os.listdir(MEAN_DIR) if os.path.exists(MEAN_DIR) else "Introuvable")
-    st.write("Anomalies CH4 :", os.listdir(ANOMALY_DIR) if os.path.exists(ANOMALY_DIR) else "Introuvable")
-    st.write("CSV 2020-2024 :", os.listdir(CSV_DIR) if os.path.exists(CSV_DIR) else "Introuvable")
+anomaly_path = anomaly_files.get(year_choice)
+if anomaly_path and os.path.exists(anomaly_path):
+with rasterio.open(anomaly_path) as src:
+fig, ax = plt.subplots(figsize=(6,6))
+show(src, ax=ax)
+ax.set_title(f"Anomalie CH4 {year_choice}")
+st.pyplot(fig)
+else:
+st.warning(f"Fichier anomalie pour {year_choice} introuvable.")
 
-st.markdown("## 📑 Aperçu CSV annuel")
-if st.button("Afficher aperçu CSV annuel"):
-    if os.path.exists(csv_annual):
-        try:
-            df_annual = pd.read_csv(csv_annual)
-            st.write(df_annual.head())
-        except Exception as e:
-            st.error(f"Erreur lecture CSV annuel: {e}")
-    else:
-        st.warning("CSV annuel introuvable.")
+# ================== Section D: Données quotidiennes 2025 ==================
 
-st.markdown("## 🗺️ Cartes Moyenne & Anomalie par année")
-year_choice = st.selectbox("Choisir l'année", [2020,2021,2022,2023,2024])
-if st.button("Afficher les cartes de l'année sélectionnée"):
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader(f"CH₄ moyen {year_choice}")
-        mean_path = mean_files.get(year_choice)
-        if mean_path and os.path.exists(mean_path):
-            with rasterio.open(mean_path) as src:
-                arr = src.read(1)
-            arr[arr <= 0] = np.nan
-            fig, ax = plt.subplots(figsize=(6,5))
-            ax.imshow(arr, cmap='viridis'); ax.axis('off'); ax.set_title(f"CH₄ moyen {year_choice}")
-            st.pyplot(fig)
-        else:
-            st.warning("Fichier CH₄ moyen introuvable.")
-    with col2:
-        st.subheader(f"Anomalie CH₄ {year_choice}")
-        an_path = anomaly_files.get(year_choice)
-        if an_path and os.path.exists(an_path):
-            with rasterio.open(an_path) as src:
-                arr2 = src.read(1)
-            arr2[arr2 == 0] = np.nan
-            fig2, ax2 = plt.subplots(figsize=(6,5))
-            ax2.imshow(arr2, cmap='coolwarm'); ax2.axis('off'); ax2.set_title(f"Anomalie CH₄ {year_choice}")
-            st.pyplot(fig2)
-        else:
-            st.warning("Fichier anomalie CH₄ introuvable.")
+st.header("📅 Données quotidiennes 2025")
+if os.path.exists(csv_daily):
+df_daily = pd.read_csv(csv_daily)
+st.line_chart(df_daily.set_index("Date")["CH4_value"])
+else:
+st.warning(f"Le fichier {csv_daily} est introuvable.")
 
-# ===================== ANALYSE HSE & PDF =================
-# (Sections D à G) – similaire à votre exemple, incluant analyse journalière, PDF jour/année/période
-# ===================== DASHBOARD HISTORIQUE =================
-# (Section historique avec filtres, graphiques, export CSV & PDF)
-# Code complet identique à votre bloc fourni ci-dessus, intégré pour toutes les fonctionnalités
-
-st.markdown("---")
-st.info("Dashboard prêt. Utilisez les boutons pour afficher / exporter les données.")
