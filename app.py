@@ -28,13 +28,13 @@ site_geom = (latitude, longitude)
 DATA_DIR = "data"
 MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
 ANOMALY_DIR = os.path.join(DATA_DIR, "anomaly CH4")
-CSV_DIR = os.path.join(DATA_DIR, "2020 2024")
+CSV_DIR = os.path.join(DATA_DIR, "2020 2025")
 
 mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2025)}
 anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2025)}
-csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
-csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2024.csv")
-csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
+csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2025.csv")
+csv_annual = os.path.join(CSV_DIR, "CH4_HassiRmel_annual_2020_2025.csv")
+csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2025.csv")
 csv_daily = os.path.join(CSV_DIR, "Anomalies_CH4_HassiRmel.csv")
 
 # ================= SESSION STATE INIT =================
