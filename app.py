@@ -533,4 +533,45 @@ colp1, colp2 = st.columns([2, 1])
 with colp1:
 pdf_date_range = st.date_input("Période pour le rapport", [min_date, max_date])
 with colp2:
-if st.button("Générer rapport période
+if st.button("Générer rapport période (PDF)"):
+if filtered.empty:
+st.warning("Aucune donnée pour la période sélectionnée.")
+else:
+val_col = None
+for c in filtered.columns:
+cl = c.lower()
+if "ch4" in cl and any(k in cl for k in ["mean", "value", "ppb"]):
+val_col = c
+break
+if val_col is None:
+numeric_cols = filtered.select_dtypes(include=[np.number]).columns.tolist()
+val_col = numeric_cols[0] if numeric_cols else None
+
+if val_col and not filtered[val_col].isna().all():
+mean_period = float(filtered[val_col].mean())
+anomaly_flag_period = mean_period >= 1900
+action_period = (
+"Alerter, sécuriser la zone et stopper opérations"
+if anomaly_flag_period
+else "Surveillance continue"
+)
+hazop_df_period = hazop_analysis(mean_period)
+report_date_str = f"{pdf_date_range[0]}_to_{pdf_date_range[1]}"
+pdf_bytes_period = generate_pdf_bytes_professional(
+site_name=site_name,
+latitude=latitude,
+longitude=longitude,
+report_date=report_date_str,
+ch4_value=mean_period,
+anomaly_flag=anomaly_flag_period,
+action_hse=action_period,
+hazop_df=hazop_df_period,
+)
+st.download_button(
+label="⬇ Télécharger le rapport PDF (période sélectionnée)",
+data=pdf_bytes_period,
+file_name=f"Rapport_HSE_CH4_{site_name}_{report_date_str}.pdf",
+mime="application/pdf",
+)
+else:
+st.error("Impossible de calculer la moyenne CH4 pour cette période.")
