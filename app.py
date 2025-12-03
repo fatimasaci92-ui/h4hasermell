@@ -183,66 +183,84 @@ if st.button("Analyser aujourd'hui"):
         ]
     })
     st.table(anomalies_today)
-# ------------------------ 11) Génération PDF du jour ------------------------
-if 'ch4_today' in locals():  # Vérifie si analyse du jour a été faite
-    if st.button("Générer rapport PDF du jour"):
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
+import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
-        story = []
+def generate_pdf(report_date, site_name, ch4_value, anomaly_flag, action_hse, latitude, longitude):
+    pdf_path = f"rapport_CH4_{report_date}.pdf"
 
-        # ================= TITRE =================
-        story.append(Paragraph(
-            "<b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b>",
-            styles['Title']
-        ))
-        story.append(Spacer(1, 15))
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    normal_style = styles["BodyText"]
 
-        # ================= META =================
-        date_now = datetime.now().strftime("%d/%m/%Y")
-        hour_now = datetime.now().strftime("%H:%M")
+    doc = SimpleDocTemplate(pdf_path)
+    story = []
 
-        meta_text = f"""
-        <b>Date :</b> {date_now}<br/>
-        <b>Heure :</b> {hour_now}<br/>
-        <b>Site :</b> {site_name}<br/>
-        <b>Latitude :</b> {latitude}<br/>
-        <b>Longitude :</b> {longitude}<br/>
-        """
-        story.append(Paragraph(meta_text, styles['Normal']))
-        story.append(Spacer(1, 15))
+    # ---- TITRE ----
+    story.append(Paragraph("Rapport d’Analyse Quotidienne – Méthane (CH₄)", title_style))
+    story.append(Spacer(1, 12))
 
-        # ================= PARAGRAPHE EXPLICATIF =================
-        explanation = f"""
-        Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté aujourd’hui 
-        sur le site <b>{site_name}</b>.  
-        La surveillance continue du CH₄ permet d’identifier rapidement les anomalies, 
-        d’évaluer le risque HSE, et de recommander les actions nécessaires afin de garantir 
-        un fonctionnement sécurisé du site.
-        """
-        story.append(Paragraph(explanation, styles['Normal']))
-        story.append(Spacer(1, 15))
+    # ---- CONTEXTE ----
+    story.append(Paragraph(
+        f"Date du rapport : <b>{report_date}</b><br/>"
+        f"Heure de génération : <b>{datetime.datetime.now().strftime('%H:%M:%S')}</b><br/><br/>"
+        f"Site analysé : <b>{site_name}</b><br/>"
+        f"Localisation : Latitude <b>{latitude}</b>, Longitude <b>{longitude}</b><br/>",
+        normal_style
+    ))
+    story.append(Spacer(1, 12))
 
-        # ================= TABLEAU CH4 =================
-        table_data = [
-            ["Date", "CH₄ (ppb)", "Anomalie", "Niveau de risque"],
-            [
-                date_now,
-                ch4_today,
-                "Oui" if ch4_today > threshold else "Non",
-                "Critique" if ch4_today > threshold else "Normal / Modéré"
-            ]
-        ]
+    # ---- DESCRIPTION ----
+    story.append(Paragraph(
+        "Ce rapport présente les concentrations de méthane observées aujourd'hui sur le site "
+        "ainsi que l’évaluation automatique des anomalies. Le méthane (CH₄) est un gaz inflammable "
+        "dont la présence à forte concentration peut indiquer une fuite, une mauvaise ventilation "
+        "ou une activité industrielle anormale.",
+        normal_style
+    ))
+    story.append(Spacer(1, 12))
 
-        table = Table(table_data, colWidths=[100, 100, 100, 150])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('BACKGRO
+    # ---- TABLEAU ----
+    table_data = [
+        ["Paramètre", "Valeur"],
+        ["Concentration CH₄ (ppb)", ch4_value],
+        ["Anomalie détectée", "Oui" if anomaly_flag else "Non"],
+        ["Action recommandée HSE", action_hse],
+    ]
+
+    table = Table(table_data, colWidths=[180, 260])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#003366")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 0.8, colors.grey)
+    ]))
+
+    story.append(table)
+    story.append(Spacer(1, 18))
+
+    # ---- INTERPRÉTATION ----
+    interpretation = (
+        "L’analyse indique une concentration anormale de méthane, ce qui peut être dû à :<br/>"
+        "- Une fuite de canalisation<br/>"
+        "- Une activité industrielle anormale<br/>"
+        "- Une combustion incomplète<br/>"
+        "- Une émission diffuse ou ponctuelle non contrôlée<br/><br/>"
+        "Les équipes HSE doivent intervenir immédiatement pour localiser précisément la source, "
+        "sécuriser la zone et appliquer les mesures correctives nécessaires."
+    )
+
+    story.append(Paragraph(interpretation, normal_style))
+
+    # ---- GÉNÉRATION DU PDF ----
+    doc.build(story)
+
+    return pdf_path
 
 
 
