@@ -342,26 +342,47 @@ if st.button("Analyser aujourd'hui"):
 st.markdown("## 📄 Générer rapport PDF du jour (professionnel)")
 if st.button("Générer rapport PDF du jour"):
     analysis = st.session_state.get('analysis_today')
-    if analysis is None:
-        st.warning("Aucune analyse du jour stockée. Cliquez d'abord sur 'Analyser aujourd'hui'.")
-    else:
-        report_date = analysis['date'].split()[0]
-        pdf_bytes = generate_pdf_bytes_professional(
-            site_name=site_name,
-            latitude=latitude,
-            longitude=longitude,
-            report_date=report_date,
-            ch4_value=analysis['ch4'],
-            anomaly_flag=analysis['anomaly'],
-            action_hse=analysis['action'],
-            hazop_df=hazop_analysis(analysis['ch4'])
-        )
-        st.download_button(
-            label="⬇ Télécharger le rapport PDF du jour",
-            data=pdf_bytes,
-            file_name=f"Rapport_HSE_CH4_{site_name}_{report_date}.pdf",
-            mime="application/pdf"
-        )
+   with colp2:
+    if st.button("Générer rapport période (PDF)"):
+        if filtered.empty:
+            st.warning("Aucune donnée pour la période sélectionnée.")
+        else:
+            # calcul synthèse
+            val_col = None
+            for c in filtered.columns:
+                if 'ch4' in c.lower() and ('mean' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()):
+                    val_col = c
+                    break
+            if val_col is None:
+                numeric_cols = filtered.select_dtypes(include=[np.number]).columns.tolist()
+                val_col = numeric_cols[0] if numeric_cols else None
+
+            if val_col:
+                mean_period = float(filtered[val_col].mean())
+            else:
+                mean_period = 0.0
+
+            anomaly_flag_period = mean_period >= 1900
+            action_period = ("Alerter, sécuriser la zone et stopper opérations" if anomaly_flag_period else "Surveillance continue")
+            hazop_df_period = hazop_analysis(mean_period)
+
+            report_date_str = f"{pdf_date_range[0]}_to_{pdf_date_range[1]}"
+            pdf_bytes_period = generate_pdf_bytes_professional(
+                site_name=site_name,
+                latitude=latitude,
+                longitude=longitude,
+                report_date=report_date_str,
+                ch4_value=round(mean_period,2),
+                anomaly_flag=anomaly_flag_period,
+                action_hse=action_period,
+                hazop_df=hazop_df_period
+            )
+            st.download_button(
+                label="⬇ Télécharger le rapport PDF (période sélectionnée)",
+                data=pdf_bytes_period,
+                file_name=f"Rapport_HSE_CH4_{site_name}_{report_date_str}.pdf",
+                mime="application/pdf"
+            )
 
 # ===================== SECTION G: Rapport PDF professionnel annuel (bouton) =====================
 st.markdown("## 📄 Générer rapport PDF professionnel (annuel)")
