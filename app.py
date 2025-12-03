@@ -153,26 +153,25 @@ if mean_ch4_year is not None:
     st.table(df_hazop)
 else:
     st.info("Impossible de générer HAZOP : données manquantes pour cette année.")
-# ------------------------ 9) Bouton Analyse CH4 du jour ------------------------
-st.markdown("## 🔍 Analyse CH₄ du jour")
+# ------------------------ 9+10) Analyse CH4 du jour + tableau ------------------------
+st.markdown("## 🔍 Analyse CH₄ du jour avec tableau")
 
 if st.button("Analyser aujourd'hui"):
     # Simulation récupération CH4 du jour
     ch4_today = 1935  # ppb, tu peux changer selon les données réelles
     threshold = 1900  # seuil critique
-    
+
+    # Message simple
     st.write(f"**CH₄ du jour :** {ch4_today} ppb")
     
-    # Détection simple d'anomalie
     if ch4_today > threshold:
         st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
     elif ch4_today > threshold - 50:
         st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
     else:
         st.success("CH₄ normal, aucune anomalie détectée.")
-# ------------------------ 10) Tableau des anomalies ------------------------
-if st.button("Afficher tableau anomalies du jour"):
-    # Exemple : créer un tableau pour le jour
+    
+    # Tableau
     anomalies_today = pd.DataFrame({
         "Date": [datetime.now().strftime("%d/%m/%Y")],
         "Site": [site_name],
