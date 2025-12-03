@@ -183,6 +183,62 @@ if st.button("Analyser aujourd'hui"):
         ]
     })
     st.table(anomalies_today)
+# ------------------------ 11) Génération PDF du jour ------------------------
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+import io
+
+if 'ch4_today' in locals():  # Vérifie si la variable existe
+    if st.button("Générer rapport PDF du jour"):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+
+        # Titre
+        story.append(Paragraph(f"Rapport HSE – CH₄ du {datetime.now().strftime('%d/%m/%Y')}", styles['Title']))
+        story.append(Spacer(1, 20))
+
+        # Infos site
+        story.append(Paragraph(f"<b>Site :</b> {site_name}", styles['Normal']))
+        story.append(Paragraph(f"<b>Latitude :</b> {latitude}", styles['Normal']))
+        story.append(Paragraph(f"<b>Longitude :</b> {longitude}", styles['Normal']))
+        story.append(Spacer(1, 20))
+
+        # Tableau CH4 du jour
+        table_data = [
+            ["Date", "Site", "CH4 (ppb)", "Anomalie", "Action HSE"],
+            [datetime.now().strftime("%d/%m/%Y"), site_name, ch4_today,
+             "Oui" if ch4_today > threshold else "Non",
+             "Alerter, sécuriser la zone et stopper opérations" if ch4_today > threshold else "Surveillance continue"]
+        ]
+        table = Table(table_data, colWidths=[80, 100, 80, 60, 180])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 20))
+
+        # Footer
+        story.append(Paragraph("Rapport généré automatiquement — Système HSE CH₄", styles['Normal']))
+
+        # Générer PDF
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+
+        st.download_button(
+            label="⬇ Télécharger PDF du jour",
+            data=pdf_bytes,
+            file_name=f"Rapport_HSE_CH4_{site_name}_{datetime.now().strftime('%d%m%Y')}.pdf",
+            mime="application/pdf"
+        )
 
 # ------------------------ 8) Génération PDF professionnel ------------------------
 def generate_pdf_bytes_professional(site_name, latitude, longitude, year, mean_ch4, risk_level, actions_reco, hazop_df):
