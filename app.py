@@ -12,11 +12,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
 # ================= CONFIG =================
-
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 
 # ================= INFORMATIONS SITE =================
-
 st.title("Surveillance du Méthane – HSE")
 st.markdown("## Dashboard interactif CH₄ + HSE")
 
@@ -26,7 +24,6 @@ site_name = st.text_input("Nom du site", value="Hassi R'mel")
 site_geom = (latitude, longitude)
 
 # ================= PATHS =================
-
 DATA_DIR = "data"
 MEAN_DIR = os.path.join(DATA_DIR, "Moyenne CH4")
 ANOMALY_DIR = os.path.join(DATA_DIR, "anomaly CH4")
@@ -42,12 +39,10 @@ csv_daily = os.path.join(CSV_DIR, "CH4_daily_2025.csv")
 csv_anomalies = os.path.join(CSV_DIR, "Anomalies_CH4_HassiRmel.csv")
 
 # ================= SESSION STATE INIT =================
-
 if 'analysis_today' not in st.session_state:
-st.session_state['analysis_today'] = None
+    st.session_state['analysis_today'] = None
 
 # ================= UTIL FUNCTIONS =================
-
 def hazop_analysis(ch4_value):
 data = []
 if ch4_value < 1800:
