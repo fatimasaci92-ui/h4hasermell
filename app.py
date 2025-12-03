@@ -170,6 +170,20 @@ if st.button("Analyser aujourd'hui"):
         st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
     else:
         st.success("CH₄ normal, aucune anomalie détectée.")
+# ------------------------ 10) Tableau des anomalies ------------------------
+if st.button("Afficher tableau anomalies du jour"):
+    # Exemple : créer un tableau pour le jour
+    anomalies_today = pd.DataFrame({
+        "Date": [datetime.now().strftime("%d/%m/%Y")],
+        "Site": [site_name],
+        "CH4 (ppb)": [ch4_today],
+        "Anomalie": ["Oui" if ch4_today > threshold else "Non"],
+        "Action HSE": [
+            "Alerter, sécuriser la zone et stopper opérations" if ch4_today > threshold 
+            else "Surveillance continue"
+        ]
+    })
+    st.table(anomalies_today)
 
 # ------------------------ 8) Génération PDF professionnel ------------------------
 def generate_pdf_bytes_professional(site_name, latitude, longitude, year, mean_ch4, risk_level, actions_reco, hazop_df):
