@@ -185,8 +185,8 @@ if st.button("Analyser aujourd'hui"):
     st.table(anomalies_today)
 # ------------------------ 11) Génération PDF du jour ------------------------
 if st.button("Générer rapport PDF du jour"):
-    # Simulation récupération CH4 du jour si pas encore calculé
-    ch4_today = 1935  # ppb, à adapter si tu veux récupérer depuis CSV
+    # Simulation récupération CH4 du jour
+    ch4_today = 1935  # ppb
     threshold = 1900  # seuil critique
 
     buffer = io.BytesIO()
@@ -226,8 +226,22 @@ if st.button("Générer rapport PDF du jour"):
     story.append(table)
     story.append(Spacer(1, 20))
 
-    # Footer
-    story.append(Paragraph("Rapport généré automati
+    # Footer corrigé
+    story.append(Paragraph("Rapport généré automatiquement — Système HSE CH₄", styles['Normal']))
+
+    # Générer PDF
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    # Bouton téléchargement
+    st.download_button(
+        label="⬇ Télécharger PDF du jour",
+        data=pdf_bytes,
+        file_name=f"Rapport_HSE_CH4_{site_name}_{datetime.now().strftime('%d%m%Y')}.pdf",
+        mime="application/pdf"
+    )
+
 
 
 # ------------------------ 8) Génération PDF professionnel ------------------------
