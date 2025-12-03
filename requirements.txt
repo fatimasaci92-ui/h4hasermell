@@ -1,6 +1,7 @@
 streamlit
 pandas
 numpy
-matplotlib
 rasterio
-report
+matplotlib
+pillow
+reportlab
