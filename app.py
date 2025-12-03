@@ -184,63 +184,65 @@ if st.button("Analyser aujourd'hui"):
     })
     st.table(anomalies_today)
 # ------------------------ 11) Génération PDF du jour ------------------------
-if st.button("Générer rapport PDF du jour"):
-    # Simulation récupération CH4 du jour
-    ch4_today = 1935  # ppb
-    threshold = 1900  # seuil critique
+if 'ch4_today' in locals():  # Vérifie si analyse du jour a été faite
+    if st.button("Générer rapport PDF du jour"):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    story = []
+        story = []
 
-    # Titre
-    story.append(Paragraph(f"Rapport HSE – CH₄ du {datetime.now().strftime('%d/%m/%Y')}", styles['Title']))
-    story.append(Spacer(1, 20))
+        # ================= TITRE =================
+        story.append(Paragraph(
+            "<b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b>",
+            styles['Title']
+        ))
+        story.append(Spacer(1, 15))
 
-    # Infos site
-    story.append(Paragraph(f"<b>Site :</b> {site_name}", styles['Normal']))
-    story.append(Paragraph(f"<b>Latitude :</b> {latitude}", styles['Normal']))
-    story.append(Paragraph(f"<b>Longitude :</b> {longitude}", styles['Normal']))
-    story.append(Spacer(1, 20))
+        # ================= META =================
+        date_now = datetime.now().strftime("%d/%m/%Y")
+        hour_now = datetime.now().strftime("%H:%M")
 
-    # Tableau CH4 du jour
-    table_data = [
-        ["Date", "Site", "CH4 (ppb)", "Anomalie", "Action HSE"],
-        [
-            datetime.now().strftime("%d/%m/%Y"),
-            site_name,
-            ch4_today,
-            "Oui" if ch4_today > threshold else "Non",
-            "Alerter, sécuriser la zone et stopper opérations" if ch4_today > threshold else "Surveillance continue"
+        meta_text = f"""
+        <b>Date :</b> {date_now}<br/>
+        <b>Heure :</b> {hour_now}<br/>
+        <b>Site :</b> {site_name}<br/>
+        <b>Latitude :</b> {latitude}<br/>
+        <b>Longitude :</b> {longitude}<br/>
+        """
+        story.append(Paragraph(meta_text, styles['Normal']))
+        story.append(Spacer(1, 15))
+
+        # ================= PARAGRAPHE EXPLICATIF =================
+        explanation = f"""
+        Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté aujourd’hui 
+        sur le site <b>{site_name}</b>.  
+        La surveillance continue du CH₄ permet d’identifier rapidement les anomalies, 
+        d’évaluer le risque HSE, et de recommander les actions nécessaires afin de garantir 
+        un fonctionnement sécurisé du site.
+        """
+        story.append(Paragraph(explanation, styles['Normal']))
+        story.append(Spacer(1, 15))
+
+        # ================= TABLEAU CH4 =================
+        table_data = [
+            ["Date", "CH₄ (ppb)", "Anomalie", "Niveau de risque"],
+            [
+                date_now,
+                ch4_today,
+                "Oui" if ch4_today > threshold else "Non",
+                "Critique" if ch4_today > threshold else "Normal / Modéré"
+            ]
         ]
-    ]
-    table = Table(table_data, colWidths=[80, 100, 80, 60, 180])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('GRID', (0,0), (-1,-1), 1, colors.black),
-    ]))
-    story.append(table)
-    story.append(Spacer(1, 20))
 
-    # Footer corrigé
-    story.append(Paragraph("Rapport généré automatiquement — Système HSE CH₄", styles['Normal']))
-
-    # Générer PDF
-    doc.build(story)
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-
-    # Bouton téléchargement
-    st.download_button(
-        label="⬇ Télécharger PDF du jour",
-        data=pdf_bytes,
-        file_name=f"Rapport_HSE_CH4_{site_name}_{datetime.now().strftime('%d%m%Y')}.pdf",
-        mime="application/pdf"
-    )
+        table = Table(table_data, colWidths=[100, 100, 100, 150])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E3A8A")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+            ('BACKGRO
 
 
 
