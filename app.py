@@ -266,39 +266,57 @@ if st.button("Afficher l'analyse HSE pour l'année sélectionnée"):
 
 # ===================== SECTION E: Analyse CH4 du jour (bouton) =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
+
 if st.button("Analyser aujourd'hui"):
-    # Priorité: lire le CSV daily si présent (export GEE)
+
+    ch4_today = 0.0  # valeur par défaut
+
+    # ===================== LECTURE CSV DAILY =====================
     if os.path.exists(csv_daily):
         try:
-            df_daily_local = pd.read_csv(csv_daily)
-            # on prend la dernière ligne si elle contient colonnes valides
+            # Essayer séparateur automatique
+            try:
+                df_daily_local = pd.read_csv(csv_daily)
+            except:
+                df_daily_local = pd.read_csv(csv_daily, sep=';')
+
             if not df_daily_local.empty:
                 last = df_daily_local.iloc[-1]
-                # Cherche une colonne plausible pour valeur CH4 : 'CH4' ou 'value' ou 'CH4_mean' ou 'CH4_ppb'
-                ch4_candidates = [c for c in df_daily_local.columns if 'ch4' in c.lower() or 'value' in c.lower() or 'ppb' in c.lower()]
+
+                # Colonnes compatibles CH4
+                keywords = ['ch4', 'methane', 'mean', 'value', 'ppb']
+
+                ch4_candidates = [
+                    c for c in df_daily_local.columns
+                    if any(k in c.lower() for k in keywords)
+                ]
+
                 if ch4_candidates:
                     ch4_col = ch4_candidates[0]
                     ch4_today = float(last[ch4_col])
                 else:
-                    # fallback : essayer colonnes numériques
                     numeric_cols = df_daily_local.select_dtypes(include=[np.number]).columns.tolist()
+                    numeric_cols = [c for c in numeric_cols if pd.notna(last[c])]
+
                     if numeric_cols:
                         ch4_today = float(last[numeric_cols[-1]])
                     else:
                         ch4_today = 0.0
             else:
                 ch4_today = 0.0
+
         except Exception as e:
             st.error(f"Erreur lecture CSV daily: {e}")
             ch4_today = 0.0
+
     else:
-        # Si pas de CSV daily, on simule (ou tu peux remplacer par appel GEE)
+        # Pas de CSV, CH4 simulé
         ch4_today = 1935.0
 
+    # ===================== ANALYSE HSE =====================
     threshold = 1900.0
     date_now = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    # Déterminer l'action HSE
     if ch4_today > threshold:
         action_hse = "Alerter, sécuriser la zone et stopper opérations"
     elif ch4_today > threshold - 50:
@@ -306,7 +324,7 @@ if st.button("Analyser aujourd'hui"):
     else:
         action_hse = "Surveillance continue"
 
-    # Stocker en session pour PDF
+    # Enregistrer pour PDF
     st.session_state['analysis_today'] = {
         "date": date_now,
         "ch4": ch4_today,
@@ -315,8 +333,9 @@ if st.button("Analyser aujourd'hui"):
         "threshold": threshold
     }
 
-    # Affichage
+    # ===================== AFFICHAGE =====================
     st.write(f"**CH₄ du jour :** {ch4_today} ppb  ({date_now})")
+
     if ch4_today > threshold:
         st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
     elif ch4_today > threshold - 50:
@@ -324,7 +343,7 @@ if st.button("Analyser aujourd'hui"):
     else:
         st.success("CH₄ normal, aucune anomalie détectée.")
 
-    # Tableau
+    # Tableau des résultats du jour
     anomalies_today_df = pd.DataFrame([{
         "Date": date_now.split()[0],
         "Heure": date_now.split()[1],
@@ -335,6 +354,7 @@ if st.button("Analyser aujourd'hui"):
         "Anomalie": "Oui" if ch4_today > threshold else "Non",
         "Action HSE": action_hse
     }])
+
     st.table(anomalies_today_df)
 
 # ===================== SECTION F: Générer PDF du jour (bouton) =====================
