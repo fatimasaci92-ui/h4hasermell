@@ -267,10 +267,8 @@ if st.button("Afficher l'analyse HSE pour l'année sélectionnée"):
 # ===================== SECTION E: Analyse CH4 du jour (bouton) =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
 
-if st.button("Analyser aujourd'hui"):
-
-    ch4_today = 0.0  # valeur par défaut
-    if os.path.exists(csv_daily):
+# ----- Code de diagnostic CSV -----
+if os.path.exists(csv_daily):
     st.write("📄 Colonnes du CSV daily :")
     try:
         df = pd.read_csv(csv_daily)
@@ -278,7 +276,9 @@ if st.button("Analyser aujourd'hui"):
         st.write(df.tail())
     except:
         st.write("⚠️ Impossible de lire le CSV.")
+# -----------------------------------
 
+if st.button("Analyser aujourd'hui"):
 
     # ===================== LECTURE CSV DAILY =====================
     if os.path.exists(csv_daily):
