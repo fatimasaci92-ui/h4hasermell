@@ -11,11 +11,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-import pandas as pd
-
-df = pd.read_csv(csv_daily)
-st.write(df.tail())
-st.write(df.columns)
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
