@@ -264,59 +264,57 @@ if st.button("Afficher l'analyse HSE pour l'année sélectionnée"):
     else:
         st.warning("CSV annuel introuvable.")
 
-# ===================== SECTION E: Analyse CH4 du jour (bouton corrigée) =====================
-st.markdown("## 🔍 Analyse CH₄ du jour")
+# ===================== SECTION E: Analyse CH4 du jour via GEE =====================
+st.markdown("## 🔍 Analyse CH₄ du jour (automatique via GEE)")
 
-from datetime import date
+import ee
+from datetime import datetime, date
 
-today_str = date.today().strftime("%Y-%m-%d")  # Date du jour
+# === CONFIG SERVICE ACCOUNT ===
+service_account = "gee-access@methane-ai-hse.iam.gserviceaccount.com"
+key_file = "methane-ai-hse-a85cc13c510.json"  # ton fichier JSON
 
-if os.path.exists(csv_daily):
-    try:
-        # Lire CSV daily
-        df_daily_local = pd.read_csv(csv_daily)
+# Initialiser GEE
+credentials = ee.ServiceAccountCredentials(service_account, key_file)
+ee.Initialize(credentials, project="methane-ai-hse")
 
-        # Assurez-vous qu'il y a une colonne date
-        if 'date' not in df_daily_local.columns:
-            st.error("Le CSV daily doit contenir une colonne 'date'.")
-        else:
-            # Normaliser le format des dates
-            df_daily_local['date'] = pd.to_datetime(df_daily_local['date']).dt.strftime("%Y-%m-%d")
-            
-            # Chercher la ligne correspondant à aujourd'hui
-            today_row = df_daily_local[df_daily_local['date'] == today_str]
-            
-            if today_row.empty:
-                st.warning(f"Aucune donnée CH₄ disponible pour aujourd'hui ({today_str}).")
-                ch4_today = np.nan
-            else:
-                # Trouver colonne CH4 automatiquement
-                keywords = ['ch4', 'methane', 'mean', 'value', 'ppb']
-                ch4_candidates = [c for c in df_daily_local.columns if any(k in c.lower() for k in keywords)]
-                
-                if ch4_candidates:
-                    ch4_col = ch4_candidates[0]
-                    ch4_today = float(today_row[ch4_col].values[0])
-                else:
-                    st.error("Impossible de trouver une colonne CH₄ dans le CSV.")
-                    ch4_today = np.nan
+# Définir zone du site
+site_geom = ee.Geometry.Point([longitude, latitude]).buffer(150)  # 150m autour du point
 
-    except Exception as e:
-        st.error(f"Erreur lecture CSV daily: {e}")
-        ch4_today = np.nan
-else:
-    st.warning("CSV daily introuvable.")
-    ch4_today = np.nan
+# Date du jour
+today = date.today()
+today_str = today.strftime("%Y-%m-%d")
+start_date = today_str
+end_date = today_str  # GEE peut gérer la date unique
+
+# Récupérer image CH4 pour aujourd'hui
+try:
+    dataset = ee.ImageCollection("COPERNICUS/S5P/NRTI/L3_CH4") \
+        .filterDate(start_date, end_date) \
+        .select("CH4_column_volume_mixing_ratio_dry_air") \
+        .mean()  # moyenne sur la journée
+
+    # Extraire valeur moyenne sur la zone
+    ch4_today = dataset.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=site_geom,
+        scale=1000  # résolution 1km
+    ).getInfo()['CH4_column_volume_mixing_ratio_dry_air'] * 1e9  # convertir en ppb
+
+except Exception as e:
+    st.error(f"Erreur récupération CH₄ depuis GEE : {e}")
+    ch4_today = None
 
 # Bouton pour afficher le CH4 du jour
 if st.button("Analyser aujourd'hui"):
+
     date_now = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    # ===================== ANALYSE HSE =====================
-    threshold = 1900.0
-    if pd.isna(ch4_today):
-        st.warning("Impossible de calculer CH₄ aujourd'hui.")
+    if ch4_today is None:
+        st.warning("Impossible de récupérer CH₄ aujourd'hui.")
     else:
+        # ===================== ANALYSE HSE =====================
+        threshold = 1900.0
         if ch4_today > threshold:
             action_hse = "Alerter, sécuriser la zone et stopper opérations"
         elif ch4_today > threshold - 50:
@@ -334,7 +332,7 @@ if st.button("Analyser aujourd'hui"):
         }
 
         # ===================== AFFICHAGE =====================
-        st.write(f"**CH₄ du jour :** {ch4_today} ppb  ({date_now})")
+        st.write(f"**CH₄ du jour :** {ch4_today:.2f} ppb  ({date_now})")
 
         if ch4_today > threshold:
             st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
