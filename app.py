@@ -533,4 +533,15 @@ credentials = ee.ServiceAccountCredentials(
     service_account,
     "C:/keys/methane-ai-hse.json"
 )
-ee.Initialize(credentials)
+import os
+import json
+import ee
+
+ee_key_json = os.environ.get("EE_KEY_JSON")
+if ee_key_json:
+    credentials_dict = json.loads(ee_key_json)
+    credentials = ee.ServiceAccountCredentials(credentials_dict["client_email"], None, key_data=ee_key_json)
+    ee.Initialize(credentials)
+else:
+    st.error("❌ Clé EE_KEY_JSON non trouvée dans les Secrets.")
+
