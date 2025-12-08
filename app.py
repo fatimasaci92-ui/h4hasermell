@@ -553,8 +553,5 @@ if ee_key_json:
     ee.Initialize(credentials)
 else:
     st.error("❌ Clé EE_KEY_JSON non trouvée dans les Secrets.")
-    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
-               .filterBounds(point) \
-               .filterDate('2025-01-01', '2025-01-10')
-
+   
 
