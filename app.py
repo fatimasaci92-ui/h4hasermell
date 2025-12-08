@@ -14,14 +14,28 @@ from reportlab.lib import colors
 import ee
 
 import ee
+import os
+import json
 
-# ------------------ INITIALISATION EE ------------------
-service_account = "gee-access@methane-ai-hse.iam.gserviceaccount.com"
-key_file = "methane-ai-hse-a85cc13c510a.json"
+# ----------- Initialisation EE depuis Secret -----------
+# Lire le secret stocké dans Streamlit Cloud
+ee_key_json_str = st.secrets["EE_KEY_JSON"]  # ici le nom du secret
+ee_key_json = json.loads(ee_key_json_str)
 
-try:
-    credentials = ee.ServiceAccountCredentials(service_account, key_file)
-    ee.Initialize(credentials)
+# Créer un fichier temporaire pour EE (Streamlit Cloud ne permet pas de stocker JSON permanent)
+import tempfile
+with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as f:
+    json.dump(ee_key_json, f)
+    temp_json_path = f.name
+
+# Initialiser Earth Engine
+service_account = ee_key_json["client_email"]
+credentials = ee.ServiceAccountCredentials(service_account, temp_json_path)
+ee.Initialize(credentials)
+
+# Supprimer le fichier temporaire après initialisation
+os.remove(temp_json_path)
+
 except Exception as e:
     st.error("❌ Erreur Earth Engine : vérifiez la clé JSON dans votre repository.")
     st.stop()
