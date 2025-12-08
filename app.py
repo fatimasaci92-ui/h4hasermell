@@ -11,6 +11,46 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+import ee
+
+# ================= INIT EARTH ENGINE =================
+try:
+    ee.Initialize()
+except:
+    ee.Authenticate()
+    ee.Initialize()
+
+# ====== Fonction pour récupérer la dernière valeur CH4 depuis GEE ======
+def get_latest_ch4_from_gee(lat, lon):
+    """Retourne (valeur_CH4_ppb, date_image) depuis la dernière image TROPOMI."""
+    point = ee.Geometry.Point([lon, lat])
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterBounds(point)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
+    )
+
+    image = collection.first()
+    if image is None:
+        return None, None
+
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=7000
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    ch4_ppb = ee.Number(value).getInfo()
+    date_img = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+
+    if ch4_ppb is None:
+        return None, date_img
+
+    # conversion mol/mol → ppb
+    ch4_ppb = float(ch4_ppb) * 1e9
+    return ch4_ppb, date_img
 
 # ================= CONFIG =================
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
@@ -279,6 +319,57 @@ if os.path.exists(csv_daily):
 # -----------------------------------
 
 if st.button("Analyser aujourd'hui"):
+
+    st.info("Connexion à Google Earth Engine...")
+
+    ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
+
+    if ch4_today is None:
+        st.error("⚠️ Pas de donnée TROPOMI disponible pour cette zone aujourd’hui (nuages ou absence de passage).")
+        st.stop()
+
+    # Analyse HSE automatique
+    threshold = 1900.0
+
+    if ch4_today > threshold:
+        action_hse = "Alerter, sécuriser la zone et stopper opérations"
+    elif ch4_today > threshold - 50:
+        action_hse = "Surveillance renforcée et vérification des torches"
+    else:
+        action_hse = "Surveillance continue"
+
+    # Stocker l'analyse pour PDF
+    st.session_state['analysis_today'] = {
+        "date": date_img,
+        "ch4": ch4_today,
+        "anomaly": ch4_today > threshold,
+        "action": action_hse,
+        "threshold": threshold
+    }
+
+    # --- Affichage résultats ---
+    st.write(f"**Dernière donnée TROPOMI disponible :** {date_img}")
+    st.write(f"**CH₄ :** {ch4_today:.1f} ppb")
+
+    if ch4_today > threshold:
+        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+    elif ch4_today > threshold - 50:
+        st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
+    else:
+        st.success("CH₄ normal, aucune anomalie détectée.")
+
+    anomalies_today_df = pd.DataFrame([{
+        "Date": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH4 (ppb)": ch4_today,
+        "Anomalie": "Oui" if ch4_today > threshold else "Non",
+        "Action HSE": action_hse
+    }])
+
+    st.table(anomalies_today_df)
+
 
     # ===================== LECTURE CSV DAILY =====================
     if os.path.exists(csv_daily):
