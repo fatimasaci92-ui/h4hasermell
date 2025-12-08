@@ -13,12 +13,19 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 import ee
 
-# ================= INIT EARTH ENGINE =================
+import ee
+
+# ------------------ INITIALISATION EE ------------------
+service_account = "gee-access@methane-ai-hse.iam.gserviceaccount.com"
+key_file = "methane-ai-hse-a85cc13c510a.json"
+
 try:
-    ee.Initialize()
-except:
-    ee.Authenticate()
-    ee.Initialize()
+    credentials = ee.ServiceAccountCredentials(service_account, key_file)
+    ee.Initialize(credentials)
+except Exception as e:
+    st.error("❌ Erreur Earth Engine : vérifiez la clé JSON dans votre repository.")
+    st.stop()
+
 
 # ====== Fonction pour récupérer la dernière valeur CH4 depuis GEE ======
 def get_latest_ch4_from_gee(lat, lon):
