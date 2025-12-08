@@ -36,11 +36,6 @@ ee.Initialize(credentials)
 # Supprimer le fichier temporaire après initialisation
 os.remove(temp_json_path)
 
-except Exception as e:
-    st.error("❌ Erreur Earth Engine : vérifiez la clé JSON dans votre repository.")
-    st.stop()
-
-
 # ====== Fonction pour récupérer la dernière valeur CH4 depuis GEE ======
 def get_latest_ch4_from_gee(lat, lon):
     """Retourne (valeur_CH4_ppb, date_image) depuis la dernière image TROPOMI."""
