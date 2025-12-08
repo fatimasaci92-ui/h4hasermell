@@ -28,7 +28,6 @@ site_geom = ee.Geometry.Point([longitude, latitude])
 
 def fetch_last_ch4(site_geom):
 """Récupère la dernière valeur TROPOMI CH₄ disponible pour le site."""
-import time
 import ee
 
 ```
@@ -40,7 +39,6 @@ latest_img = dataset.first()
 if latest_img is None:
     return None, None
 
-# récupérer valeur CH4 du pixel du site
 ch4_value = latest_img.reduceRegion(
     reducer=ee.Reducer.mean(),
     geometry=site_geom,
