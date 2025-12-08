@@ -528,3 +528,9 @@ if st.button("Générer rapport PDF professionnel (année sélectionnée)"):
             st.error(f"Erreur génération PDF annuel: {e}")
     else:
         st.warning("CSV annuel introuvable, impossible de générer le PDF annuel.")
+service_account = "xxxx@xxxx.iam.gserviceaccount.com"
+credentials = ee.ServiceAccountCredentials(
+    service_account,
+    "C:/keys/methane-ai-hse.json"
+)
+ee.Initialize(credentials)
