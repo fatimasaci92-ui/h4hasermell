@@ -14,6 +14,77 @@ from reportlab.lib import colors
 import ee
 import json
 import tempfile
+import ee
+import streamlit as st
+
+# Authentification Earth Engine
+ee.Initialize()
+
+# Zone Hassi R'mel
+hassiRmel = ee.Geometry.Point([3.235, 32.930]).buffer(30000)
+
+# Dates
+today = ee.Date(ee.Date.now())
+startDate = today.advance(-30, 'day')
+
+# Collection CH4
+collection = (ee.ImageCollection('COPERNICUS/S5P/OFFL/L3_CH4')
+              .filterDate(startDate, today)
+              .select('CH4_column_volume_mixing_ratio_dry_air'))
+
+# Fonction pour ajouter le nombre de pixels valides
+def addValidPixels(img):
+    count = img.reduceRegion(
+        reducer=ee.Reducer.count(),
+        geometry=hassiRmel,
+        scale=1000,
+        maxPixels=1e13
+    ).get('CH4_column_volume_mixing_ratio_dry_air')
+    return img.set('valid_pixel_count', count)
+
+# Images avec au moins 1 pixel valide
+valid = collection.map(addValidPixels).filter(
+    ee.Filter.gt('valid_pixel_count', 0)
+)
+
+# Dernière image valide
+last_valid = valid.sort('system:time_start', False).first()
+
+# Vérification si on a une image aujourd'hui
+today_img = collection.filterDate(today, today.advance(1, 'day')).first()
+
+# Détection
+if today_img is None:
+    st.warning("Pas de donnée TROPOMI disponible aujourd’hui (nuages ou absence de passage).")
+    st.info("➡️ Affichage de la DERNIÈRE image valide disponible.")
+
+# Extraction des résultats
+date_last = ee.Date(last_valid.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+ch4_value = last_valid.reduceRegion(
+    reducer=ee.Reducer.mean(),
+    geometry=hassiRmel,
+    scale=1000,
+    maxPixels=1e13
+).get('CH4_column_volume_mixing_ratio_dry_air')
+
+if ch4_value is not None:
+    ch4_value = float(ch4_value.getInfo())
+
+# Affichage
+st.subheader("Analyse CH4 à Hassi R'mel")
+st.write("📅 **Date de la dernière image disponible :**", date_last)
+st.write("🟢 **Concentration moyenne CH₄ (ppm)** :", ch4_value)
+
+# URL pour afficher l'image
+url = last_valid.getMapId({
+    'min': 1800,
+    'max': 2000,
+    'palette': ['blue','green','yellow','red']
+})['tile_fetcher'].url_format
+
+st.write("🛰️ Carte de la dernière image TROPOMI :")
+st.write(url)
 
 # ================= INITIALISATION GOOGLE EARTH ENGINE =================
 try:
