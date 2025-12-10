@@ -1,4 +1,4 @@
-# app.py – VERSION COMPLÈTE CORRIGÉE
+# app.py – VERSION COMPLÈTE ET SÉCURISÉE
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,7 +15,7 @@ import ee
 import json
 import tempfile
 
-# ================= INITIALISATION GOOGLE EARTH ENGINE =================
+# ================= INITIALISATION GEE =================
 try:
     ee_key_json_str = st.secrets["EE_KEY_JSON"]
     ee_key_json = json.loads(ee_key_json_str)
@@ -55,32 +55,26 @@ if 'analysis_today' not in st.session_state:
     st.session_state['analysis_today'] = None
 
 # ================= FONCTIONS =================
-def get_latest_ch4_from_gee(lat, lon):
+def get_last_valid_image(lat, lon):
+    """Retourne la dernière image TROPOMI avec valeur CH4 valide"""
     point = ee.Geometry.Point([lon, lat])
     collection = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
                   .filterBounds(point)
                   .select("CH4_column_volume_mixing_ratio_dry_air")
                   .sort("system:time_start", False))
-    image = collection.first()
-    if image is None:
-        return None, None
-
-    value = image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=7000
-    ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-    if value is None:
-        return None, ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-
+    # Parcourir la collection jusqu'à trouver valeur valide
     try:
-        ch4_ppb = float(ee.Number(value).getInfo())*1e9
+        imgs = collection.getInfo().get('features', [])
     except:
-        ch4_ppb = None
+        return 0.0, "Aucune image disponible"
 
-    date_img = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-    return ch4_ppb, date_img
+    for img in imgs:
+        val = img['properties'].get("CH4_column_volume_mixing_ratio_dry_air")
+        if val is not None:
+            date_img = img['properties']['system:time_start'][:10]
+            ch4_ppb = float(val)*1e9
+            return ch4_ppb, date_img
+    return 0.0, "Aucune image disponible"
 
 def hazop_analysis(ch4_value):
     data = []
@@ -102,11 +96,9 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
 
     story.append(Paragraph(f"<para align='center'><b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b></para>", styles["Title"]))
     story.append(Spacer(1,12))
-
     meta = f"<b>Date :</b> {report_date}<br/><b>Heure :</b> {datetime.now().strftime('%H:%M')}<br/><b>Site :</b> {site_name}<br/><b>Latitude :</b> {latitude}<br/><b>Longitude :</b> {longitude}<br/>"
     story.append(Paragraph(meta, styles["Normal"]))
     story.append(Spacer(1,12))
-
     explanation = f"Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté sur le site <b>{site_name}</b>."
     story.append(Paragraph(explanation, styles["Normal"]))
     story.append(Spacer(1,12))
@@ -154,30 +146,7 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
 # ===================== ANALYSE DU JOUR =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
 if st.button("Analyser aujourd'hui"):
-    ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
-
-    # si aucune image aujourd'hui
-    if ch4_today is None:
-        st.warning("⚠️ Pas de donnée TROPOMI pour aujourd'hui, affichage de la dernière image disponible")
-        collection = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-                      .filterBounds(ee.Geometry.Point([longitude, latitude]))
-                      .select("CH4_column_volume_mixing_ratio_dry_air")
-                      .sort("system:time_start", False))
-        last_image = collection.first()
-        if last_image is not None:
-            value = last_image.reduceRegion(
-                ee.Reducer.mean(),
-                geometry=ee.Geometry.Point([longitude, latitude]),
-                scale=7000
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
-            if value is not None:
-                ch4_today = float(ee.Number(value).getInfo()) * 1e9
-            else:
-                ch4_today = 0.0
-            date_img = ee.Date(last_image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-        else:
-            ch4_today = 0.0
-            date_img = "Aucune image disponible"
+    ch4_today, date_img = get_last_valid_image(latitude, longitude)
 
     threshold = 1900
     action_hse = "Surveillance continue"
