@@ -1,4 +1,4 @@
-# app.py – VERSION COMPLÈTE, CORRIGÉE ET FONCTIONNELLE
+# app.py – VERSION COMPLÈTE AVEC CORRECTION DE LA DERNIÈRE IMAGE
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,7 +19,7 @@ import tempfile
 try:
     ee_key_json_str = st.secrets["EE_KEY_JSON"]
     ee_key_json = json.loads(ee_key_json_str)
-
+    
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as f:
         json.dump(ee_key_json, f)
         temp_json_path = f.name
@@ -50,38 +50,49 @@ CSV_DIR = os.path.join(DATA_DIR, "2020 2024")
 
 mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2026)}
 anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2026)}
+csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
 csv_annual = os.path.join(CSV_DIR, "CH4_annual_2025.csv")
+csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
 csv_daily = os.path.join(CSV_DIR, "CH4_daily_2025.csv")
 
-# ================= FONCTIONS =================
+# ================= SESSION STATE =================
+if 'analysis_today' not in st.session_state:
+    st.session_state['analysis_today'] = None
 
-def get_last_valid_image(lat, lon):
+# ================= FONCTIONS =================
+def get_latest_ch4_from_gee(lat, lon):
+    """
+    Retourne (valeur_CH4_ppb, date_image, no_pass_today)
+    no_pass_today = True si le satellite n'a pas passé aujourd'hui
+    """
     point = ee.Geometry.Point([lon, lat])
     collection = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
                   .filterBounds(point)
                   .select("CH4_column_volume_mixing_ratio_dry_air")
                   .sort("system:time_start", False))
 
-    image = collection.first()
-    if image is None:
-        return 0.0, None, True
+    images = collection.toList(collection.size())
+    n = images.size().getInfo()
 
-    value = image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=7000
-    ).get("CH4_column_volume_mixing_ratio_dry_air")
+    for i in range(n):
+        image = ee.Image(images.get(i))
+        date_img = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=7000
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-    try:
-        ch4_ppb = float(ee.Number(value).getInfo()) * 1e9
-    except:
-        ch4_ppb = 0.0
+        if value is not None:
+            try:
+                ch4_ppb = float(ee.Number(value).getInfo()) * 1e9
+                today_str = datetime.utcnow().strftime("%Y-%m-%d")
+                no_pass_today = (date_img != today_str)
+                return ch4_ppb, date_img, no_pass_today
+            except:
+                continue
 
-    date_img = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    no_pass_today = (date_img != today_str)
-
-    return ch4_ppb, date_img, no_pass_today
+    return 0.0, None, True
 
 def hazop_analysis(ch4_value):
     data = []
@@ -103,6 +114,7 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
 
     story.append(Paragraph("<para align='center'><b><font size=16>RAPPORT HSE – SURVEILLANCE MÉTHANE (CH₄)</font></b></para>", styles["Title"]))
     story.append(Spacer(1, 12))
+
     meta = f"""
     <b>Date :</b> {report_date}<br/>
     <b>Heure :</b> {datetime.now().strftime("%H:%M")}<br/>
@@ -112,7 +124,12 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
     """
     story.append(Paragraph(meta, styles["Normal"]))
     story.append(Spacer(1, 12))
-    explanation = f"Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté sur le site <b>{site_name}</b>. La surveillance du CH₄ permet d'identifier les anomalies, d'évaluer le niveau de risque HSE et de recommander des actions."
+
+    explanation = (
+        "Ce rapport présente l'analyse automatisée du niveau de méthane (CH₄) détecté "
+        f"sur le site <b>{site_name}</b>. La surveillance du CH₄ permet d'identifier les anomalies, "
+        "d'évaluer le niveau de risque HSE et de recommander des actions."
+    )
     story.append(Paragraph(explanation, styles["Normal"]))
     story.append(Spacer(1, 12))
 
@@ -153,33 +170,25 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
 
     footer = "<para align='center'><font size=9 color='#6B7280'>Rapport généré automatiquement — Système HSE CH₄</font></para>"
     story.append(Paragraph(footer, styles["Normal"]))
+
     doc.build(story)
     pdf_data = buffer.getvalue()
     buffer.close()
     return pdf_data
 
-# ===================== SECTION ANALYSE DU JOUR =====================
+# ===================== SECTION E: Analyse CH4 du jour =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
 if st.button("Analyser aujourd'hui"):
-    ch4_today, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
 
-if no_pass_today:
-    st.error(f"⚠️ Pas de passage du satellite aujourd'hui. Dernière image disponible : {date_img}")
+    ch4_today, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
 
     if no_pass_today:
         st.error(f"⚠️ Pas de passage du satellite aujourd'hui. Dernière image disponible : {date_img}")
 
-        # Carte rouge pour signaler absence
-        fig, ax = plt.subplots(figsize=(6,5))
-        arr = np.ones((10,10,3))
-        ax.imshow(arr, cmap=None)
-        ax.set_facecolor("red")
-        ax.set_title(f"Pas d'image aujourd'hui. Dernière image : {date_img}")
-        ax.axis("off")
-        st.pyplot(fig)
-    else:
-        st.success(f"Donnée du jour : {date_img}")
+    if ch4_today is None or ch4_today == 0.0:
+        st.warning("⚠️ Aucune valeur CH₄ valide trouvée.")
 
+    st.write(f"**Date de l'image utilisée :** {date_img}")
     st.write(f"**CH₄ :** {ch4_today:.1f} ppb")
 
     # Analyse HSE
@@ -194,104 +203,48 @@ if no_pass_today:
         action_hse = "Surveillance continue"
         st.success("CH₄ normal, aucune anomalie détectée.")
 
+    # Stocker pour PDF
     st.session_state['analysis_today'] = {
         "date": date_img,
         "ch4": ch4_today,
-        "anomaly": ch4_today>threshold,
+        "anomaly": ch4_today > threshold,
         "action": action_hse
     }
 
-    # Tableau
+    # Tableau résultats du jour
     anomalies_today_df = pd.DataFrame([{
         "Date": date_img,
         "Site": site_name,
         "Latitude": latitude,
         "Longitude": longitude,
         "CH4 (ppb)": ch4_today,
-        "Anomalie": "Oui" if ch4_today>threshold else "Non",
+        "Anomalie": "Oui" if ch4_today > threshold else "Non",
         "Action HSE": action_hse
     }])
     st.table(anomalies_today_df)
 
-    # PDF du jour
-    pdf_bytes = generate_pdf_bytes_professional(
-        site_name=site_name,
-        latitude=latitude,
-        longitude=longitude,
-        report_date=date_img,
-        ch4_value=ch4_today,
-        anomaly_flag=ch4_today>threshold,
-        action_hse=action_hse,
-        hazop_df=hazop_analysis(ch4_today)
-    )
-    st.download_button(
-        label="⬇ Télécharger le rapport PDF du jour",
-        data=pdf_bytes,
-        file_name=f"Rapport_HSE_CH4_{site_name}_{date_img}.pdf",
-        mime="application/pdf"
-    )
-
-# ===================== SECTION HISTORIQUE 2020-2025 =====================
-st.markdown("## 🗓️ Historique CH₄ (2020 → 2025)")
-year_choice = st.selectbox("Sélectionner l'année", list(range(2020,2026)))
-
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader(f"CH₄ moyen {year_choice}")
-    mean_path = mean_files.get(year_choice)
-    if mean_path and os.path.exists(mean_path):
-        with rasterio.open(mean_path) as src:
-            arr = src.read(1)
-        arr[arr <= 0] = np.nan
-        fig, ax = plt.subplots(figsize=(6,5))
-        ax.imshow(arr, cmap='viridis')
-        ax.axis('off')
-        st.pyplot(fig)
+# ===================== SECTION F: Générer PDF du jour =====================
+st.markdown("## 📄 Générer rapport PDF du jour (professionnel)")
+if st.button("Générer rapport PDF du jour"):
+    analysis = st.session_state.get('analysis_today')
+    if analysis is None:
+        st.warning("Aucune analyse du jour stockée. Cliquez d'abord sur 'Analyser aujourd'hui'.")
     else:
-        st.warning("Fichier CH₄ moyen introuvable.")
+        pdf_bytes = generate_pdf_bytes_professional(
+            site_name=site_name,
+            latitude=latitude,
+            longitude=longitude,
+            report_date=analysis['date'],
+            ch4_value=analysis['ch4'],
+            anomaly_flag=analysis['anomaly'],
+            action_hse=analysis['action'],
+            hazop_df=hazop_analysis(analysis['ch4'])
+        )
+        st.download_button(
+            label="⬇ Télécharger le rapport PDF du jour",
+            data=pdf_bytes,
+            file_name=f"Rapport_HSE_CH4_{site_name}_{analysis['date']}.pdf",
+            mime="application/pdf"
+        )
 
-with col2:
-    st.subheader(f"Anomalie CH₄ {year_choice}")
-    an_path = anomaly_files.get(year_choice)
-    if an_path and os.path.exists(an_path):
-        with rasterio.open(an_path) as src:
-            arr2 = src.read(1)
-        arr2[arr2==0] = np.nan
-        fig2, ax2 = plt.subplots(figsize=(6,5))
-        ax2.imshow(arr2, cmap='coolwarm')
-        ax2.axis('off')
-        st.pyplot(fig2)
-    else:
-        st.warning("Fichier anomalie CH₄ introuvable.")
-
-# PDF annuel
-if st.button("Générer PDF professionnel annuel"):
-    csv_file = csv_annual
-    if os.path.exists(csv_file):
-        df_annual_local = pd.read_csv(csv_file)
-        if year_choice in df_annual_local['year'].values:
-            mean_ch4_year = float(df_annual_local[df_annual_local['year']==year_choice]['CH4_mean'].values[0])
-            threshold = 1900
-            action = ("Alerter..." if mean_ch4_year>=threshold else
-                      "Surveillance renforcée..." if mean_ch4_year>=threshold-50 else
-                      "Surveillance continue")
-            pdf_bytes = generate_pdf_bytes_professional(
-                site_name=site_name,
-                latitude=latitude,
-                longitude=longitude,
-                report_date=str(year_choice),
-                ch4_value=mean_ch4_year,
-                anomaly_flag=(mean_ch4_year>=threshold),
-                action_hse=action,
-                hazop_df=hazop_analysis(mean_ch4_year)
-            )
-            st.download_button(
-                label="⬇ Télécharger PDF annuel",
-                data=pdf_bytes,
-                file_name=f"Rapport_HSE_CH4_{site_name}_{year_choice}.pdf",
-                mime="application/pdf"
-            )
-        else:
-            st.warning("Pas de donnée CH₄ pour cette année.")
-    else:
-        st.warning("CSV annuel introuvable.")
+st.success("✅ Application initialisée et prête à l'emploi avec Google Earth Engine")
