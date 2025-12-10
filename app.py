@@ -492,5 +492,7 @@ if st.button("Générer rapport PDF professionnel (année sélectionnée)"):
     else:
         st.warning("CSV annuel introuvable, impossible de générer le PDF annuel.")
 st.success("✅ Application initialisée et prête à l'emploi avec Google Earth Engine")
+st.write("Dernière image disponible :", last_image_date)
+st.write("Dernière image valide :", last_valid_date)
 
 
