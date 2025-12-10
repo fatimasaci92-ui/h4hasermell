@@ -1,4 +1,4 @@
-# app.py – VERSION FINALE – SURVEILLANCE CH4
+# app.py – VERSION FINALE + ANALYSE DU JOUR + HAZOP + PDF
 
 import streamlit as st
 import pandas as pd
@@ -35,7 +35,7 @@ except Exception as e:
 # ================= CONFIG =================
 st.set_page_config(page_title="Surveillance CH4 – HSE", layout="wide")
 st.title("Surveillance du Méthane – HSE")
-st.markdown("## Dashboard interactif CH₄ + HSE")
+st.markdown("## Dashboard interactif CH₄ + HSE + HAZOP")
 
 # ================= INFOS SITE =================
 latitude = st.number_input("Latitude du site", value=32.93, format="%.6f")
@@ -140,12 +140,81 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
     buffer.close()
     return pdf_data
 
-# ===================== SECTION 1 : Analyse par date sélectionnée =====================
-st.markdown("## 📅 Analyse CH₄ par date")
+# ===================== SECTION 1 : Analyse du jour =====================
+st.markdown("## 🔍 Analyse CH₄ du jour")
+if st.button("Analyser aujourd'hui"):
+    ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
+    
+    if ch4_today is None:
+        st.warning("⚠️ Pas de donnée TROPOMI pour aujourd'hui, utilisation de la dernière image disponible")
+        # On reprend la dernière image disponible
+        ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
+        if ch4_today is None:
+            ch4_today = 0.0
+            date_img = "Dernière image disponible"
+
+    threshold = 1900
+    action_hse = "Surveillance continue"
+
+    if ch4_today > 0:
+        if ch4_today > threshold:
+            action_hse = "Alerter, sécuriser zone et stopper opérations"
+        elif ch4_today > threshold - 50:
+            action_hse = "Surveillance renforcée et vérification torches"
+
+    st.session_state['analysis_today'] = {
+        "date": date_img,
+        "ch4": ch4_today,
+        "anomaly": ch4_today > threshold if ch4_today>0 else False,
+        "action": action_hse
+    }
+
+    st.write(f"**Date image :** {date_img}")
+    st.write(f"**CH₄ :** {ch4_today:.1f} ppb")
+    if ch4_today > threshold:
+        st.error("⚠️ Niveau CH₄ critique")
+    elif ch4_today > threshold-50:
+        st.warning("⚠️ CH₄ élevé")
+    else:
+        st.success("CH₄ normal")
+    df_today = pd.DataFrame([{"Date":date_img,"CH4 ppb":ch4_today,"Anomalie":"Oui" if ch4_today>threshold else "Non","Action HSE":action_hse}])
+    st.table(df_today)
+
+    # PDF du jour
+    if st.button("Générer PDF du jour"):
+        analysis = st.session_state.get('analysis_today')
+        if analysis and analysis['ch4'] is not None:
+            pdf_bytes = generate_pdf_bytes_professional(
+                site_name, latitude, longitude,
+                analysis['date'], analysis['ch4'],
+                analysis['anomaly'], analysis['action'],
+                hazop_analysis(analysis['ch4'])
+            )
+            st.download_button("⬇ Télécharger PDF du jour", data=pdf_bytes,
+                               file_name=f"Rapport_CH4_{site_name}_{analysis['date']}.pdf",
+                               mime="application/pdf")
+
+# ===================== SECTION 2 : Analyse HAZOP =====================
+st.markdown("## ⚠️ Analyse HAZOP")
+hazop_ch4 = st.number_input("Entrer valeur CH₄ (ppb) pour HAZOP", min_value=0, max_value=5000, value=1850)
+if st.button("Afficher tableau HAZOP"):
+    df_hazop = hazop_analysis(hazop_ch4)
+    st.table(df_hazop)
+    # PDF HAZOP
+    pdf_bytes = generate_pdf_bytes_professional(
+        site_name, latitude, longitude,
+        f"HAZOP_{datetime.now().strftime('%Y%m%d_%H%M')}",
+        hazop_ch4, hazop_ch4>1900, "Action HSE recommandée", df_hazop
+    )
+    st.download_button("⬇ Télécharger PDF HAZOP", data=pdf_bytes,
+                       file_name=f"HAZOP_CH4_{site_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                       mime="application/pdf")
+
+# ===================== SECTION 3 : Analyse historique par année =====================
+st.markdown("## 📅 Analyse historique CH₄ par année")
 available_years = [y for y,p in mean_files.items() if os.path.exists(p)]
 if available_years:
     year_choice = st.selectbox("Sélectionner l'année", available_years)
-    # Afficher carte Moyenne
     mean_path = mean_files.get(year_choice)
     an_path = anomaly_files.get(year_choice)
     col1,col2 = st.columns(2)
@@ -173,50 +242,16 @@ if available_years:
             st.pyplot(fig2)
         else:
             st.warning("Fichier anomalie CH₄ introuvable")
-    # Bouton PDF pour année
     if st.button(f"Générer PDF CH₄ {year_choice}"):
         if mean_path and os.path.exists(mean_path):
             ch4_value = np.nanmean(arr)
             action_hse = "Surveillance continue"
-            pdf_bytes = generate_pdf_bytes_professional(site_name,latitude,longitude,str(year_choice),
-                                                        ch4_value, ch4_value>1900, action_hse, hazop_analysis(ch4_value))
+            pdf_bytes = generate_pdf_bytes_professional(
+                site_name, latitude, longitude, str(year_choice),
+                ch4_value, ch4_value>1900, action_hse, hazop_analysis(ch4_value)
+            )
             st.download_button("⬇ Télécharger PDF", data=pdf_bytes,
-                               file_name=f"Rapport_CH4_{site_name}_{year_choice}.pdf", mime="application/pdf")
+                               file_name=f"Rapport_CH4_{site_name}_{year_choice}.pdf",
+                               mime="application/pdf")
 else:
     st.warning("Aucune année disponible pour analyse")
-
-# ===================== SECTION 2 : Analyse du jour =====================
-st.markdown("## 🔍 Analyse CH₄ du jour")
-if st.button("Analyser aujourd'hui"):
-    ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
-    if ch4_today is None:
-        st.warning("⚠️ Pas de donnée TROPOMI pour aujourd'hui, affichage de la dernière image disponible")
-        # récupérer la dernière image TROPOMI disponible
-        ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
-    threshold=1900
-    action_hse = "Surveillance continue"
-    if ch4_today:
-        if ch4_today>threshold:
-            action_hse="Alerter, sécuriser zone et stopper opérations"
-        elif ch4_today>threshold-50:
-            action_hse="Surveillance renforcée et vérification torches"
-    st.session_state['analysis_today'] = {"date":date_img,"ch4":ch4_today,"anomaly":ch4_today>threshold,"action":action_hse}
-    st.write(f"**Date image :** {date_img}")
-    st.write(f"**CH₄ :** {ch4_today:.1f} ppb")
-    if ch4_today>threshold:
-        st.error("⚠️ Niveau CH₄ critique")
-    elif ch4_today>threshold-50:
-        st.warning("⚠️ CH₄ élevé")
-    else:
-        st.success("CH₄ normal")
-    df_today = pd.DataFrame([{"Date":date_img,"CH4 ppb":ch4_today,"Anomalie":"Oui" if ch4_today>threshold else "Non","Action HSE":action_hse}])
-    st.table(df_today)
-    # PDF pour analyse du jour
-    if st.button("Générer PDF du jour"):
-        analysis = st.session_state.get('analysis_today')
-        if analysis and analysis['ch4']:
-            pdf_bytes = generate_pdf_bytes_professional(site_name,latitude,longitude,analysis['date'],
-                                                        analysis['ch4'],analysis['anomaly'],analysis['action'],
-                                                        hazop_analysis(analysis['ch4']))
-            st.download_button("⬇ Télécharger PDF", data=pdf_bytes,
-                               file_name=f"Rapport_CH4_{site_name}_{analysis['date']}.pdf",mime="application/pdf")
