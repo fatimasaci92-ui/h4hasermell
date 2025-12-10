@@ -47,9 +47,7 @@ CSV_DIR = os.path.join(DATA_DIR, "2020 2024")
 
 mean_files = {year: os.path.join(MEAN_DIR, f"CH4_mean_{year}.tif") for year in range(2020, 2026)}
 anomaly_files = {year: os.path.join(ANOMALY_DIR, f"CH4_anomaly_{year}.tif") for year in range(2020, 2026)}
-csv_global = os.path.join(CSV_DIR, "CH4_HassiRmel_2020_2024.csv")
 csv_annual = os.path.join(CSV_DIR, "CH4_annual_2025.csv")
-csv_monthly = os.path.join(CSV_DIR, "CH4_HassiRmel_monthly_2020_2024.csv")
 csv_daily = os.path.join(CSV_DIR, "CH4_daily_2025.csv")
 
 # ================= SESSION STATE =================
@@ -66,10 +64,21 @@ def get_latest_ch4_from_gee(lat, lon):
     image = collection.first()
     if image is None:
         return None, None
-    value = image.reduceRegion(ee.Reducer.mean(), geometry=point, scale=7000).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=7000
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
     if value is None:
         return None, ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-    ch4_ppb = float(ee.Number(value).getInfo())*1e9
+
+    try:
+        ch4_ppb = float(ee.Number(value).getInfo())*1e9
+    except:
+        ch4_ppb = None
+
     date_img = ee.Date(image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
     return ch4_ppb, date_img
 
