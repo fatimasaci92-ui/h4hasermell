@@ -161,7 +161,10 @@ def generate_pdf_bytes_professional(site_name, latitude, longitude, report_date,
 # ===================== SECTION ANALYSE DU JOUR =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
 if st.button("Analyser aujourd'hui"):
-    ch4_today, date_img, no_pass_today = get_last_valid_image(latitude, longitude)
+    ch4_today, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+
+if no_pass_today:
+    st.error(f"⚠️ Pas de passage du satellite aujourd'hui. Dernière image disponible : {date_img}")
 
     if no_pass_today:
         st.error(f"⚠️ Pas de passage du satellite aujourd'hui. Dernière image disponible : {date_img}")
