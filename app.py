@@ -494,3 +494,5 @@ if st.button("Générer rapport PDF professionnel (année sélectionnée)"):
 st.success("✅ Application initialisée et prête à l'emploi avec Google Earth Engine")
 
 
+
+
