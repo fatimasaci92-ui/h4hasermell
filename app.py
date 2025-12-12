@@ -319,105 +319,53 @@ if st.button("Afficher l'analyse HSE pour l'année sélectionnée"):
     else:
         st.warning("CSV annuel introuvable.")
 
-# ===================== SECTION E + F: Analyse CH4 du jour et PDF =====================
-st.markdown("## 🔍 Analyse CH₄ du jour et génération PDF")
-if st.button("Analyser et générer PDF du jour"):
+# ===================== SECTION E: Analyse CH4 du jour =====================
+st.markdown("## 🔍 Analyse CH₄ du jour (Google Earth Engine uniquement)")
 
+if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
 
-    ch4_history = pd.DataFrame()
-    ch4_today = None
-    date_now = datetime.now().strftime("%d/%m/%Y %H:%M")
+    ch4_value, date_img, no_data = get_latest_ch4_from_gee(latitude, longitude)
 
-    if os.path.exists(csv_daily):
-        try:
-            try:
-                df_daily_local = pd.read_csv(csv_daily)
-            except:
-                df_daily_local = pd.read_csv(csv_daily, sep=';')
-
-            if not df_daily_local.empty:
-                keywords = ['ch4', 'methane', 'mean', 'value', 'ppb']
-                ch4_cols = [c for c in df_daily_local.columns if any(k in c.lower() for k in keywords)]
-
-                if ch4_cols:
-                    ch4_col = ch4_cols[0]
-                    if 'date' in df_daily_local.columns:
-                        ch4_history = df_daily_local[['date', ch4_col]].rename(columns={ch4_col:'CH4 (ppb)'})
-                    else:
-                        ch4_history = df_daily_local[[ch4_col]].copy()
-                        ch4_history['date'] = df_daily_local.index
-                        ch4_history = ch4_history[['date', 'CH4 (ppb)']]
-
-                    ch4_today = float(df_daily_local[ch4_col].iloc[-1])
-                else:
-                    ch4_today = None
-        except Exception as e:
-            st.warning(f"Erreur lecture CSV daily: {e}")
-
-    if ch4_today is None:
-        st.info("Lecture valeur CH₄ depuis Google Earth Engine...")
-        ch4_today, date_img = get_latest_ch4_from_gee(latitude, longitude)
-        if ch4_today is None:
-            st.error("⚠️ Pas de donnée TROPOMI disponible. Valeur simulée utilisée.")
-            ch4_today = 1935.0
-            date_img = date_now.split()[0]
-
-    threshold = 1900.0
-    if ch4_today > threshold:
-        action_hse = "Alerter, sécuriser la zone et stopper opérations"
-    elif ch4_today > threshold - 50:
-        action_hse = "Surveillance renforcée et vérification des torches"
+    if no_data:
+        st.error("⚠️ Aucune donnée TROPOMI disponible sur les 30 derniers jours.")
     else:
-        action_hse = "Surveillance continue"
 
-    st.session_state['analysis_today'] = {
-        "date": date_now,
-        "ch4": ch4_today,
-        "anomaly": ch4_today > threshold,
-        "action": action_hse,
-        "threshold": threshold,
-        "history": ch4_history
-    }
+        today_str = datetime.now().strftime("%Y-%m-%d")
 
-    st.write(f"**CH₄ du jour :** {ch4_today:.1f} ppb  ({date_now})")
-    if ch4_today > threshold:
-        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
-    elif ch4_today > threshold - 50:
-        st.warning("⚠️ CH₄ élevé, surveillance recommandée.")
-    else:
-        st.success("CH₄ normal, aucune anomalie détectée.")
+        if date_img != today_str:
+            st.error("🚫 Pas de passage satellite aujourd’hui (nuages ou orbite).")
+            st.warning(f"→ Dernière image TROPOMI disponible : **{date_img}**")
 
-    anomalies_today_df = pd.DataFrame([{
-        "Date": date_now.split()[0],
-        "Heure": date_now.split()[1],
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH4 (ppb)": ch4_today,
-        "Anomalie": "Oui" if ch4_today > threshold else "Non",
-        "Action HSE": action_hse
-    }])
-    st.table(anomalies_today_df)
+        st.success(f"Valeur CH₄ utilisée : **{ch4_value:.1f} ppb** (image du {date_img})")
 
-    pdf_bytes = generate_pdf_bytes_professional(
-        site_name=site_name,
-        latitude=latitude,
-        longitude=longitude,
-        report_date=date_now.split()[0],
-        ch4_value=ch4_today,
-        anomaly_flag=(ch4_today > threshold),
-        action_hse=action_hse,
-        hazop_df=hazop_analysis(ch4_today),
-        ch4_history=ch4_history
-    )
+        # Analyse HSE
+        threshold = 1900
+        if ch4_value > threshold:
+            action_hse = "Alerter, sécuriser la zone et stopper opérations"
+            st.error("⚠️ Anomalie détectée : CH4 critique !")
+        else:
+            action_hse = "Surveillance continue"
+            st.success("CH₄ normal")
 
-    st.download_button(
-        label="⬇ Télécharger le rapport PDF du jour",
-        data=pdf_bytes,
-        file_name=f"Rapport_HSE_CH4_{site_name}_{date_now.split()[0]}.pdf",
-        mime="application/pdf"
-    )
+        # Tableau récap
+        df_result = pd.DataFrame([{
+            "Date image": date_img,
+            "CH₄ (ppb)": ch4_value,
+            "Anomalie": "Oui" if ch4_value > threshold else "Non",
+            "Action HSE": action_hse
+        }])
+
+        st.table(df_result)
+
+        # Stocker dans session_state
+        st.session_state['analysis_today'] = {
+            "date": date_img,
+            "ch4": ch4_value,
+            "anomaly": ch4_value > threshold,
+            "action": action_hse
+        }
+
 
 # ===================== SECTION G: PDF annuel =====================
 st.markdown("## 📄 Génération PDF annuel")
