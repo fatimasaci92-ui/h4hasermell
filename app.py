@@ -60,7 +60,44 @@ if 'analysis_today' not in st.session_state:
     st.session_state['analysis_today'] = None
 
 # ================= FONCTIONS UTILITAIRES =================
-def get_latest_ch4_from_gee(lat, lon):
+def get_latest_ch4_from_gee(latitude, longitude, days_back=30):
+    """Retourne la DERNIÈRE image disponible dans GEE (même si ce n'est pas aujourd'hui)."""
+
+    point = ee.Geometry.Point([longitude, latitude])
+
+    # Filtrer images sur 30 jours
+    end = ee.Date(datetime.now().strftime("%Y-%m-%d"))
+    start = end.advance(-days_back, "day")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterBounds(point)
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)  # tri décroissant → dernier passage
+    )
+
+    img = collection.first()
+    if img is None:
+        return None, None, True  # pas de données du tout
+
+    # Valeur CH4 au point
+    value = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=1000
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    if value.getInfo() is None:
+        return None, None, True
+
+    ch4_ppb = float(value.getInfo()) * 1e9  # convertir mol/mol → ppb
+
+    # Date réelle de l'image
+    date_img = ee.Date(img.get("system:time_start")).format("yyyy-MM-dd").getInfo()
+
+    return ch4_ppb, date_img, False
+
     point = ee.Geometry.Point([lon, lat])
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
