@@ -199,29 +199,6 @@ if st.button("Analyser CH₄ du jour"):
     }])
 
     st.table(df)
-   if st.button("Analyser CH₄ du jour"):
-    st.info("Analyse en cours...")
-
-    st.markdown("## 🤖 Interprétation intelligente (Agent IA)")
-
-agent_message = f"""
-🛰️ **Analyse automatique des données satellite**
-
-• Le satellite **TROPOMI** est bien passé récemment au-dessus du site **{site_name}**.  
-• Certaines images récentes (ex. **9 décembre**) peuvent exister dans Google Earth Engine,  
-  mais **ne contiennent pas de valeur exploitable au point étudié** (nuages, pixels masqués).
-
-📌 **Principe de l’application** :
-L’application utilise **la dernière image satellite valide** contenant une valeur mesurable de CH₄ au point sélectionné.
-
-📅 **Dernière image exploitable utilisée** : **{date_img}**  
-📊 **Concentration CH₄ analysée** : **{ch4:.1f} ppb**
-
-ℹ️ Cette différence entre la date visible dans GEE et la date affichée ici est **normale et scientifiquement justifiée**.
-"""
-
-st.info(agent_message)
-
 # ================= SECTION F : PDF du jour =================
 st.markdown("## 📄 Section F — Rapport PDF du jour")
 
