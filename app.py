@@ -83,7 +83,7 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         if v is None:
             continue
 
-ch4_ppb = float(v) * 1000
+        ch4_ppb = float(v) * 1000
         today = datetime.utcnow().strftime("%Y-%m-%d")
         no_pass_today = date_img != today
 
