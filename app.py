@@ -199,7 +199,10 @@ if st.button("Analyser CH₄ du jour"):
     }])
 
     st.table(df)
-   st.markdown("## 🤖 Interprétation intelligente (Agent IA)")
+   if st.button("Analyser CH₄ du jour"):
+    st.info("Analyse en cours...")
+
+    st.markdown("## 🤖 Interprétation intelligente (Agent IA)")
 
 agent_message = f"""
 🛰️ **Analyse automatique des données satellite**
