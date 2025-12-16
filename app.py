@@ -147,40 +147,42 @@ if st.button("Analyser année sélectionnée"):
 
 # ================= SECTION E : Graphiques temporels =================
 st.markdown("## 📊 Graphiques temporels 2020–2025")
-csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
-if os.path.exists(csv_annual):
-    df_a = pd.read_csv(csv_annual)
-    fig, ax = plt.subplots(figsize=(8,4))
-    ax.plot(df_a["year"], df_a["CH4_mean"], marker="o")
-    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
-    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
-    ax.set_title("CH₄ annuel moyen")
-    ax.set_xlabel("Année")
-    ax.set_ylabel("CH₄ (ppb)")
-    ax.legend()
-    st.pyplot(fig)
-else:
-    st.warning("CSV annuel introuvable")
 
-if os.path.exists(csv_monthly):
-    df_m = pd.read_csv(csv_monthly)
-    st.write("Colonnes CSV mensuel :", df_m.columns)
-    # Remplacer les noms de colonnes par les vôtres exacts
-    date_col = df_m.columns[0]  # généralement la première colonne est la date
-    ch4_col = df_m.columns[1]   # deuxième colonne CH₄
-    df_m[date_col] = pd.to_datetime(df_m[date_col])
-    fig, ax = plt.subplots(figsize=(10,4))
-    ax.plot(df_m[date_col], df_m[ch4_col], marker="o")
-    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
-    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
-    ax.set_title("CH₄ mensuel moyen")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("CH₄ (ppb)")
-    ax.legend()
-    plt.xticks(rotation=45)
-    st.pyplot(fig)
-else:
-    st.warning("CSV mensuel introuvable")
+if st.button("Afficher graphiques CH₄"):
+    # Graphique annuel
+    if os.path.exists(csv_annual):
+        df_a = pd.read_csv(csv_annual)
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.plot(df_a["year"], df_a["CH4_mean"], marker="o")
+        ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+        ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+        ax.set_title("CH₄ annuel moyen")
+        ax.set_xlabel("Année")
+        ax.set_ylabel("CH₄ (ppb)")
+        ax.legend()
+        st.pyplot(fig)
+    else:
+        st.warning("CSV annuel introuvable")
+
+    # Graphique mensuel
+    if os.path.exists(csv_monthly):
+        df_m = pd.read_csv(csv_monthly)
+        date_col = df_m.columns[0]
+        ch4_col = df_m.columns[1]
+        df_m[date_col] = pd.to_datetime(df_m[date_col])
+        fig, ax = plt.subplots(figsize=(10,4))
+        ax.plot(df_m[date_col], df_m[ch4_col], marker="o")
+        ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+        ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+        ax.set_title("CH₄ mensuel moyen")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("CH₄ (ppb)")
+        ax.legend()
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    else:
+        st.warning("CSV mensuel introuvable")
+
 
 # ================= SECTION F : Analyse CH₄ du jour =================
 st.markdown("## 🔍 Analyse CH₄ du jour (Google Earth Engine)")
