@@ -122,7 +122,7 @@ if st.button("Afficher carte CH₄"):
 
 # ================= SECTION D : Analyse HSE annuelle =================
 st.markdown("## 🔎 Section D — Analyse HSE annuelle")
-csv_annual = "data/2020 2024/CH4_annual_2020_2024.csv"
+csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
 if st.button("Analyser année sélectionnée"):
     if os.path.exists(csv_annual):
         df_year = pd.read_csv(csv_annual)
