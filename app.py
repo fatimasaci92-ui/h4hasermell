@@ -104,7 +104,14 @@ if st.button("Afficher CSV historique"):
         st.warning("CSV historique introuvable")
 
 # ================= SECTION C : Cartes CH₄ =================
-if st.button("Afficher carte CH₄ moyenne"):
+st.markdown("## 🗺️ Carte CH₄ moyenne")
+
+# Bouton pour afficher la carte
+if st.button("Afficher carte CH₄"):
+    # Définir l'année **à l'intérieur du bouton** pour éviter NameError
+    year = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
+    mean_path = f"data/Moyenne CH4/CH4_mean_{year}.tif"
+
     if os.path.exists(mean_path):
         with rasterio.open(mean_path) as src:
             img = src.read(1)
