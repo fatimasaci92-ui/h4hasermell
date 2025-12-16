@@ -269,4 +269,38 @@ if question:
     )
     st.chat_message("assistant").write(response)
 
-# ================= FIN =================
+# ================= GRAPHES TEMPORELS =================
+st.markdown("## 📊 Évolution temporelle du CH₄ (2020–2025)")
+
+csv_annual = "data/2020 2024/CH4_annual_2020_2025.csv"
+csv_monthly = "data/2020 2024/CH4_monthly_2020_2025.csv"
+
+# ----- Graphique annuel -----
+if os.path.exists(csv_annual):
+    df_a = pd.read_csv(csv_annual)
+
+    fig, ax = plt.subplots()
+    ax.plot(df_a["year"], df_a["CH4_mean"])
+    ax.axhline(1850, linestyle="--")
+    ax.axhline(1900, linestyle="--")
+    ax.set_title("CH₄ annuel moyen")
+    ax.set_xlabel("Année")
+    ax.set_ylabel("CH₄ (ppb)")
+    st.pyplot(fig)
+else:
+    st.warning("CSV annuel introuvable")
+
+# ----- Graphique mensuel -----
+if os.path.exists(csv_monthly):
+    df_m = pd.read_csv(csv_monthly)
+
+    fig, ax = plt.subplots()
+    ax.plot(df_m["date"], df_m["CH4_mean"])
+    ax.axhline(1850, linestyle="--")
+    ax.axhline(1900, linestyle="--")
+    ax.set_title("CH₄ mensuel")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("CH₄ (ppb)")
+    st.pyplot(fig)
+else:
+    st.warning("CSV mensuel introuvable")
