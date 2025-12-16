@@ -1,4 +1,5 @@
-# app.py — VERSION FINALE COMPLÈTE
+# app.py — VERSION COMPLÈTE FINALE
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -44,6 +45,12 @@ latitude = st.number_input("Latitude", value=32.93, format="%.6f")
 longitude = st.number_input("Longitude", value=3.30, format="%.6f")
 site_name = st.text_input("Nom du site", value="Hassi R'mel")
 
+# ================= CHEMINS DES FICHIERS =================
+DATA_DIR = "data"
+csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
+csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
+csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
+
 # ================= FONCTION GEE =================
 def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
     point = ee.Geometry.Point([longitude, latitude])
@@ -83,7 +90,6 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
 
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
-DATA_DIR = "data"
 if st.button("Afficher les dossiers de données"):
     if os.path.exists(DATA_DIR):
         for root, dirs, files in os.walk(DATA_DIR):
@@ -95,30 +101,25 @@ if st.button("Afficher les dossiers de données"):
 
 # ================= SECTION B : Aperçu CSV =================
 st.markdown("## 📑 Section B — Aperçu des données historiques")
-csv_path = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 if st.button("Afficher CSV historique"):
-    if os.path.exists(csv_path):
-        df_hist = pd.read_csv(csv_path)
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
         st.dataframe(df_hist.head(20))
     else:
         st.warning("CSV historique introuvable")
 
-# ================= SECTION C : Cartes CH₄ =================
-st.markdown("## 🗺️ Carte CH₄ moyenne")
-
-# Bouton pour afficher la carte
-if st.button("Afficher carte CH₄"):
-    # Définir l'année **à l'intérieur du bouton** pour éviter NameError
-    year = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
-    mean_path = f"data/Moyenne CH4/CH4_mean_{year}.tif"
-
+# ================= SECTION C : Carte CH₄ moyenne =================
+st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
+year_mean = st.selectbox("Choisir l'année pour la carte", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Afficher carte CH₄ moyenne"):
+    mean_path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
     if os.path.exists(mean_path):
         with rasterio.open(mean_path) as src:
             img = src.read(1)
         img[img <= 0] = np.nan
         fig, ax = plt.subplots(figsize=(6,5))
         ax.imshow(img, cmap="viridis")
-        ax.set_title(f"CH₄ moyen {year}")
+        ax.set_title(f"CH₄ moyen {year_mean}")
         ax.axis("off")
         st.pyplot(fig)
     else:
@@ -126,7 +127,7 @@ if st.button("Afficher carte CH₄"):
 
 # ================= SECTION D : Analyse HSE annuelle =================
 st.markdown("## 🔎 Section D — Analyse HSE annuelle")
-csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
+year = st.selectbox("Choisir l'année pour analyse HSE", [2020, 2021, 2022, 2023, 2024, 2025])
 if st.button("Analyser année sélectionnée"):
     if os.path.exists(csv_annual):
         df_year = pd.read_csv(csv_annual)
@@ -149,9 +150,86 @@ if st.button("Analyser année sélectionnée"):
     else:
         st.warning("CSV annuel introuvable")
 
-# ================= SECTION E : Graphiques temporels =================
-st.markdown("## 📊 Graphiques temporels 2020–2025")
+# ================= SECTION E : Analyse CH₄ du jour =================
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+if st.button("Analyser CH₄ du jour"):
+    st.info("Analyse en cours...")
+    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+    if ch4 is None:
+        st.error("⚠️ Aucune image satellite disponible sur la période analysée.")
+        st.stop()
+    if no_pass_today:
+        st.error("☁️ Pas de passage satellite valide aujourd’hui (nuages ou orbite)")
+        st.warning(f"➡️ Dernière image disponible sur GEE : **{date_img}**")
+    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
+    if ch4 >= 1900:
+        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+        action = "Alerter, sécuriser la zone et stopper opérations"
+    else:
+        st.success("CH₄ normal")
+        action = "Surveillance continue"
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ (ppb)": round(ch4, 2),
+        "Anomalie": "Oui" if ch4 >= 1900 else "Non",
+        "Action HSE": action
+    }])
+    st.table(df_day)
 
+# ================= SECTION F : PDF du jour =================
+st.markdown("## 📄 Section F — Rapport PDF du jour")
+if st.button("Générer PDF du jour"):
+    if "ch4" not in locals():
+        st.warning("Lance d'abord l'analyse du jour")
+    else:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        story = []
+
+        # Titre et infos
+        story.append(Paragraph("<b>Rapport HSE – CH₄</b>", styles["Title"]))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Site : {site_name}", styles["Normal"]))
+        story.append(Paragraph(f"Date image : {date_img}", styles["Normal"]))
+        story.append(Paragraph(f"CH₄ : {ch4:.1f} ppb", styles["Normal"]))
+        story.append(Paragraph(f"Action HSE : {action}", styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        # Tableau résumé
+        data_table = [["Paramètre", "Valeur"],
+                      ["Latitude", latitude],
+                      ["Longitude", longitude],
+                      ["CH₄ (ppb)", round(ch4,2)],
+                      ["Anomalie", "Oui" if ch4 >= 1900 else "Non"],
+                      ["Action HSE", action]]
+        t = Table(data_table, hAlign="LEFT")
+        t.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(1,0),colors.gray),
+            ('TEXTCOLOR',(0,0),(1,0),colors.whitesmoke),
+            ('ALIGN',(0,0),(-1,-1),'LEFT'),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,0),12),
+            ('BOTTOMPADDING',(0,0),(-1,0),6),
+            ('BACKGROUND',(0,1),(-1,-1),colors.beige),
+            ('GRID',(0,0),(-1,-1),1,colors.black),
+        ]))
+        story.append(t)
+        story.append(Spacer(1,12))
+        doc.build(story)
+
+        st.download_button(
+            "⬇️ Télécharger le PDF",
+            buffer.getvalue(),
+            f"Rapport_CH4_{site_name}_{date_img}.pdf",
+            "application/pdf"
+        )
+
+# ================= SECTION G : Graphiques temporels =================
+st.markdown("## 📊 Graphiques temporels 2020–2025")
 if st.button("Afficher graphiques CH₄"):
     # Graphique annuel
     if os.path.exists(csv_annual):
@@ -187,99 +265,24 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-
-# ================= SECTION F : Analyse CH₄ du jour =================
-st.markdown("## 🔍 Analyse CH₄ du jour (Google Earth Engine)")
-if st.button("Analyser CH₄ du jour"):
-    st.info("Analyse en cours...")
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
-    if ch4 is None:
-        st.error("⚠️ Aucune image satellite disponible sur la période analysée.")
-        st.stop()
-    if no_pass_today:
-        st.error("☁️ Aucun passage satellite aujourd’hui (nuages ou orbite)")
-        st.warning(f"➡️ Dernière image disponible sur GEE : **{date_img}**")
-    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
-    if ch4 >= 1900:
-        st.error("⚠️ Niveau CH₄ critique !")
-        action = "Alerter, sécuriser la zone et stopper opérations"
-    else:
-        st.success("CH₄ normal")
-        action = "Surveillance continue"
-    df_today = pd.DataFrame([{
-        "Date image": date_img,
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH₄ (ppb)": round(ch4,2),
-        "Anomalie": "Oui" if ch4 >= 1900 else "Non",
-        "Action HSE": action
-    }])
-    st.table(df_today)
-
-# ================= SECTION G : Carte interactive =================
+# ================= SECTION H : Carte interactive Folium =================
 st.markdown("## 🗺️ Carte interactive")
-
 if st.button("Afficher carte interactive"):
     m = folium.Map(location=[latitude, longitude], zoom_start=6)
     folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
     st_folium(m, width=700, height=400)
 
-
-# ================= SECTION H : PDF professionnel =================
-st.markdown("## 📄 Générer un PDF professionnel")
-if st.button("Générer PDF du jour"):
-    if "ch4" not in locals():
-        st.warning("Lance d'abord l'analyse du jour")
+# ================= SECTION I : Agent IA =================
+st.markdown("## 🤖 Agent IA – Posez vos questions")
+user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
+if st.button("Obtenir réponse IA"):
+    if user_question.strip() != "":
+        # Exemple simple : réponses automatiques
+        if "niveau" in user_question.lower():
+            st.info("Le niveau de CH₄ est affiché dans les sections Analyse du jour et Graphiques temporels.")
+        elif "risque" in user_question.lower():
+            st.info("Les seuils HSE sont : Élevé ≥1850 ppb, Critique ≥1900 ppb.")
+        else:
+            st.info("Votre question sera analysée dans la prochaine version IA intelligente.")
     else:
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
-
-        # Logo optionnel
-        logo_path = "data/logo.png"
-        if os.path.exists(logo_path):
-            story.append(Image(logo_path, width=100, height=50))
-            story.append(Spacer(1,12))
-
-        story.append(Paragraph("<b>Rapport HSE – CH₄</b>", styles["Title"]))
-        story.append(Spacer(1,12))
-        story.append(Paragraph(f"Site : {site_name}", styles["Normal"]))
-        story.append(Paragraph(f"Date image : {date_img}", styles["Normal"]))
-        story.append(Paragraph(f"CH₄ : {ch4:.1f} ppb", styles["Normal"]))
-        story.append(Paragraph(f"Action HSE : {action}", styles["Normal"]))
-        story.append(Spacer(1,12))
-
-        # Tableau HSE
-        data_table = [
-            ["Seuil HSE", "Risque", "Action"],
-            ["<1850", "Normal", "Surveillance continue"],
-            ["1850-1900", "Élevé", "Inspection urgente"],
-            [">=1900", "Critique", "Arrêt + alerte HSE"]
-        ]
-        table = Table(data_table)
-        table.setStyle(TableStyle([
-            ('BACKGROUND',(0,0),(-1,0),colors.grey),
-            ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-            ('ALIGN',(0,0),(-1,-1),'CENTER'),
-            ('GRID',(0,0),(-1,-1),1,colors.black),
-            ('BACKGROUND',(0,1),(-1,-1),colors.beige)
-        ]))
-        story.append(table)
-
-        doc.build(story)
-        st.download_button(
-            "⬇️ Télécharger le PDF",
-            buffer.getvalue(),
-            f"Rapport_CH4_{site_name}_{date_img}.pdf",
-            "application/pdf"
-        )
-
-# ================= SECTION I : Agent IA simple =================
-st.markdown("## 🤖 Agent IA (questions libres)")
-question = st.text_input("Posez votre question sur CH₄ ou HSE")
-if question:
-    # Exemple simple d’IA (réponse factice, peut être remplacée par un vrai modèle)
-    answer = f"Votre question : '{question}'.\nRéponse : Les niveaux de CH₄ doivent être surveillés selon les seuils HSE. Si CH₄ >=1900 ppb, action immédiate requise."
-    st.info(answer)
+        st.warning("Veuillez poser une question")
