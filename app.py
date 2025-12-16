@@ -104,10 +104,7 @@ if st.button("Afficher CSV historique"):
         st.warning("CSV historique introuvable")
 
 # ================= SECTION C : Cartes CH₄ =================
-st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
-year = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
-mean_path = f"data/Moyenne CH4/CH4_mean_{year}.tif"
-if st.button("Afficher carte CH₄"):
+if st.button("Afficher carte CH₄ moyenne"):
     if os.path.exists(mean_path):
         with rasterio.open(mean_path) as src:
             img = src.read(1)
@@ -215,9 +212,12 @@ if st.button("Analyser CH₄ du jour"):
 
 # ================= SECTION G : Carte interactive =================
 st.markdown("## 🗺️ Carte interactive")
-m = folium.Map(location=[latitude, longitude], zoom_start=6)
-folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
-st_data = st_folium(m, width=700, height=400)
+
+if st.button("Afficher carte interactive"):
+    m = folium.Map(location=[latitude, longitude], zoom_start=6)
+    folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
+    st_folium(m, width=700, height=400)
+
 
 # ================= SECTION H : PDF professionnel =================
 st.markdown("## 📄 Générer un PDF professionnel")
