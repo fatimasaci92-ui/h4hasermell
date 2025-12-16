@@ -271,8 +271,9 @@ if st.button("Générer le rapport PDF du jour"):
 
 # ================= GRAPHES TEMPORELS =================
 st.markdown("## 📊 Évolution temporelle du CH₄ (2020–2025)")
-csv_annual = "data/2020 2024/CH4_annual_2020_2025.csv"
-csv_monthly = "data/2020 2024/CH4_monthly_2020_2025.csv"
+
+csv_annual = "data/2020 2024/CH4_annual_2020_2024.csv"
+csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
 
 # Graphique annuel
 if os.path.exists(csv_annual):
@@ -292,7 +293,7 @@ else:
 if os.path.exists(csv_monthly):
     df_m = pd.read_csv(csv_monthly)
     fig, ax = plt.subplots()
-    ax.plot(df_m["date"], df_m["CH4_mean"])
+    ax.plot(df_m["date"], df_m["CH4_column_volume_mixing_ratio_dry_air"])
     ax.axhline(1850, linestyle="--", color="orange")
     ax.axhline(1900, linestyle="--", color="red")
     ax.set_title("CH₄ mensuel")
