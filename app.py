@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import os
 import io
 from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import ee
 import json
@@ -179,59 +179,70 @@ if st.button("Analyser CH₄ du jour"):
     }])
     st.table(df_day)
 
-# ================= SECTION F : PDF du jour =================
-st.markdown("## 📄 Section F — Rapport PDF du jour")
-if st.button("Générer PDF du jour"):
+# ================= SECTION F : PDF Professionnel =================
+def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("<b>Rapport Professionnel HSE – Surveillance CH₄</b>", styles["Title"]))
+    story.append(Spacer(1,12))
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    story.append(Paragraph(f"<b>Site :</b> {site_name}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date du rapport :</b> {now}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date image satellite :</b> {date_img}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Responsable action :</b> {responsable}", styles["Normal"]))
+    story.append(Spacer(1,12))
+    story.append(Paragraph(
+        "Ce rapport présente la surveillance du méthane (CH₄) sur le site, "
+        "les valeurs mesurées, et les actions correctives recommandées. "
+        "Les seuils HSE sont : Élevé ≥1850 ppb, Critique ≥1900 ppb. "
+        "Le suivi quotidien permet de détecter rapidement toute anomalie et de sécuriser le site.",
+        styles["Normal"]
+    ))
+    story.append(Spacer(1,12))
+
+    data_table = [
+        ["Paramètre", "Valeur"],
+        ["CH₄ mesuré (ppb)", f"{ch4_value:.1f}"],
+        ["Anomalie détectée", "Oui" if ch4_value >= 1900 else "Non"],
+        ["Action corrective", action]
+    ]
+    t = Table(data_table, hAlign="LEFT", colWidths=[200,250])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN',(0,0),(-1,-1),'LEFT'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,0),12),
+        ('BOTTOMPADDING',(0,0),(-1,0),6),
+        ('BACKGROUND',(0,1),(-1,-1),colors.lightblue),
+        ('GRID',(0,0),(-1,-1),1,colors.black),
+    ]))
+    story.append(t)
+    story.append(Spacer(1,12))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+st.markdown("## 📄 Télécharger PDF Professionnel")
+if st.button("Générer PDF Professionnel"):
     if "ch4" not in locals():
-        st.warning("Lance d'abord l'analyse du jour")
+        st.warning("Lancez d'abord l'analyse du jour pour générer le PDF")
     else:
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        story = []
-
-        # Titre et infos
-        story.append(Paragraph("<b>Rapport HSE – CH₄</b>", styles["Title"]))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Site : {site_name}", styles["Normal"]))
-        story.append(Paragraph(f"Date image : {date_img}", styles["Normal"]))
-        story.append(Paragraph(f"CH₄ : {ch4:.1f} ppb", styles["Normal"]))
-        story.append(Paragraph(f"Action HSE : {action}", styles["Normal"]))
-        story.append(Spacer(1, 12))
-
-        # Tableau résumé
-        data_table = [["Paramètre", "Valeur"],
-                      ["Latitude", latitude],
-                      ["Longitude", longitude],
-                      ["CH₄ (ppb)", round(ch4,2)],
-                      ["Anomalie", "Oui" if ch4 >= 1900 else "Non"],
-                      ["Action HSE", action]]
-        t = Table(data_table, hAlign="LEFT")
-        t.setStyle(TableStyle([
-            ('BACKGROUND',(0,0),(1,0),colors.gray),
-            ('TEXTCOLOR',(0,0),(1,0),colors.whitesmoke),
-            ('ALIGN',(0,0),(-1,-1),'LEFT'),
-            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-            ('FONTSIZE',(0,0),(-1,0),12),
-            ('BOTTOMPADDING',(0,0),(-1,0),6),
-            ('BACKGROUND',(0,1),(-1,-1),colors.beige),
-            ('GRID',(0,0),(-1,-1),1,colors.black),
-        ]))
-        story.append(t)
-        story.append(Spacer(1,12))
-        doc.build(story)
-
+        pdf_buffer = generate_professional_pdf(site_name, date_img, ch4, action)
         st.download_button(
-            "⬇️ Télécharger le PDF",
-            buffer.getvalue(),
-            f"Rapport_CH4_{site_name}_{date_img}.pdf",
+            "⬇️ Télécharger le PDF Professionnel",
+            pdf_buffer,
+            f"Rapport_HSE_CH4_{site_name}_{date_img}.pdf",
             "application/pdf"
         )
 
 # ================= SECTION G : Graphiques temporels =================
 st.markdown("## 📊 Graphiques temporels 2020–2025")
 if st.button("Afficher graphiques CH₄"):
-    # Graphique annuel
     if os.path.exists(csv_annual):
         df_a = pd.read_csv(csv_annual)
         fig, ax = plt.subplots(figsize=(8,4))
@@ -245,8 +256,6 @@ if st.button("Afficher graphiques CH₄"):
         st.pyplot(fig)
     else:
         st.warning("CSV annuel introuvable")
-
-    # Graphique mensuel
     if os.path.exists(csv_monthly):
         df_m = pd.read_csv(csv_monthly)
         date_col = df_m.columns[0]
@@ -277,7 +286,6 @@ st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
 if st.button("Obtenir réponse IA"):
     if user_question.strip() != "":
-        # Exemple simple : réponses automatiques
         if "niveau" in user_question.lower():
             st.info("Le niveau de CH₄ est affiché dans les sections Analyse du jour et Graphiques temporels.")
         elif "risque" in user_question.lower():
