@@ -85,11 +85,9 @@ if st.button("Analyser CH₄ du jour"):
 
         if no_pass_today:
             st.info(
-                f"☁️ Aucun passage satellite valide aujourd’hui (nuages ou orbite)
-
-"
-                f"📅 Dernière image disponible : **{date_img}**"
-            )
+    f"☁️ Aucun passage satellite valide aujourd’hui (nuages ou orbite)\n\n"
+    f"📅 Dernière image disponible : {date_img}"
+)
 
         if ch4 >= 1900:
             risk = "Critique"
