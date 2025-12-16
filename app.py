@@ -85,7 +85,9 @@ if st.button("Analyser CH₄ du jour"):
 
         if no_pass_today:
             st.info(
-                f"☁️ Aucun passage satellite valide aujourd’hui (nuages ou orbite)\n\n"
+                f"☁️ Aucun passage satellite valide aujourd’hui (nuages ou orbite)
+
+"
                 f"📅 Dernière image disponible : **{date_img}**"
             )
 
@@ -102,7 +104,18 @@ if st.button("Analyser CH₄ du jour"):
             action = "Surveillance continue"
             st.success(f"✅ Niveau NORMAL — {ch4:.1f} ppb")
 
-     # ================= PDF HSE =================
+        st.session_state.risk = risk
+        st.session_state.action = action
+
+        st.table(pd.DataFrame([{
+            "Site": site_name,
+            "Date image": date_img,
+            "CH₄ (ppb)": round(ch4, 2),
+            "Risque HSE": risk,
+            "Action recommandée": action
+        }]))
+
+# ================= PDF HSE =================
 st.markdown("## 📄 Rapport HSE professionnel (PDF)")
 
 if st.button("Générer le rapport PDF du jour"):
@@ -180,16 +193,69 @@ if st.button("Générer le rapport PDF du jour"):
             "application/pdf"
         )
 
-# ================= AGENT IA =================styles["Normal"]))
+# ================= AGENT IA =================
+st.markdown("## 🤖 Agent IA HSE intelligent")
 
-        doc.build(story)
+question = st.chat_input("Posez une question libre sur le CH₄, le risque HSE ou les tendances")
 
-        st.download_button(
-            "⬇️ Télécharger le PDF",
-            buffer.getvalue(),
-            f"Rapport_CH4_{site_name}_{st.session_state.date_img}.pdf",
-            "application/pdf"
-        )
+if question:
+    ch4 = st.session_state.ch4
+    risk = st.session_state.risk
+    action = st.session_state.action
+
+    if ch4 is None:
+        response = "Veuillez d'abord lancer l'analyse CH₄ du jour."
+    elif "pourquoi" in question.lower():
+        response = f"Le niveau de CH₄ ({ch4:.1f} ppb) est classé {risk} selon les seuils HSE. Cela peut indiquer des émissions fugitives ou une activité anormale."
+    elif "danger" in question.lower():
+        response = "Le méthane est un gaz inflammable. À forte concentration, il augmente les risques d'explosion et d'impact environnemental."
+    elif "tendance" in question.lower():
+        response = "Les graphiques montrent l'évolution du CH₄ entre 2020 et 2025, permettant d'identifier une augmentation ou une stabilisation des émissions."
+    elif "que faire" in question.lower() or "action" in question.lower():
+        response = f"Action recommandée : {action}. Cette décision est basée sur le niveau de risque {risk}."
+    else:
+        response = f"CH₄ actuel : {ch4:.1f} ppb | Risque : {risk} | Action : {action}."
+
+    st.chat_message("assistant").write(response)
+
+# ================= FIN =================")
+    ax.set_xlabel("Année")
+    ax.set_ylabel("CH₄ (ppb)")
+    st.pyplot(fig)
+
+if os.path.exists(csv_monthly):
+    df_m = pd.read_csv(csv_monthly)
+    fig, ax = plt.subplots()
+    ax.plot(df_m['date'], df_m['CH4_mean'])
+    ax.axhline(1850, linestyle='--')
+    ax.axhline(1900, linestyle='--')
+    ax.set_title("CH₄ mensuel")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("CH₄ (ppb)")
+    st.pyplot(fig)
+
+# ================= CARTE INTERACTIVE =================
+st.markdown("## 🗺️ Carte interactive du site")
+
+import folium
+from streamlit_folium import st_folium
+
+m = folium.Map(location=[latitude, longitude], zoom_start=7)
+
+color = 'green'
+if st.session_state.risk == 'Élevé': color = 'orange'
+if st.session_state.risk == 'Critique': color = 'red'
+
+folium.CircleMarker(
+    location=[latitude, longitude],
+    radius=10,
+    color=color,
+    fill=True,
+    fill_color=color,
+    popup=f"{site_name}<br>CH₄: {st.session_state.ch4} ppb<br>Risque: {st.session_state.risk}"
+).add_to(m)
+
+st_folium(m, width=700, height=450)
 
 # ================= AGENT IA =================
 st.markdown("## 🤖 Agent IA HSE")
