@@ -292,16 +292,13 @@ else:
 # Graphique mensuel
 if os.path.exists(csv_monthly):
     df_m = pd.read_csv(csv_monthly)
-    fig, ax = plt.subplots()
-    ax.plot(df_m["date"], df_m["CH4_column_volume_mixing_ratio_dry_air"])
-    ax.axhline(1850, linestyle="--", color="orange")
-    ax.axhline(1900, linestyle="--", color="red")
-    ax.set_title("CH₄ mensuel")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("CH₄ (ppb)")
-    st.pyplot(fig)
+    st.write("Colonnes CSV mensuel :", df_m.columns)  # <-- Pour vérifier le nom exact
+    # Remplace "CH4_mean" par le nom exact affiché
+    ax = df_m.plot(x="date", y="CH4_mean", title="CH₄ mensuel")  # <-- Corrige le nom ici
+    st.pyplot(ax.figure)
 else:
     st.warning("CSV mensuel introuvable")
+
 
 # ================= CARTE INTERACTIVE =================
 st.markdown("## 🗺️ Carte interactive du site")
