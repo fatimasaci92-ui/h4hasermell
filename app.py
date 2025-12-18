@@ -229,16 +229,21 @@ def generate_professional_pdf(site_name, date_img, ch4_value, action, responsabl
 
 st.markdown("## 📄 Télécharger PDF Professionnel")
 if st.button("Générer PDF Professionnel"):
-    if "ch4" not in locals():
-        st.warning("Lancez d'abord l'analyse du jour pour générer le PDF")
-    else:
-        pdf_buffer = generate_professional_pdf(site_name, date_img, ch4, action)
-        st.download_button(
-            "⬇️ Télécharger le PDF Professionnel",
-            pdf_buffer,
-            f"Rapport_HSE_CH4_{site_name}_{date_img}.pdf",
-            "application/pdf"
-        )
+   if st.session_state.ch4 is None:
+    st.warning("Lancez d'abord l'analyse du jour pour générer le PDF")
+else:
+    pdf_buffer = generate_professional_pdf(
+        site_name,
+        st.session_state.date_img,
+        st.session_state.ch4,
+        st.session_state.action
+    )
+    st.download_button(
+        "⬇️ Télécharger le PDF Professionnel",
+        pdf_buffer,
+        f"Rapport_HSE_CH4_{site_name}_{st.session_state.date_img}.pdf",
+        "application/pdf"
+    )
 
 # ================= SECTION G : Graphiques temporels =================
 st.markdown("## 📊 Graphiques temporels 2020–2025")
