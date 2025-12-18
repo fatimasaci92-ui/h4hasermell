@@ -39,6 +39,13 @@ except Exception as e:
 # ================= CONFIG STREAMLIT =================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
+# ================= SESSION STATE (OBLIGATOIRE) =================
+if "ch4" not in st.session_state:
+    st.session_state.ch4 = None
+if "date_img" not in st.session_state:
+    st.session_state.date_img = None
+if "action" not in st.session_state:
+    st.session_state.action = None
 
 # ================= INFOS SITE =================
 latitude = st.number_input("Latitude", value=32.93, format="%.6f")
