@@ -11,6 +11,7 @@ import folium
 from streamlit_folium import st_folium
 import rasterio
 from rasterio.plot import show
+import matplotlib.pyplot as plt
 
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
@@ -18,7 +19,7 @@ st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
 
 st.info(
     "⚠️ Surveillance régionale du CH₄ à partir de données satellitaires (Sentinel-5P). "
-    "Ne remplace pas les inspections terrain."
+    "Ce système ne remplace pas les inspections terrain."
 )
 
 # ===================== GEE INIT =====================
@@ -47,6 +48,14 @@ site_name = st.sidebar.text_input("Nom du site", "Hassi R'mel")
 # ===================== HISTORICAL DATA =====================
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 df_hist = pd.read_csv(csv_hist)
+
+# ===================== UTILS =====================
+def get_ch4_series(df):
+    """Détecte automatiquement la colonne CH4 dans le CSV"""
+    for col in df.columns:
+        if "ch4" in col.lower():
+            return df[col]
+    raise ValueError(f"Aucune colonne CH4 trouvée : {list(df.columns)}")
 
 # ===================== FUNCTIONS =====================
 def get_latest_ch4(latitude, longitude, days_back=90):
@@ -84,7 +93,7 @@ def get_latest_ch4(latitude, longitude, days_back=90):
 
         val = ch4_dict.get("CH4_column_volume_mixing_ratio_dry_air")
         if val is not None:
-            return val * 1000, date_img
+            return val * 1000, date_img  # ppb
 
     return None, None
 
@@ -92,20 +101,21 @@ def get_latest_ch4(latitude, longitude, days_back=90):
 def detect_anomaly_zscore(value, series):
     return (value - series.mean()) / series.std()
 
-
 # ===================== ANALYSIS =====================
 st.markdown("## 🔍 Analyse journalière CH₄")
 
 if st.button("🚀 Lancer l’analyse"):
     ch4, date_img = get_latest_ch4(latitude, longitude)
 
+    ch4_series = get_ch4_series(df_hist)
+
     # ===== FALLBACK HISTORIQUE =====
     if ch4 is None:
         st.warning("⚠️ Donnée satellite indisponible — utilisation historique CSV")
-        ch4 = df_hist["CH4_ppb"].iloc[-1]
+        ch4 = ch4_series.iloc[-1]
         date_img = "Historique CSV"
 
-    z = detect_anomaly_zscore(ch4, df_hist["CH4_ppb"])
+    z = detect_anomaly_zscore(ch4, ch4_series)
 
     if z > 3:
         risk = "Critique"
@@ -120,11 +130,11 @@ if st.button("🚀 Lancer l’analyse"):
         decision = "✅ Surveillance continue"
         color = "green"
 
-    st.success(f"📅 Source donnée : {date_img}")
+    st.success(f"📅 Source des données : {date_img}")
 
     c1, c2 = st.columns(2)
     c1.metric("CH₄ (ppb)", round(ch4, 1))
-    c2.metric("Z-score anomalie", round(z, 2))
+    c2.metric("Z-score", round(z, 2))
 
     st.markdown(
         f"<h3 style='color:{color}'>Niveau de risque : {risk}</h3>"
@@ -133,9 +143,10 @@ if st.button("🚀 Lancer l’analyse"):
     )
 
     # ===================== MAP =====================
-    st.markdown("## 🗺️ Localisation du pixel Sentinel-5P")
+    st.markdown("## 🗺️ Pixel Sentinel-5P")
 
     m = folium.Map(location=[latitude, longitude], zoom_start=6)
+
     folium.Circle(
         location=[latitude, longitude],
         radius=3500,
@@ -153,7 +164,7 @@ if st.button("🚀 Lancer l’analyse"):
     st_folium(m, width=750, height=450)
 
 # ===================== ÉTAPE SUIVANTE : GEOTIFF =====================
-st.markdown("## 🔥 Étape suivante — Carte anomalies CH₄ (GeoTIFF)")
+st.markdown("## 🔥 Carte des anomalies CH₄ (GeoTIFF)")
 
 year = st.selectbox(
     "Choisir l’année",
@@ -164,9 +175,9 @@ tif_path = f"data/anomaly CH4/CH4_anomaly_{year}.tif"
 
 if os.path.exists(tif_path):
     with rasterio.open(tif_path) as src:
-        st.write(f"Anomalie CH₄ – {year}")
         fig, ax = plt.subplots(figsize=(8, 6))
         show(src, ax=ax)
+        ax.set_title(f"Anomalie CH₄ – {year}")
         st.pyplot(fig)
 else:
     st.warning("GeoTIFF non disponible pour cette année")
@@ -175,19 +186,19 @@ else:
 st.markdown("## ⚠️ Limites du système")
 st.write("""
 - Résolution spatiale kilométrique (Sentinel-5P)
-- Sensible aux nuages et poussières
-- Détection atmosphérique, pas localisation fuite
+- Sensibilité aux nuages et poussières
+- Détection atmosphérique (pas localisation précise de fuite)
 - Validation terrain obligatoire
 """)
 
 # ===================== ASSISTANT =====================
 st.markdown("## 🤖 Assistant HSE intelligent")
-
 question = st.text_input("Question CH₄ / HSE")
+
 if st.button("Analyser la question"):
     if "anomalie" in question.lower():
         st.info("Les anomalies sont détectées par comparaison statistique à l’historique.")
     elif "satellite" in question.lower():
-        st.info("Sentinel-5P fournit une surveillance régionale quotidienne.")
+        st.info("Sentinel-5P permet une surveillance régionale quotidienne.")
     else:
         st.info("Analyse basée sur télédétection et règles HSE.")
