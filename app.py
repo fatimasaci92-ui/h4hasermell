@@ -174,43 +174,43 @@ def send_email_alert(to_email, subject, body):
         st.warning(f"Impossible d'envoyer email: {e}")
 
 # ===================== ANALYSIS =====================
-st.markdown("## 🔍 Analyse CH₄ multi-sites")
+# ===================== LOGIQUE DE DÉCISION =====================
+# z = detect_anomaly_zscore(ch4, df_hist["CH4_ppb"])
 
-if st.button("🚀 Lancer l’analyse"):
-    ch4, date_img = get_latest_ch4(lat_site, lon_site)
-    series = get_ch4_series(df_hist)
-    if ch4 is None:
-        st.warning("Donnée satellite indisponible – utilisation CSV")
-        ch4 = series.iloc[-1]
-        date_img = "Historique CSV"
-    z = detect_anomaly(ch4, series)
-    if z > 3:
-        risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
-        log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
-# Vérifier si le secret HSE_EMAIL existe
-try:
-    hse_email = st.secrets["HSE_EMAIL"]
-except KeyError:
-    hse_email = None
-    st.warning("⚠️ HSE_EMAIL non défini dans les secrets – les emails ne seront pas envoyés.")
+if z > 3:
+    risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
+    log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
+    
+    # 🔹 Sécuriser l'envoi d'email
+    try:
+        hse_email = st.secrets["HSE_EMAIL"]
+    except KeyError:
+        hse_email = None
+        st.warning("⚠️ HSE_EMAIL non défini dans les secrets – email non envoyé.")
+    
+    if hse_email:
+        send_email_alert(
+            hse_email,
+            f"ALERTE CH₄ CRITIQUE {selected_site}",
+            f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
+        )
 
-# Envoyer l'alerte seulement si le secret existe
-if hse_email:
-    send_email_alert(
-        hse_email,
-        f"ALERTE CH₄ CRITIQUE {selected_site}",
-        f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
-    )
+elif z > 2:
+    risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
+else:
+    risk, decision, color = "Normal", "Surveillance continue", "green"
 
-    elif z > 2:
-        risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
-    else:
-        risk, decision, color = "Normal", "Surveillance continue", "green"
-    st.session_state.analysis_done = True
-    st.session_state.results = {
-        "ch4": ch4, "z": z, "risk": risk, "decision": decision,
-        "color": color, "date_img": date_img, "site": selected_site
-    }
+# ===================== AFFICHAGE =====================
+st.success(f"📅 Date image : {date_img}")
+st.metric("CH₄ (ppb)", round(ch4, 1))
+st.metric("Z-score anomalie", round(z, 2))
+st.metric("Vent moyen (m/s)", round(wind, 2))
+
+st.warning(
+    f"⚠️ Anomalie atmosphérique détectée : **{risk}**\n\n"
+    f"➡️ Action recommandée : **{decision}**"
+)
+
 
 # ===================== RESULTS =====================
 if st.session_state.analysis_done:
