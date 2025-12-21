@@ -67,6 +67,36 @@ def get_latest_ch4(latitude, longitude, days_back=60):
         .sort("system:time_start", False)
     )
 
+    # Vérifier si la collection est vide
+    if col.size().getInfo() == 0:
+        return None, None
+
+    img = ee.Image(col.first())
+
+    date_img = ee.Date(
+        img.get("system:time_start")
+    ).format("YYYY-MM-dd").getInfo()
+
+    ch4_dict = img.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=geom,
+        scale=7000,
+        maxPixels=1e9
+    ).getInfo()
+
+    # 🔒 Sécurité totale
+    if (
+        not ch4_dict
+        or "CH4_column_volume_mixing_ratio_dry_air" not in ch4_dict
+        or ch4_dict["CH4_column_volume_mixing_ratio_dry_air"] is None
+    ):
+        return None, date_img
+
+    ch4_ppb = ch4_dict["CH4_column_volume_mixing_ratio_dry_air"] * 1000
+
+    return ch4_ppb, date_img
+
+
     img = ee.Image(col.first())
     date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
 
