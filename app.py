@@ -241,4 +241,3 @@ if os.path.exists("alerts_hse.csv"):
     )
 else:
     st.info("Aucune alerte critique enregistrée.")
-
