@@ -234,19 +234,46 @@ if os.path.exists("alerts_hse.csv"):
 else:
     st.info("Aucune alerte critique enregistrée.")
 
-# ===================== GRAPHIQUE TEMPOREL =====================
+# ===================== GRAPHIQUE TEMPOREL CORRIGÉ =====================
 st.markdown("## 📈 Évolution CH₄ historique")
 ch4_series = get_ch4_series(df_hist)
 df_hist_plot = df_hist.copy()
 df_hist_plot["CH4_ppb"] = ch4_series
 df_hist_plot["date"] = pd.to_datetime(df_hist_plot.iloc[:,0])
-fig = px.line(df_hist_plot, x="date", y="CH4_ppb", title=f"Évolution CH₄ – {selected_site}")
-fig.add_hline(y=ch4_series.mean(), line_dash="dash", line_color="green", annotation_text="Moyenne")
-fig.add_hrect(y0=ch4_series.mean()-2*ch4_series.std(), y1=ch4_series.mean()+2*ch4_series.std(),
-              fillcolor="lightgreen", opacity=0.2, line_width=0)
-date_point = r["date_img"] if r["date_img"] != "Historique CSV" else df_hist_plot["date"].max()
+
+fig = px.line(
+    df_hist_plot,
+    x="date",
+    y="CH4_ppb",
+    title=f"Évolution CH₄ – {selected_site}"
+)
+
+# Moyenne et bande ±2σ
+fig.add_hline(
+    y=ch4_series.mean(),
+    line_dash="dash",
+    line_color="green",
+    annotation_text="Moyenne"
+)
+fig.add_hrect(
+    y0=ch4_series.mean()-2*ch4_series.std(),
+    y1=ch4_series.mean()+2*ch4_series.std(),
+    fillcolor="lightgreen",
+    opacity=0.2,
+    line_width=0
+)
+
+# 🔴 Ajouter le point du jour
+try:
+    if r["date_img"] != "Historique CSV":
+        date_point = pd.to_datetime(r["date_img"])
+    else:
+        date_point = df_hist_plot["date"].max()  # fallback sécurité
+except Exception:
+    date_point = df_hist_plot["date"].max()
+
 fig.add_scatter(
-    x=[pd.to_datetime(date_point)],
+    x=[date_point],
     y=[r["ch4"]],
     mode="markers",
     marker=dict(color="red", size=12),
