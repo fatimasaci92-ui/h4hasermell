@@ -9,7 +9,6 @@ import os
 from datetime import datetime
 import folium
 from streamlit_folium import st_folium
-import matplotlib.pyplot as plt
 
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
@@ -45,12 +44,12 @@ longitude = st.sidebar.number_input("Longitude", value=3.30, format="%.6f")
 site_name = st.sidebar.text_input("Nom du site", "Hassi R'mel")
 
 # ===================== HISTORICAL DATA =====================
-csv_hist = "data/2020_2024/CH4_HassiRmel_2020_2024.csv"
+csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 
 try:
     df_hist = pd.read_csv(csv_hist)
-except:
-    st.error("❌ Fichier historique CH₄ introuvable")
+except Exception as e:
+    st.error(f"❌ Impossible de charger le fichier historique : {e}")
     st.stop()
 
 # ===================== FUNCTIONS =====================
@@ -109,9 +108,7 @@ def get_wind_speed(latitude, longitude, date):
 
 
 def detect_anomaly_zscore(value, series):
-    mean = series.mean()
-    std = series.std()
-    return (value - mean) / std
+    return (value - series.mean()) / series.std()
 
 
 # ===================== ANALYSIS =====================
@@ -143,10 +140,11 @@ if st.button("🚀 Lancer l’analyse"):
 
     # ===================== RESULTS =====================
     st.success(f"📅 Date image satellite : {date_img}")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("CH₄ (ppb)", round(ch4, 1))
-    col2.metric("Z-score anomalie", round(z, 2))
-    col3.metric("Vent moyen (m/s)", round(wind, 2))
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("CH₄ (ppb)", round(ch4, 1))
+    c2.metric("Z-score anomalie", round(z, 2))
+    c3.metric("Vent moyen (m/s)", round(wind, 2))
 
     st.markdown(
         f"<h3 style='color:{color}'>Niveau de risque : {risk}</h3>"
@@ -181,18 +179,18 @@ st.markdown("## ⚠️ Limites du système")
 st.write("""
 - Résolution spatiale kilométrique (Sentinel-5P)
 - Influence des conditions météorologiques
-- Détection d’anomalies atmosphériques (pas localisation fuite)
-- Confirmation terrain obligatoire
+- Détection d’anomalies atmosphériques, pas localisation fuite
+- Confirmation terrain indispensable
 """)
 
 # ===================== ASSISTANT =====================
 st.markdown("## 🤖 Assistant HSE intelligent")
-question = st.text_input("Posez une question liée au CH₄ ou HSE")
+question = st.text_input("Question CH₄ / HSE")
 
 if st.button("Analyser la question"):
     if "risque" in question.lower():
-        st.info("Le risque est évalué par z-score basé sur l’historique CH₄.")
+        st.info("Le risque est évalué par détection statistique (z-score).")
     elif "vent" in question.lower():
-        st.info("Le vent aide à interpréter la dispersion du méthane.")
+        st.info("Le vent influence la dispersion du méthane.")
     else:
         st.info("Analyse basée sur télédétection et règles HSE.")
