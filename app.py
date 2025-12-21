@@ -187,8 +187,21 @@ if st.button("🚀 Lancer l’analyse"):
     if z > 3:
         risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
         log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
-        send_email_alert(st.secrets["HSE_EMAIL"], f"ALERTE CH₄ CRITIQUE {selected_site}",
-                         f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}")
+# Vérifier si le secret HSE_EMAIL existe
+try:
+    hse_email = st.secrets["HSE_EMAIL"]
+except KeyError:
+    hse_email = None
+    st.warning("⚠️ HSE_EMAIL non défini dans les secrets – les emails ne seront pas envoyés.")
+
+# Envoyer l'alerte seulement si le secret existe
+if hse_email:
+    send_email_alert(
+        hse_email,
+        f"ALERTE CH₄ CRITIQUE {selected_site}",
+        f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
+    )
+
     elif z > 2:
         risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
     else:
