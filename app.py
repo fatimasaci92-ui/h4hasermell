@@ -173,13 +173,20 @@ def send_email_alert(to_email, subject, body):
     except Exception as e:
         st.warning(f"Impossible d'envoyer email: {e}")
 
-# ===================== ANALYSIS =====================
-# ===================== LOGIQUE DE DÉCISION =====================
-# z = detect_anomaly_zscore(ch4, df_hist["CH4_ppb"])
+# ===================== ANALYSE =====================
+ch4, date_img = get_latest_ch4(latitude, longitude)
 
+if ch4 is None:
+    st.error("Aucune donnée CH₄ disponible.")
+    st.stop()
+
+wind = get_wind_speed(latitude, longitude, date_img)
+z = detect_anomaly_zscore(ch4, df_hist["CH4_ppb"])
+
+# ===================== LOGIQUE DE DÉCISION =====================
 if z > 3:
     risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
-    log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
+    log_hse_alert(selected_site, latitude, longitude, ch4, z, risk, decision)
     
     # 🔹 Sécuriser l'envoi d'email
     try:
@@ -211,42 +218,6 @@ st.warning(
     f"➡️ Action recommandée : **{decision}**"
 )
 
-
-# ===================== RESULTS =====================
-if st.session_state.analysis_done:
-    r = st.session_state.results
-    if r["risk"] == "Critique":
-        st.error("🚨 ALERTE HSE CRITIQUE — ACTION IMMÉDIATE")
-    c1, c2 = st.columns(2)
-    c1.metric("CH₄ (ppb)", round(r["ch4"], 1))
-    c2.metric("Z-score", round(r["z"], 2))
-    st.markdown(
-        f"<h3 style='color:{r['color']}'>Risque : {r['risk']}</h3>"
-        f"<b>Action :</b> {r['decision']}",
-        unsafe_allow_html=True
-    )
-    m = folium.Map(location=[lat_site, lon_site], zoom_start=6)
-    folium.Circle([lat_site, lon_site], 3500, color=r["color"], fill=True).add_to(m)
-    folium.Marker([lat_site, lon_site], tooltip=selected_site).add_to(m)
-    st_folium(m, width=750, height=450)
-
-    if st.button("📄 Générer le PDF HSE"):
-        pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
-        with open(pdf, "rb") as f:
-            st.download_button("⬇️ Télécharger PDF", f, file_name=os.path.basename(pdf))
-
-# ===================== HISTORIQUE DES ALERTES =====================
-st.markdown("## 📋 Historique des alertes HSE")
-if os.path.exists("alerts_hse.csv"):
-    df_alerts = pd.read_csv("alerts_hse.csv")
-    st.dataframe(df_alerts, use_container_width=True)
-    st.download_button("⬇️ Télécharger le journal des alertes",
-                       df_alerts.to_csv(index=False),
-                       file_name="alerts_hse.csv",
-                       mime="text/csv")
-else:
-    st.info("Aucune alerte critique enregistrée.")
-
 # ===================== GRAPHIQUE TEMPOREL =====================
 st.markdown("## 📈 Évolution CH₄ historique")
 ch4_series = get_ch4_series(df_hist)
@@ -276,11 +247,9 @@ fig.add_hrect(
     line_width=0
 )
 
-# 🔴 Ajouter le point du jour (correction du bug de date 1969)
-if st.session_state.analysis_done:
-    r = st.session_state.results
-
-    # Vérification et conversion sécurisée de la date
+# 🔴 Ajouter le point du jour si analyse faite
+if st.session_state.get("analysis_done", True):
+    r = {"ch4": ch4, "date_img": date_img}  # création du dict pour compatibilité
     try:
         if r["date_img"] != "Historique CSV":
             date_point = pd.to_datetime(r["date_img"], errors="coerce")
@@ -291,7 +260,6 @@ if st.session_state.analysis_done:
     except Exception:
         date_point = df_hist_plot["date"].max()
 
-    # Ajouter le point rouge au graphique
     fig.add_scatter(
         x=[date_point],
         y=[r["ch4"]],
@@ -301,6 +269,7 @@ if st.session_state.analysis_done:
     )
 
 st.plotly_chart(fig, use_container_width=True)
+
 
 # ===================== ASSISTANT IA =====================
 st.markdown("## 🤖 Assistant HSE / CH₄")
