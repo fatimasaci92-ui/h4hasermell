@@ -49,9 +49,13 @@ site_name = st.sidebar.text_input("Nom du site", "Hassi R'mel")
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 df_hist = pd.read_csv(csv_hist)
 
+# ===================== SESSION STATE =====================
+if "analysis_done" not in st.session_state:
+    st.session_state.analysis_done = False
+    st.session_state.results = {}
+
 # ===================== UTILS =====================
 def get_ch4_series(df):
-    """Détecte automatiquement la colonne CH4 dans le CSV"""
     for col in df.columns:
         if "ch4" in col.lower():
             return df[col]
@@ -93,7 +97,7 @@ def get_latest_ch4(latitude, longitude, days_back=90):
 
         val = ch4_dict.get("CH4_column_volume_mixing_ratio_dry_air")
         if val is not None:
-            return val * 1000, date_img  # ppb
+            return val * 1000, date_img
 
     return None, None
 
@@ -106,10 +110,8 @@ st.markdown("## 🔍 Analyse journalière CH₄")
 
 if st.button("🚀 Lancer l’analyse"):
     ch4, date_img = get_latest_ch4(latitude, longitude)
-
     ch4_series = get_ch4_series(df_hist)
 
-    # ===== FALLBACK HISTORIQUE =====
     if ch4 is None:
         st.warning("⚠️ Donnée satellite indisponible — utilisation historique CSV")
         ch4 = ch4_series.iloc[-1]
@@ -130,15 +132,29 @@ if st.button("🚀 Lancer l’analyse"):
         decision = "✅ Surveillance continue"
         color = "green"
 
-    st.success(f"📅 Source des données : {date_img}")
+    st.session_state.analysis_done = True
+    st.session_state.results = {
+        "ch4": ch4,
+        "z": z,
+        "risk": risk,
+        "decision": decision,
+        "color": color,
+        "date_img": date_img
+    }
+
+# ===================== DISPLAY RESULTS =====================
+if st.session_state.analysis_done:
+    r = st.session_state.results
+
+    st.success(f"📅 Source des données : {r['date_img']}")
 
     c1, c2 = st.columns(2)
-    c1.metric("CH₄ (ppb)", round(ch4, 1))
-    c2.metric("Z-score", round(z, 2))
+    c1.metric("CH₄ (ppb)", round(r["ch4"], 1))
+    c2.metric("Z-score", round(r["z"], 2))
 
     st.markdown(
-        f"<h3 style='color:{color}'>Niveau de risque : {risk}</h3>"
-        f"<b>Action recommandée :</b> {decision}",
+        f"<h3 style='color:{r['color']}'>Niveau de risque : {r['risk']}</h3>"
+        f"<b>Action recommandée :</b> {r['decision']}",
         unsafe_allow_html=True
     )
 
@@ -150,7 +166,7 @@ if st.button("🚀 Lancer l’analyse"):
     folium.Circle(
         location=[latitude, longitude],
         radius=3500,
-        color=color,
+        color=r["color"],
         fill=True,
         fill_opacity=0.35,
         tooltip="Pixel Sentinel-5P"
@@ -163,14 +179,14 @@ if st.button("🚀 Lancer l’analyse"):
 
     st_folium(m, width=750, height=450)
 
-# ===================== ÉTAPE SUIVANTE : GEOTIFF =====================
-st.markdown("## 🔥 Carte des anomalies CH₄ (GeoTIFF)")
+    if st.button("🔄 Réinitialiser l’analyse"):
+        st.session_state.analysis_done = False
+        st.session_state.results = {}
 
-year = st.selectbox(
-    "Choisir l’année",
-    ["2020", "2021", "2022", "2023", "2024", "2025"]
-)
+# ===================== GEOTIFF =====================
+st.markdown("## 🔥 Carte anomalies CH₄ (GeoTIFF)")
 
+year = st.selectbox("Choisir l’année", ["2020", "2021", "2022", "2023", "2024", "2025"])
 tif_path = f"data/anomaly CH4/CH4_anomaly_{year}.tif"
 
 if os.path.exists(tif_path):
@@ -187,8 +203,8 @@ st.markdown("## ⚠️ Limites du système")
 st.write("""
 - Résolution spatiale kilométrique (Sentinel-5P)
 - Sensibilité aux nuages et poussières
-- Détection atmosphérique (pas localisation précise de fuite)
-- Validation terrain obligatoire
+- Détection atmosphérique (pas localisation fuite)
+- Validation terrain indispensable
 """)
 
 # ===================== ASSISTANT =====================
@@ -199,6 +215,6 @@ if st.button("Analyser la question"):
     if "anomalie" in question.lower():
         st.info("Les anomalies sont détectées par comparaison statistique à l’historique.")
     elif "satellite" in question.lower():
-        st.info("Sentinel-5P permet une surveillance régionale quotidienne.")
+        st.info("Sentinel-5P assure une surveillance régionale quotidienne.")
     else:
         st.info("Analyse basée sur télédétection et règles HSE.")
