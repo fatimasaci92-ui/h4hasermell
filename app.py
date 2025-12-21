@@ -263,11 +263,11 @@ fig.add_hrect(
     line_width=0
 )
 
-# 🔴 Ajouter le point du jour de manière sécurisée
+# 🔴 Ajouter le point du jour (correction du bug de date 1969)
 if st.session_state.analysis_done:
     r = st.session_state.results
 
-    # Vérifier que la date est valide
+    # Vérification et conversion sécurisée de la date
     try:
         if r["date_img"] != "Historique CSV":
             date_point = pd.to_datetime(r["date_img"], errors="coerce")
@@ -278,7 +278,7 @@ if st.session_state.analysis_done:
     except Exception:
         date_point = df_hist_plot["date"].max()
 
-    # Ajouter le point rouge
+    # Ajouter le point rouge au graphique
     fig.add_scatter(
         x=[date_point],
         y=[r["ch4"]],
@@ -287,6 +287,7 @@ if st.session_state.analysis_done:
         name="Analyse du jour"
     )
 
+st.plotly_chart(fig, use_container_width=True)
 
 # ===================== ASSISTANT IA =====================
 st.markdown("## 🤖 Assistant HSE / CH₄")
