@@ -234,7 +234,7 @@ if os.path.exists("alerts_hse.csv"):
 else:
     st.info("Aucune alerte critique enregistrée.")
 
-# ===================== GRAPHIQUE TEMPOREL CORRIGÉ =====================
+# ===================== GRAPHIQUE TEMPOREL =====================
 st.markdown("## 📈 Évolution CH₄ historique")
 ch4_series = get_ch4_series(df_hist)
 df_hist_plot = df_hist.copy()
@@ -263,22 +263,24 @@ fig.add_hrect(
     line_width=0
 )
 
-# 🔴 Ajouter le point du jour
-try:
-    if r["date_img"] != "Historique CSV":
-        date_point = pd.to_datetime(r["date_img"])
-    else:
-        date_point = df_hist_plot["date"].max()  # fallback sécurité
-except Exception:
-    date_point = df_hist_plot["date"].max()
-
-fig.add_scatter(
-    x=[date_point],
-    y=[r["ch4"]],
-    mode="markers",
-    marker=dict(color="red", size=12),
-    name="Analyse du jour"
-)
+# 🔴 Ajouter le point du jour **seulement si analyse faite**
+if st.session_state.analysis_done:
+    r = st.session_state.results
+    try:
+        if r["date_img"] != "Historique CSV":
+            date_point = pd.to_datetime(r["date_img"])
+        else:
+            date_point = df_hist_plot["date"].max()
+    except Exception:
+        date_point = df_hist_plot["date"].max()
+    
+    fig.add_scatter(
+        x=[date_point],
+        y=[r["ch4"]],
+        mode="markers",
+        marker=dict(color="red", size=12),
+        name="Analyse du jour"
+    )
 
 st.plotly_chart(fig, use_container_width=True)
 
