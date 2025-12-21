@@ -23,7 +23,7 @@ st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
 
 st.info(
-    "⚠️ Surveillance régionale du CH₄ à partir de Sentinel-5P. "
+    "⚠️ Surveillance régionale du CH₄ basée sur Sentinel-5P. "
     "Ce système ne remplace pas les inspections terrain."
 )
 
@@ -83,6 +83,7 @@ def get_latest_ch4(lat, lon, days_back=90):
         return None, None
 
     imgs = col.toList(col.size())
+
     for i in range(col.size().getInfo()):
         img = ee.Image(imgs.get(i))
         date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
@@ -100,32 +101,6 @@ def detect_anomaly(value, series):
     return (value - series.mean()) / series.std()
 
 
-# ===================== ALERT LOG =====================
-def log_hse_alert(site, lat, lon, ch4, z, risk, decision):
-    log_path = "alerts_hse.csv"
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-
-    row = {
-        "datetime_utc": now,
-        "site": site,
-        "latitude": lat,
-        "longitude": lon,
-        "ch4_ppb": round(ch4, 2),
-        "z_score": round(z, 2),
-        "risk": risk,
-        "decision": decision
-    }
-
-    if os.path.exists(log_path):
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    else:
-        df = pd.DataFrame([row])
-
-    df.to_csv(log_path, index=False)
-
-
-# ===================== PDF =====================
 def generate_hse_pdf(results, site, lat, lon):
     path = f"/tmp/Rapport_CH4_HSE_{site.replace(' ', '_')}.pdf"
     doc = SimpleDocTemplate(path, pagesize=A4)
@@ -159,7 +134,7 @@ def generate_hse_pdf(results, site, lat, lon):
 
     elements.append(Paragraph(
         "Limites : Données satellitaires à résolution kilométrique. "
-        "Validation terrain obligatoire.",
+        "Une confirmation terrain est obligatoire.",
         styles["Italic"]
     ))
 
@@ -182,7 +157,6 @@ if st.button("🚀 Lancer l’analyse"):
 
     if z > 3:
         risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
-        log_hse_alert(site_name, latitude, longitude, ch4, z, risk, decision)
     elif z > 2:
         risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
     else:
@@ -202,9 +176,7 @@ if st.button("🚀 Lancer l’analyse"):
 if st.session_state.analysis_done:
     r = st.session_state.results
 
-    if r["risk"] == "Critique":
-        st.error("🚨 ALERTE HSE CRITIQUE — ACTION IMMÉDIATE REQUISE")
-
+    st.success(f"📅 Source : {r['date_img']}")
     c1, c2 = st.columns(2)
     c1.metric("CH₄ (ppb)", round(r["ch4"], 1))
     c2.metric("Z-score", round(r["z"], 2))
@@ -215,12 +187,13 @@ if st.session_state.analysis_done:
         unsafe_allow_html=True
     )
 
+    st.markdown("## 🗺️ Pixel Sentinel-5P")
     m = folium.Map(location=[latitude, longitude], zoom_start=6)
     folium.Circle([latitude, longitude], 3500, color=r["color"], fill=True).add_to(m)
     folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
     st_folium(m, width=750, height=450)
 
-    if st.button("📄 Générer le rapport PDF HSE"):
+    if st.button("📄 Générer rapport PDF HSE"):
         pdf = generate_hse_pdf(r, site_name, latitude, longitude)
         with open(pdf, "rb") as f:
             st.download_button("⬇️ Télécharger le PDF", f, file_name=os.path.basename(pdf))
@@ -228,16 +201,21 @@ if st.session_state.analysis_done:
     if st.button("🔄 Réinitialiser"):
         st.session_state.analysis_done = False
 
-# ===================== ALERT HISTORY =====================
-st.markdown("## 📋 Historique des alertes HSE")
-if os.path.exists("alerts_hse.csv"):
-    df_alerts = pd.read_csv("alerts_hse.csv")
-    st.dataframe(df_alerts, use_container_width=True)
-    st.download_button(
-        "⬇️ Télécharger le journal des alertes",
-        df_alerts.to_csv(index=False),
-        file_name="alerts_hse.csv",
-        mime="text/csv"
-    )
+# ===================== GEOTIFF =====================
+st.markdown("## 🔥 Anomalies CH₄ (GeoTIFF)")
+year = st.selectbox("Année", ["2020","2021","2022","2023","2024","2025"])
+tif = f"data/anomaly CH4/CH4_anomaly_{year}.tif"
+
+if os.path.exists(tif):
+    with rasterio.open(tif) as src:
+        fig, ax = plt.subplots(figsize=(7,5))
+        show(src, ax=ax)
+        st.pyplot(fig)
 else:
-    st.info("Aucune alerte critique enregistrée.")
+    st.warning("GeoTIFF non disponible")
+
+# ===================== ASSISTANT =====================
+st.markdown("## 🤖 Assistant HSE")
+q = st.text_input("Question HSE / CH₄")
+if st.button("Analyser"):
+    st.info("Analyse basée sur télédétection Sentinel-5P et statistiques HSE.")
