@@ -1,226 +1,297 @@
-# ===================== IMPORTS =====================
+# app.py — VERSION COMPLÈTE FINALE
+
 import streamlit as st
 import pandas as pd
 import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+import os
+import io
+from datetime import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 import ee
 import json
 import tempfile
-import os
-from datetime import datetime
 import folium
 from streamlit_folium import st_folium
 
-# ===================== CONFIG =====================
-st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
-st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
-
-st.info(
-    "⚠️ Ce système permet une surveillance régionale du CH₄ à partir de données satellitaires "
-    "(Sentinel-5P). Il ne remplace pas les inspections terrain."
-)
-
-# ===================== GEE INIT =====================
+# ================= INITIALISATION GOOGLE EARTH ENGINE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
-
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
         json.dump(ee_key_json, f)
         key_path = f.name
 
     credentials = ee.ServiceAccountCredentials(
-        ee_key_json["client_email"], key_path
+        ee_key_json["client_email"],
+        key_path
     )
     ee.Initialize(credentials)
     os.remove(key_path)
 
 except Exception as e:
-    st.error(f"Erreur Google Earth Engine : {e}")
+    st.error(f"Erreur GEE : {e}")
     st.stop()
 
-# ===================== SITE INPUT =====================
-st.sidebar.header("📍 Paramètres du site")
-latitude = st.sidebar.number_input("Latitude", value=32.93, format="%.6f")
-longitude = st.sidebar.number_input("Longitude", value=3.30, format="%.6f")
-site_name = st.sidebar.text_input("Nom du site", "Hassi R'mel")
+# ================= CONFIG STREAMLIT =================
+st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
+st.title("Surveillance du Méthane (CH₄) – HSE")
 
-# ===================== HISTORICAL DATA =====================
+# ================= INFOS SITE =================
+latitude = st.number_input("Latitude", value=32.93, format="%.6f")
+longitude = st.number_input("Longitude", value=3.30, format="%.6f")
+site_name = st.text_input("Nom du site", value="Hassi R'mel")
+
+# ================= CHEMINS DES FICHIERS =================
+DATA_DIR = "data"
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
+csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
+csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
 
-try:
-    df_hist = pd.read_csv(csv_hist)
-except Exception as e:
-    st.error(f"❌ Impossible de charger le fichier historique : {e}")
-    st.stop()
-
-# ===================== FUNCTIONS =====================
-def get_latest_ch4(latitude, longitude, days_back=60):
-    geom = ee.Geometry.Point([longitude, latitude]).buffer(3500)
-
+# ================= FONCTION GEE =================
+def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
+    point = ee.Geometry.Point([longitude, latitude])
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
-
-    col = (
+    collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterBounds(geom)
+        .filterBounds(point)
         .filterDate(start, end)
         .select("CH4_column_volume_mixing_ratio_dry_air")
         .sort("system:time_start", False)
     )
+    size = collection.size().getInfo()
+    if size == 0:
+        return None, None, True
+    images = collection.toList(size)
+    for i in range(size):
+        img = ee.Image(images.get(i))
+        date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+        value = img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+        try:
+            v = value.getInfo()
+        except:
+            v = None
+        if v is None:
+            continue
+        ch4_ppb = float(v) * 1000
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        no_pass_today = date_img != today
+        return ch4_ppb, date_img, no_pass_today
+    return None, None, True
 
-    # Vérifier si la collection est vide
-    if col.size().getInfo() == 0:
-        return None, None
+# ================= SECTION A : Contenu des dossiers =================
+st.markdown("## 📁 Section A — Contenu des données")
+if st.button("Afficher les dossiers de données"):
+    if os.path.exists(DATA_DIR):
+        for root, dirs, files in os.walk(DATA_DIR):
+            st.write("📂", root)
+            for f in files:
+                st.write(" └─", f)
+    else:
+        st.warning("Dossier data introuvable")
 
-    img = ee.Image(col.first())
+# ================= SECTION B : Aperçu CSV =================
+st.markdown("## 📑 Section B — Aperçu des données historiques")
+if st.button("Afficher CSV historique"):
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
+        st.dataframe(df_hist.head(20))
+    else:
+        st.warning("CSV historique introuvable")
 
-    date_img = ee.Date(
-        img.get("system:time_start")
-    ).format("YYYY-MM-dd").getInfo()
+# ================= SECTION C : Carte CH₄ moyenne =================
+st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
+year_mean = st.selectbox("Choisir l'année pour la carte", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Afficher carte CH₄ moyenne"):
+    mean_path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
+    if os.path.exists(mean_path):
+        with rasterio.open(mean_path) as src:
+            img = src.read(1)
+        img[img <= 0] = np.nan
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.imshow(img, cmap="viridis")
+        ax.set_title(f"CH₄ moyen {year_mean}")
+        ax.axis("off")
+        st.pyplot(fig)
+    else:
+        st.warning("Carte CH₄ introuvable")
 
-    ch4_dict = img.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=geom,
-        scale=7000,
-        maxPixels=1e9
-    ).getInfo()
+# ================= SECTION D : Analyse HSE annuelle =================
+st.markdown("## 🔎 Section D — Analyse HSE annuelle")
+year = st.selectbox("Choisir l'année pour analyse HSE", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Analyser année sélectionnée"):
+    if os.path.exists(csv_annual):
+        df_year = pd.read_csv(csv_annual)
+        if year in df_year["year"].values:
+            val = df_year[df_year["year"] == year]["CH4_mean"].values[0]
+            if val >= 1900:
+                risk = "Critique"
+                action = "Arrêt + alerte HSE"
+            elif val >= 1850:
+                risk = "Élevé"
+                action = "Inspection urgente"
+            else:
+                risk = "Normal"
+                action = "Surveillance continue"
+            st.success(f"CH₄ moyen {year} : {val:.1f} ppb")
+            st.write("Risque :", risk)
+            st.write("Action :", action)
+        else:
+            st.warning("Année non trouvée")
+    else:
+        st.warning("CSV annuel introuvable")
 
-    # 🔒 Sécurité totale
-    if (
-        not ch4_dict
-        or "CH4_column_volume_mixing_ratio_dry_air" not in ch4_dict
-        or ch4_dict["CH4_column_volume_mixing_ratio_dry_air"] is None
-    ):
-        return None, date_img
-
-    ch4_ppb = ch4_dict["CH4_column_volume_mixing_ratio_dry_air"] * 1000
-
-    return ch4_ppb, date_img
-
-
-    img = ee.Image(col.first())
-    date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-
-    ch4 = img.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=geom,
-        scale=7000,
-        maxPixels=1e9
-    ).getInfo()
-
-    if not ch4:
-        return None, None
-
-    return list(ch4.values())[0] * 1000, date_img  # ppb
-
-
-def get_wind_speed(latitude, longitude, date):
-    point = ee.Geometry.Point([longitude, latitude])
-
-    era5 = (
-        ee.ImageCollection("ECMWF/ERA5/DAILY")
-        .filterDate(date, date)
-        .first()
-    )
-
-    u = era5.select("u_component_of_wind_10m")
-    v = era5.select("v_component_of_wind_10m")
-
-    wind = u.pow(2).add(v.pow(2)).sqrt()
-
-    speed = wind.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=10000,
-        maxPixels=1e9
-    ).getInfo()
-
-    return list(speed.values())[0]
-
-
-def detect_anomaly_zscore(value, series):
-    return (value - series.mean()) / series.std()
-
-
-# ===================== ANALYSIS =====================
-st.markdown("## 🔍 Analyse journalière CH₄")
-
-if st.button("🚀 Lancer l’analyse"):
-    ch4, date_img = get_latest_ch4(latitude, longitude)
-
+# ================= SECTION E : Analyse CH₄ du jour =================
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+if st.button("Analyser CH₄ du jour"):
+    st.info("Analyse en cours...")
+    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
     if ch4 is None:
-        st.error("Aucune donnée CH₄ disponible.")
+        st.error("⚠️ Aucune image satellite disponible sur la période analysée.")
         st.stop()
-
-    wind = get_wind_speed(latitude, longitude, date_img)
-    z = detect_anomaly_zscore(ch4, df_hist["CH4_ppb"])
-
-    # ===================== DECISION LOGIC =====================
-    if z > 3:
-        risk = "Critique"
-        decision = "🚨 Alerte HSE + inspection immédiate"
-        color = "red"
-    elif z > 2:
-        risk = "Anomalie"
-        decision = "⚠️ Inspection terrain recommandée"
-        color = "orange"
+    if no_pass_today:
+        st.error("☁️ Pas de passage satellite valide aujourd’hui (nuages ou orbite)")
+        st.warning(f"➡️ Dernière image disponible sur GEE : **{date_img}**")
+    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
+    if ch4 >= 1900:
+        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+        action = "Alerter, sécuriser la zone et stopper opérations"
     else:
-        risk = "Normal"
-        decision = "✅ Surveillance continue"
-        color = "green"
+        st.success("CH₄ normal")
+        action = "Surveillance continue"
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ (ppb)": round(ch4, 2),
+        "Anomalie": "Oui" if ch4 >= 1900 else "Non",
+        "Action HSE": action
+    }])
+    st.table(df_day)
 
-    # ===================== RESULTS =====================
-    st.success(f"📅 Date image satellite : {date_img}")
+# ================= SECTION F : PDF Professionnel =================
+def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("CH₄ (ppb)", round(ch4, 1))
-    c2.metric("Z-score anomalie", round(z, 2))
-    c3.metric("Vent moyen (m/s)", round(wind, 2))
+    story.append(Paragraph("<b>Rapport Professionnel HSE – Surveillance CH₄</b>", styles["Title"]))
+    story.append(Spacer(1,12))
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    story.append(Paragraph(f"<b>Site :</b> {site_name}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date du rapport :</b> {now}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date image satellite :</b> {date_img}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Responsable action :</b> {responsable}", styles["Normal"]))
+    story.append(Spacer(1,12))
+    story.append(Paragraph(
+        "Ce rapport présente la surveillance du méthane (CH₄) sur le site, "
+        "les valeurs mesurées, et les actions correctives recommandées. "
+        "Les seuils HSE sont : Élevé ≥1850 ppb, Critique ≥1900 ppb. "
+        "Le suivi quotidien permet de détecter rapidement toute anomalie et de sécuriser le site.",
+        styles["Normal"]
+    ))
+    story.append(Spacer(1,12))
 
-    st.markdown(
-        f"<h3 style='color:{color}'>Niveau de risque : {risk}</h3>"
-        f"<b>Action recommandée :</b> {decision}",
-        unsafe_allow_html=True
-    )
+    data_table = [
+        ["Paramètre", "Valeur"],
+        ["CH₄ mesuré (ppb)", f"{ch4_value:.1f}"],
+        ["Anomalie détectée", "Oui" if ch4_value >= 1900 else "Non"],
+        ["Action corrective", action]
+    ]
+    t = Table(data_table, hAlign="LEFT", colWidths=[200,250])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN',(0,0),(-1,-1),'LEFT'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,0),12),
+        ('BOTTOMPADDING',(0,0),(-1,0),6),
+        ('BACKGROUND',(0,1),(-1,-1),colors.lightblue),
+        ('GRID',(0,0),(-1,-1),1,colors.black),
+    ]))
+    story.append(t)
+    story.append(Spacer(1,12))
 
-    # ===================== MAP =====================
-    st.markdown("## 🗺️ Carte CH₄ – Pixel Sentinel-5P")
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
+st.markdown("## 📄 Télécharger PDF Professionnel")
+if st.button("Générer PDF Professionnel"):
+    if "ch4" not in locals():
+        st.warning("Lancez d'abord l'analyse du jour pour générer le PDF")
+    else:
+        pdf_buffer = generate_professional_pdf(site_name, date_img, ch4, action)
+        st.download_button(
+            "⬇️ Télécharger le PDF Professionnel",
+            pdf_buffer,
+            f"Rapport_HSE_CH4_{site_name}_{date_img}.pdf",
+            "application/pdf"
+        )
+
+# ================= SECTION G : Graphiques temporels =================
+st.markdown("## 📊 Graphiques temporels 2020–2025")
+if st.button("Afficher graphiques CH₄"):
+    if os.path.exists(csv_annual):
+        df_a = pd.read_csv(csv_annual)
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.plot(df_a["year"], df_a["CH4_mean"], marker="o")
+        ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+        ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+        ax.set_title("CH₄ annuel moyen")
+        ax.set_xlabel("Année")
+        ax.set_ylabel("CH₄ (ppb)")
+        ax.legend()
+        st.pyplot(fig)
+    else:
+        st.warning("CSV annuel introuvable")
+    if os.path.exists(csv_monthly):
+        df_m = pd.read_csv(csv_monthly)
+        date_col = df_m.columns[0]
+        ch4_col = df_m.columns[1]
+        df_m[date_col] = pd.to_datetime(df_m[date_col])
+        fig, ax = plt.subplots(figsize=(10,4))
+        ax.plot(df_m[date_col], df_m[ch4_col], marker="o")
+        ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+        ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+        ax.set_title("CH₄ mensuel moyen")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("CH₄ (ppb)")
+        ax.legend()
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+    else:
+        st.warning("CSV mensuel introuvable")
+
+# ================= SECTION H : Carte interactive Folium =================
+st.markdown("## 🗺️ Carte interactive")
+if st.button("Afficher carte interactive"):
     m = folium.Map(location=[latitude, longitude], zoom_start=6)
+    folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
+    st_folium(m, width=700, height=400)
 
-    folium.Circle(
-        location=[latitude, longitude],
-        radius=3500,
-        color=color,
-        fill=True,
-        fill_opacity=0.35,
-        tooltip="Pixel Sentinel-5P"
-    ).add_to(m)
-
-    folium.Marker(
-        [latitude, longitude],
-        popup=site_name,
-        tooltip=site_name
-    ).add_to(m)
-
-    st_folium(m, width=750, height=450)
-
-# ===================== LIMITS =====================
-st.markdown("## ⚠️ Limites du système")
-st.write("""
-- Résolution spatiale kilométrique (Sentinel-5P)
-- Influence des conditions météorologiques
-- Détection d’anomalies atmosphériques, pas localisation fuite
-- Confirmation terrain indispensable
-""")
-
-# ===================== ASSISTANT =====================
-st.markdown("## 🤖 Assistant HSE intelligent")
-question = st.text_input("Question CH₄ / HSE")
-
-if st.button("Analyser la question"):
-    if "risque" in question.lower():
-        st.info("Le risque est évalué par détection statistique (z-score).")
-    elif "vent" in question.lower():
-        st.info("Le vent influence la dispersion du méthane.")
+# ================= SECTION I : Agent IA =================
+st.markdown("## 🤖 Agent IA – Posez vos questions")
+user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
+if st.button("Obtenir réponse IA"):
+    if user_question.strip() != "":
+        if "niveau" in user_question.lower():
+            st.info("Le niveau de CH₄ est affiché dans les sections Analyse du jour et Graphiques temporels.")
+        elif "risque" in user_question.lower():
+            st.info("Les seuils HSE sont : Élevé ≥1850 ppb, Critique ≥1900 ppb.")
+        else:
+            st.info("Votre question sera analysée dans la prochaine version IA intelligente.")
     else:
-        st.info("Analyse basée sur télédétection et règles HSE.")
+        st.warning("Veuillez poser une question")
+        
