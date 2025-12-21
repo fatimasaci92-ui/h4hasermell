@@ -36,23 +36,9 @@ except Exception as e:
     st.error(f"Erreur Google Earth Engine : {e}")
     st.stop()
 
-# ===================== SITE INPUT =====================
-latitude = st.number_input("Latitude", value=32.93, format="%.6f")
-longitude = st.number_input("Longitude", value=3.30, format="%.6f")
-site_name = st.text_input("Nom du site", "Hassi R'mel")
-selected_site = site_name
-
-# ===================== HISTORICAL DATA =====================
-csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
-try:
-    df_hist = pd.read_csv(csv_hist)
-except FileNotFoundError:
-    st.error(f"❌ Fichier historique CH₄ introuvable : {csv_hist}")
-    st.stop()
-
 # ===================== FUNCTIONS =====================
 def get_latest_ch4(latitude, longitude, days_back=60):
-    geom = ee.Geometry.Point([longitude, latitude]).buffer(3500)  # pixel TROPOMI
+    geom = ee.Geometry.Point([longitude, latitude]).buffer(3500)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
 
@@ -126,6 +112,20 @@ def log_hse_alert(site, lat, lon, ch4, z, risk, decision):
 def send_email_alert(to_email, subject, body):
     # Ici envoyer l'email via SMTP
     pass
+
+# ===================== HISTORICAL DATA =====================
+csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
+try:
+    df_hist = pd.read_csv(csv_hist)
+except FileNotFoundError:
+    st.error(f"❌ Fichier historique CH₄ introuvable : {csv_hist}")
+    st.stop()
+
+# ===================== SITE INPUT =====================
+latitude = st.number_input("Latitude", value=32.93, format="%.6f")
+longitude = st.number_input("Longitude", value=3.30, format="%.6f")
+site_name = st.text_input("Nom du site", "Hassi R'mel")
+selected_site = site_name
 
 # ===================== ANALYSE =====================
 st.markdown("## 🔍 Analyse journalière CH₄")
