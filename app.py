@@ -23,10 +23,6 @@ from email.mime.text import MIMEText
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
-st.write("TEST SECRETS :")
-st.write(st.secrets.keys())
-st.stop()
-
 st.info(
     "⚠️ Surveillance régionale du CH₄ basée sur Sentinel-5P. "
     "Ce système ne remplace pas les inspections terrain."
@@ -187,11 +183,19 @@ if st.button("🚀 Lancer l’analyse"):
         ch4 = series.iloc[-1]
         date_img = "Historique CSV"
     z = detect_anomaly(ch4, series)
-    if z > 3:
-        risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
-        log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
-        send_email_alert(st.secrets["HSE_EMAIL"], f"ALERTE CH₄ CRITIQUE {selected_site}",
-                         f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}")
+   if z > 3:
+    risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
+    log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
+
+    if "HSE_EMAIL" in st.secrets:
+        send_email_alert(
+            st.secrets["HSE_EMAIL"],
+            f"ALERTE CH₄ CRITIQUE {selected_site}",
+            f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
+        )
+    else:
+        st.warning("⚠️ Email HSE non configuré – alerte non envoyée")
+
     elif z > 2:
         risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
     else:
