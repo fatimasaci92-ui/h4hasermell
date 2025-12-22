@@ -173,37 +173,45 @@ def send_email_alert(to_email, subject, body):
         st.warning(f"Impossible d'envoyer email: {e}")
 
 # ===================== ANALYSIS =====================
-st.markdown("## 🔍 Analyse CH₄ multi-sites")
-
 if st.button("🚀 Lancer l’analyse"):
     ch4, date_img = get_latest_ch4(lat_site, lon_site)
     series = get_ch4_series(df_hist)
+
     if ch4 is None:
         st.warning("Donnée satellite indisponible – utilisation CSV")
         ch4 = series.iloc[-1]
         date_img = "Historique CSV"
-    z = detect_anomaly(ch4, series)
-   if z > 3:
-    risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
-    log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
 
-    if "HSE_EMAIL" in st.secrets:
-        send_email_alert(
-            st.secrets["HSE_EMAIL"],
-            f"ALERTE CH₄ CRITIQUE {selected_site}",
-            f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
-        )
-    else:
-        st.warning("⚠️ Email HSE non configuré – alerte non envoyée")
+    z = detect_anomaly(ch4, series)
+
+    if z > 3:
+        risk, decision, color = "Critique", "Alerte HSE immédiate", "red"
+        log_hse_alert(selected_site, lat_site, lon_site, ch4, z, risk, decision)
+
+        if "HSE_EMAIL" in st.secrets:
+            send_email_alert(
+                st.secrets["HSE_EMAIL"],
+                f"ALERTE CH₄ CRITIQUE {selected_site}",
+                f"CH4={ch4:.1f} ppb, Z={z:.2f}, Action={decision}"
+            )
+        else:
+            st.warning("⚠️ Email HSE non configuré – alerte non envoyée")
 
     elif z > 2:
         risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
+
     else:
         risk, decision, color = "Normal", "Surveillance continue", "green"
+
     st.session_state.analysis_done = True
     st.session_state.results = {
-        "ch4": ch4, "z": z, "risk": risk, "decision": decision,
-        "color": color, "date_img": date_img, "site": selected_site
+        "ch4": ch4,
+        "z": z,
+        "risk": risk,
+        "decision": decision,
+        "color": color,
+        "date_img": date_img,
+        "site": selected_site
     }
 
 # ===================== RESULTS =====================
