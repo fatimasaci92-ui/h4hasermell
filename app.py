@@ -259,8 +259,16 @@ fig = px.line(df_hist_plot, x="date", y="CH4_ppb", title=f"Évolution CH₄ – 
 fig.add_hline(y=ch4_series.mean(), line_dash="dash", line_color="green", annotation_text="Moyenne")
 fig.add_hrect(y0=ch4_series.mean()-2*ch4_series.std(), y1=ch4_series.mean()+2*ch4_series.std(),
               fillcolor="lightgreen", opacity=0.2, line_width=0)
-fig.add_scatter(x=[datetime.utcnow()], y=[r["ch4"]], mode="markers", marker=dict(color="red", size=12),
-                name="Analyse du jour")
+if st.session_state.analysis_done:
+    r = st.session_state.results
+    fig.add_scatter(
+        x=[datetime.utcnow()],
+        y=[r["ch4"]],
+        mode="markers",
+        marker=dict(color="red", size=12),
+        name="Analyse du jour"
+    )
+
 st.plotly_chart(fig, use_container_width=True)
 
 # ===================== ASSISTANT IA =====================
