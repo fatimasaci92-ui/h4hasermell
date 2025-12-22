@@ -23,6 +23,9 @@ from email.mime.text import MIMEText
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
+st.write("TEST SECRETS :")
+st.write(st.secrets.keys())
+st.stop()
 
 st.info(
     "⚠️ Surveillance régionale du CH₄ basée sur Sentinel-5P. "
