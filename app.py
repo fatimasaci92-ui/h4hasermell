@@ -305,28 +305,7 @@ def display_flares(fc, fmap):
 # Appeler la fonction pour afficher les torches
 display_flares(flares, m)
 
-    # ===================== SOURCES D'ÉMISSION =====================
-    flare_info = attribute_ch4_source(lat_site, lon_site)
-    st.markdown(f"### {flare_info['icon']} Attribution de la source")
-    st.info(f"{flare_info['source']} — Nombre : {flare_info['n_flares']}")
-
-    flares = flare_info["flares"]
-
-    def add_flares_to_map(fc, fmap):
-        def cb(fc_json):
-            features = fc_json["features"]
-            for f in features:
-                lon_f, lat_f = f["geometry"]["coordinates"]
-                folium.Marker(
-                    location=[lat_f, lon_f],
-                    icon=folium.Icon(color="red", icon="fire"),
-                    tooltip="Torche détectée (VIIRS)"
-                ).add_to(fmap)
-            st_folium(fmap, width=750, height=450)
-        fc.evaluate(cb)
-
-    add_flares_to_map(flares, m)
-
+   
     # ===================== DÉCISION AUTOMATIQUE =====================
     if r["z"] > 2 and flare_info["n_flares"] > 0:
         r["decision"] = "Élévation CH₄ probablement liée aux torches"
