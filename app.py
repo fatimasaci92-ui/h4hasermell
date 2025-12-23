@@ -193,8 +193,9 @@ def get_active_flares(lat, lon, days_back=7):
     return flares
 
 def display_flares(fc, fmap):
-    def cb(fc_json):
-        n_flares = len(fc_json["features"])
+    try:
+        fc_info = fc.limit(50).getInfo()
+        n_flares = len(fc_info["features"])
         if n_flares > 0:
             source = "Torches détectées"
             icon = "🔥"
@@ -205,8 +206,7 @@ def display_flares(fc, fmap):
         st.markdown(f"### {icon} Attribution de la source")
         st.info(f"{source} — Nombre : {n_flares}")
 
-        # Ajouter les torches sur la carte
-        for f in fc_json["features"]:
+        for f in fc_info["features"]:
             lon_f, lat_f = f["geometry"]["coordinates"]
             folium.Marker(
                 location=[lat_f, lon_f],
@@ -216,7 +216,6 @@ def display_flares(fc, fmap):
 
         st_folium(fmap, width=750, height=450)
 
-        # Mise à jour de la décision HSE
         if st.session_state.analysis_done:
             r = st.session_state.results
             if r["z"] > 2 and n_flares > 0:
@@ -224,7 +223,8 @@ def display_flares(fc, fmap):
             elif r["z"] > 2 and n_flares == 0:
                 r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
 
-    fc.evaluate(cb)
+    except Exception as e:
+        st.warning(f"Impossible de récupérer les torches : {e}")
 
 # ===================== ANALYSIS =====================
 if st.button("🚀 Lancer l’analyse"):
@@ -280,18 +280,14 @@ if st.session_state.analysis_done:
         unsafe_allow_html=True
     )
 
-    # Carte de base
     m = folium.Map(location=[lat_site, lon_site], zoom_start=6)
     folium.Circle([lat_site, lon_site], 3500, color=r["color"], fill=True).add_to(m)
     folium.Marker([lat_site, lon_site], tooltip=selected_site).add_to(m)
 
-    # Affichage des torches
+    # Afficher les torches sur la carte
     flares = get_active_flares(lat_site, lon_site)
     display_flares(flares, m)
 
-# ===================== PDF =====================
-if st.session_state.analysis_done:
-    r = st.session_state.results
     if st.button("📄 Générer le PDF HSE"):
         pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
         with open(pdf, "rb") as f:
