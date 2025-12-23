@@ -264,6 +264,46 @@ if st.session_state.analysis_done:
     folium.Circle([lat_site, lon_site], 3500, color=r["color"], fill=True).add_to(m)
     folium.Marker([lat_site, lon_site], tooltip=selected_site).add_to(m)
     st_folium(m, width=750, height=450)
+# ===================== NOUVELLES TORCHES =====================
+flares = get_active_flares(lat_site, lon_site)
+
+def display_flares(fc, fmap):
+    def cb(fc_json):
+        n_flares = len(fc_json["features"])
+        if n_flares > 0:
+            source = "Torches détectées"
+            icon = "🔥"
+        else:
+            source = "Aucune torche détectée"
+            icon = "❓"
+
+        st.markdown(f"### {icon} Attribution de la source")
+        st.info(f"{source} — Nombre : {n_flares}")
+
+        # Ajouter les torches sur la carte
+        for f in fc_json["features"]:
+            lon_f, lat_f = f["geometry"]["coordinates"]
+            folium.Marker(
+                location=[lat_f, lat_f],
+                icon=folium.Icon(color="red", icon="fire"),
+                tooltip="Torche détectée (VIIRS)"
+            ).add_to(fmap)
+
+        # Afficher la carte mise à jour
+        st_folium(fmap, width=750, height=450)
+
+        # Mise à jour de la décision HSE
+        if st.session_state.analysis_done:
+            r = st.session_state.results
+            if r["z"] > 2 and n_flares > 0:
+                r["decision"] = "Élévation CH₄ probablement liée aux torches"
+            elif r["z"] > 2 and n_flares == 0:
+                r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
+
+    fc.evaluate(cb)
+
+# Appeler la fonction pour afficher les torches
+display_flares(flares, m)
 
     # ===================== SOURCES D'ÉMISSION =====================
     flare_info = attribute_ch4_source(lat_site, lon_site)
