@@ -28,39 +28,22 @@ st.info(
     "Ce système ne remplace pas les inspections terrain."
 )
 
-# ===================== NOUVELLES FONCTIONS GEE =====================
-def get_active_flares(lat, lon, days_back=7):
-    """Détecte les torches actives via VIIRS sur les derniers jours"""
-    geom = ee.Geometry.Point([lon, lat]).buffer(10000)  # 10 km
-    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = end.advance(-days_back, "day")
+# ===================== GEE INIT =====================
+try:
+    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
+        json.dump(ee_key_json, f)
+        key_path = f.name
 
-    fires = (
-        ee.ImageCollection("NOAA/VIIRS/001/VNP14IMGTDL_NRT")
-        .filterBounds(geom)
-        .filterDate(start, end)
-        .select("Bright_ti4")
+    credentials = ee.ServiceAccountCredentials(
+        ee_key_json["client_email"], key_path
     )
+    ee.Initialize(credentials)
+    os.remove(key_path)
 
-    def to_point(img):
-        return img.gt(330).selfMask().reduceToVectors(
-            geometry=geom,
-            scale=375,
-            geometryType="centroid",
-            maxPixels=1e9
-        )
-
-    flares = fires.map(to_point).flatten()
-    return flares
-
-def attribute_ch4_source(lat, lon):
-    """Attribue l’élévation CH4 à une source"""
-    flares = get_active_flares(lat, lon)
-    n_flares = flares.size().getInfo()
-    if n_flares > 0:
-        return "Torches détectées", n_flares, "🔥"
-    else:
-        return "Aucune torche détectée", 0, "❓"
+except Exception as e:
+    st.error(f"Erreur Google Earth Engine : {e}")
+    st.stop()
 
 # ===================== SIDEBAR =====================
 st.sidebar.header("📍 Paramètres du site")
@@ -174,7 +157,6 @@ def generate_hse_pdf(results, site, lat, lon):
 
 def send_email_alert(to_email, subject, body):
     try:
-        # Paramètres SMTP à adapter à ton serveur / Gmail / entreprise
         smtp_server = st.secrets["SMTP_SERVER"]
         smtp_port = st.secrets["SMTP_PORT"]
         smtp_user = st.secrets["SMTP_USER"]
@@ -188,6 +170,41 @@ def send_email_alert(to_email, subject, body):
             server.sendmail(smtp_user, [to_email], msg.as_string())
     except Exception as e:
         st.warning(f"Impossible d'envoyer email: {e}")
+
+# ===================== NOUVELLES FONCTIONS GEE =====================
+def get_active_flares(lat, lon, days_back=7):
+    geom = ee.Geometry.Point([lon, lat]).buffer(10000)
+    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = end.advance(-days_back, "day")
+    fires = (
+        ee.ImageCollection("NOAA/VIIRS/001/VNP14IMGTDL_NRT")
+        .filterBounds(geom)
+        .filterDate(start, end)
+        .select("Bright_ti4")
+    )
+    def to_point(img):
+        return img.gt(330).selfMask().reduceToVectors(
+            geometry=geom,
+            scale=375,
+            geometryType="centroid",
+            maxPixels=1e9
+        )
+    flares = fires.map(to_point).flatten()
+    return flares
+
+def attribute_ch4_source(lat, lon):
+    flares = get_active_flares(lat, lon)
+    result = {"flares": flares, "n_flares": 0, "source": "", "icon": ""}
+    def cb(n):
+        result["n_flares"] = n
+        if n > 0:
+            result["source"] = "Torches détectées"
+            result["icon"] = "🔥"
+        else:
+            result["source"] = "Aucune torche détectée"
+            result["icon"] = "❓"
+    flares.size().evaluate(cb)
+    return result
 
 # ===================== ANALYSIS =====================
 if st.button("🚀 Lancer l’analyse"):
@@ -216,7 +233,6 @@ if st.button("🚀 Lancer l’analyse"):
 
     elif z > 2:
         risk, decision, color = "Anomalie", "Inspection terrain requise", "orange"
-
     else:
         risk, decision, color = "Normal", "Surveillance continue", "green"
 
@@ -248,32 +264,33 @@ if st.session_state.analysis_done:
     folium.Circle([lat_site, lon_site], 3500, color=r["color"], fill=True).add_to(m)
     folium.Marker([lat_site, lon_site], tooltip=selected_site).add_to(m)
     st_folium(m, width=750, height=450)
-# ===================== SOURCES D'ÉMISSION =====================
-source, n_flares, icon = attribute_ch4_source(lat_site, lon_site)
 
-st.markdown(f"### {icon} Attribution de la source")
-st.info(f"{source} — Nombre : {n_flares}")
+    # ===================== SOURCES D'ÉMISSION =====================
+    flare_info = attribute_ch4_source(lat_site, lon_site)
+    st.markdown(f"### {flare_info['icon']} Attribution de la source")
+    st.info(f"{flare_info['source']} — Nombre : {flare_info['n_flares']}")
 
-flares = get_active_flares(lat_site, lon_site)
+    flares = flare_info["flares"]
 
-def add_flares_to_map(fc, fmap):
-    features = fc.getInfo()["features"]
-    for f in features:
-        lon_f, lat_f = f["geometry"]["coordinates"]
-        folium.Marker(
-            location=[lat_f, lon_f],
-            icon=folium.Icon(color="red", icon="fire"),
-            tooltip="Torche détectée (VIIRS)"
-        ).add_to(fmap)
+    def add_flares_to_map(fc, fmap):
+        def cb(fc_json):
+            features = fc_json["features"]
+            for f in features:
+                lon_f, lat_f = f["geometry"]["coordinates"]
+                folium.Marker(
+                    location=[lat_f, lon_f],
+                    icon=folium.Icon(color="red", icon="fire"),
+                    tooltip="Torche détectée (VIIRS)"
+                ).add_to(fmap)
+            st_folium(fmap, width=750, height=450)
+        fc.evaluate(cb)
 
-add_flares_to_map(flares, m)
+    add_flares_to_map(flares, m)
 
-# ===================== DÉCISION AUTOMATIQUE =====================
-if st.session_state.analysis_done:
-    r = st.session_state.results
-    if r["z"] > 2 and n_flares > 0:
+    # ===================== DÉCISION AUTOMATIQUE =====================
+    if r["z"] > 2 and flare_info["n_flares"] > 0:
         r["decision"] = "Élévation CH₄ probablement liée aux torches"
-    elif r["z"] > 2 and n_flares == 0:
+    elif r["z"] > 2 and flare_info["n_flares"] == 0:
         r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
 
     if st.button("📄 Générer le PDF HSE"):
