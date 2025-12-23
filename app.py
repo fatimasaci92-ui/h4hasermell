@@ -307,11 +307,7 @@ display_flares(flares, m)
 
    
     # ===================== DÉCISION AUTOMATIQUE =====================
-    if r["z"] > 2 and flare_info["n_flares"] > 0:
-        r["decision"] = "Élévation CH₄ probablement liée aux torches"
-    elif r["z"] > 2 and flare_info["n_flares"] == 0:
-        r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
-
+    
     if st.button("📄 Générer le PDF HSE"):
         pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
         with open(pdf, "rb") as f:
