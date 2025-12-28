@@ -69,10 +69,19 @@ def get_latest_ch4(lat, lon, days_back=60):
         return None, None
     img = ee.Image(col.first())
     val = img.reduceRegion(
-        ee.Reducer.mean(), geom, 7000, maxPixels=1e9
-    ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
-    date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-    return val * 1000, date_img
+    ee.Reducer.mean(),
+    geom,
+    7000,
+    maxPixels=1e9
+).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+
+date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+
+# --- CORRECTION CRITIQUE ---
+if val is None:
+    return None, None
+
+return val * 1000, date_img
 
 def detect_anomaly(value, series):
     return (value - series.mean()) / series.std()
