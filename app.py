@@ -22,19 +22,43 @@ st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Système intelligent de surveillance du méthane (CH₄) – HSE")
 
 # ===================== GEE INIT =====================
-try:
-    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
-        json.dump(ee_key_json, f)
-        key_path = f.name
-    credentials = ee.ServiceAccountCredentials(
-        ee_key_json["client_email"], key_path
+def get_active_flares(lat, lon, days_back=7):
+    """
+    Détection des torches / sources thermiques
+    Dataset PUBLIC compatible Service Account
+    """
+    geom = ee.Geometry.Point([lon, lat]).buffer(10000)
+
+    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = end.advance(-days_back, "day")
+
+    fires = (
+        ee.ImageCollection("NASA/VIIRS/002/VNP14A1")
+        .filterBounds(geom)
+        .filterDate(start, end)
+        .select("FireMask")
     )
-    ee.Initialize(credentials)
-    os.remove(key_path)
-except Exception as e:
-    st.error(f"GEE Error : {e}")
-    st.stop()
+
+    # FireMask == 7 → feu actif confirmé (torche / flare)
+    def to_vectors(img):
+        mask = img.eq(7)
+        return mask.selfMask().reduceToVectors(
+            geometry=geom,
+            scale=1000,
+            geometryType="centroid",
+            maxPixels=1e9
+        )
+
+    flares = fires.map(to_vectors).flatten()
+
+    # ⚠️ IMPORTANT : Streamlit → PAS de evaluate()
+    try:
+        features = flares.getInfo()["features"]
+    except Exception:
+        features = []
+
+    return features
+
 
 # ===================== SIDEBAR =====================
 st.sidebar.header("📍 Site")
