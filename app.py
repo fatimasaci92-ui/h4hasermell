@@ -129,19 +129,46 @@ def get_wind_speed(lat, lon):
 
 # ===================== ANALYSIS =====================
 if st.button("🚀 Lancer l’analyse"):
-    series = get_ch4_series(df_hist)
-    ch4, date_img = get_latest_ch4(lat_site, lon_site)
-    if ch4 is None:
-        ch4 = series.iloc[-1]
-        date_img = "CSV"
-    z = detect_anomaly(ch4, series)
-    wind = get_wind_speed(lat_site, lon_site)
-    st.session_state.results = {
-        "ch4": ch4,
-        "z": z,
-        "wind": wind,
-        "date": date_img
-    }
+    def get_latest_ch4(lat, lon, days_back=90):
+    geom = ee.Geometry.Point([lon, lat]).buffer(3500)
+    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = end.advance(-days_back, "day")
+
+    col = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterBounds(geom)
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
+    )
+
+    if col.size().getInfo() == 0:
+        return None, None
+
+    imgs = col.toList(col.size())
+
+    for i in range(col.size().getInfo()):
+        img = ee.Image(imgs.get(i))
+
+        val = img.reduceRegion(
+            ee.Reducer.mean(),
+            geom,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+
+        # ✅ CORRECTION CRITIQUE
+        if val is None:
+            continue   # ← on passe à l’image suivante
+
+        date_img = ee.Date(img.get("system:time_start")) \
+            .format("YYYY-MM-dd").getInfo()
+
+        return val * 1000, date_img  # ppb
+
+    # Si AUCUNE image valide
+    return None, None
+
 
 # ===================== RESULTS =====================
 if "results" in st.session_state:
