@@ -77,8 +77,10 @@ if "analysis_done" not in st.session_state:
 # ===================== FUNCTIONS =====================
 def get_latest_ch4(lat, lon, days_back=90):
     geom = ee.Geometry.Point([lon, lat]).buffer(3500)
+
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
+
     col = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterBounds(geom)
@@ -86,41 +88,30 @@ def get_latest_ch4(lat, lon, days_back=90):
         .select("CH4_column_volume_mixing_ratio_dry_air")
         .sort("system:time_start", False)
     )
+
     if col.size().getInfo() == 0:
         return None, None
+
     imgs = col.toList(col.size())
+
     for i in range(col.size().getInfo()):
         img = ee.Image(imgs.get(i))
         date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+
         val = img.reduceRegion(
-            ee.Reducer.mean(), geom, 7000, maxPixels=1e9
-        ).getInfo().get("CH4_column_volume_mixing_ratio_dry_air")
-        if val:
-            return val * 1000, date_img
+            reducer=ee.Reducer.mean(),
+            geometry=geom,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        val = val.getInfo() if val else None
+
+        if val is not None:
+            return val * 1000, date_img  # ppm → ppb
+
     return None, None
 
-def detect_anomaly(value, series):
-    return (value - series.mean()) / series.std()
-
-def log_hse_alert(site, lat, lon, ch4, z, risk, decision):
-    log_path = "alerts_hse.csv"
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    row = {
-        "datetime_utc": now,
-        "site": site,
-        "latitude": lat,
-        "longitude": lon,
-        "ch4_ppb": round(ch4, 2),
-        "z_score": round(z, 2),
-        "risk": risk,
-        "decision": decision
-    }
-    if os.path.exists(log_path):
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    else:
-        df = pd.DataFrame([row])
-    df.to_csv(log_path, index=False)
 
 def generate_hse_pdf(results, site, lat, lon):
     path = f"/tmp/Rapport_CH4_HSE_{site.replace(' ', '_')}.pdf"
