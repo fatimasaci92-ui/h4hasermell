@@ -9,8 +9,6 @@ import os
 from datetime import datetime
 import folium
 from streamlit_folium import st_folium
-import rasterio
-from rasterio.plot import show
 import matplotlib.pyplot as plt
 import plotly.express as px
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -154,7 +152,6 @@ def generate_hse_pdf(results, site, lat, lon):
     doc.build(elements)
     return path
 
-# ===================== NOUVELLES FONCTIONS GEE =====================
 def get_active_flares(lat, lon, days_back=7):
     geom = ee.Geometry.Point([lon, lat]).buffer(10000)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
