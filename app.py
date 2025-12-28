@@ -53,7 +53,9 @@ sites = {
     "Hassi R'mel": (32.93, 3.30),
     "Autre Site": (32.50, 3.20)
 }
-selected_site = st.sidebar.selectbox("Choisir le site pour analyse multi-sites", list(sites.keys()))
+selected_site = st.sidebar.selectbox(
+    "Choisir le site pour analyse multi-sites", list(sites.keys())
+)
 lat_site, lon_site = sites[selected_site]
 
 # ===================== HISTORICAL DATA =====================
@@ -85,6 +87,7 @@ def get_latest_ch4(lat, lon, days_back=90):
     )
     if col.size().getInfo() == 0:
         return None, None
+
     imgs = col.toList(col.size())
     for i in range(col.size().getInfo()):
         img = ee.Image(imgs.get(i))
