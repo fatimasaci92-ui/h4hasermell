@@ -229,3 +229,77 @@ if os.path.exists(csv_monthly):
     st.pyplot(fig)
 else:
     st.warning("CSV mensuel introuvable")
+# ===================== SECTION H : Analyse CH₄ pour une date passée =====================
+st.markdown("## 📅 Analyse CH₄ pour une date passée")
+
+if os.path.exists(csv_hist):
+    df_hist = pd.read_csv(csv_hist)
+    df_hist['date'] = pd.to_datetime(df_hist.iloc[:,0])  # convertir la première colonne en date
+    min_date = df_hist['date'].min()
+    max_date = df_hist['date'].max()
+    selected_date = st.date_input("Choisir une date", value=max_date, min_value=min_date, max_value=max_date)
+
+    if st.button("Analyser CH₄ à la date sélectionnée"):
+        # Filtrer la date
+        df_date = df_hist[df_hist['date'] == pd.to_datetime(selected_date)]
+        if df_date.empty:
+            st.warning("Aucune donnée pour cette date")
+        else:
+            # Extraire valeur CH4
+            ch4_value = float(df_date.iloc[0,1])  # supposons que la 2e colonne est CH4
+            if ch4_value >= 1900:
+                action_date = "Alerter, sécuriser la zone et stopper opérations"
+                risk_color = "red"
+                st.error(f"⚠️ CH₄ critique le {selected_date} : {ch4_value:.1f} ppb")
+            elif ch4_value >= 1850:
+                action_date = "Inspection urgente"
+                risk_color = "orange"
+                st.warning(f"⚠️ CH₄ élevé le {selected_date} : {ch4_value:.1f} ppb")
+            else:
+                action_date = "Surveillance continue"
+                risk_color = "green"
+                st.success(f"CH₄ normal le {selected_date} : {ch4_value:.1f} ppb")
+
+            # Afficher tableau
+            df_day_selected = pd.DataFrame([{
+                "Date": selected_date,
+                "Site": site_name,
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Altitude (m)": altitude,
+                "CH₄ (ppb)": round(ch4_value, 2),
+                "Action HSE": action_date
+            }])
+            st.table(df_day_selected)
+
+            # Carte avec cercle
+            st.subheader("🗺️ Carte du site avec zone critique CH₄ (historique)")
+            m_date = folium.Map(location=[latitude, longitude], zoom_start=12)
+            folium.Circle(
+                location=[latitude, longitude],
+                radius=3500,
+                color=risk_color,
+                fill=True,
+                fill_opacity=0.4,
+                tooltip=f"CH₄ : {ch4_value:.1f} ppb"
+            ).add_to(m_date)
+            folium.Marker([latitude, longitude], tooltip=site_name).add_to(m_date)
+            st_folium(m_date, width=800, height=500)
+
+            # PDF
+            st.subheader("📄 Générer PDF Professionnel (historique)")
+            pdf_buffer_hist = generate_professional_pdf(
+                site_name,
+                selected_date.strftime("%Y-%m-%d"),
+                ch4_value,
+                action_date,
+                altitude
+            )
+            st.download_button(
+                "⬇️ Télécharger le PDF Professionnel (historique)",
+                pdf_buffer_hist,
+                f"Rapport_HSE_CH4_{site_name}_{selected_date}.pdf",
+                "application/pdf"
+            )
+else:
+    st.warning("CSV historique introuvable pour analyse des dates passées")
