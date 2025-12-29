@@ -17,7 +17,7 @@ import tempfile
 import folium
 from streamlit_folium import st_folium
 
-# ===================== CONFIG STREAMLIT =====================
+# ===================== CONFIG =====================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
 
@@ -46,13 +46,20 @@ longitude = st.sidebar.number_input("Longitude", value=sites[selected_site]["lon
 altitude = st.sidebar.number_input("Altitude (m)", value=sites[selected_site]["alt"])
 site_name = st.sidebar.text_input("Nom du site", value=selected_site)
 
-# ===================== CHEMINS DES FICHIERS =====================
+# ===================== CHEMINS =====================
 DATA_DIR = "data"
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
 csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
 
-# ===================== FONCTIONS GEE =====================
+# ===================== SESSION STATE =====================
+if "ch4_day" not in st.session_state:
+    st.session_state.ch4_day = None
+    st.session_state.date_img_day = None
+    st.session_state.action_day = None
+    st.session_state.no_pass_today = False
+
+# ===================== FONCTIONS =====================
 def get_latest_ch4_from_gee(lat, lon, days_back=60):
     point = ee.Geometry.Point([lon, lat])
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
@@ -89,7 +96,7 @@ def get_latest_ch4_from_gee(lat, lon, days_back=60):
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
 
-def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
+def generate_professional_pdf(site_name, date_img, ch4_value, action, altitude, responsable="HSE Manager"):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -128,58 +135,97 @@ def generate_professional_pdf(site_name, date_img, ch4_value, action, responsabl
     buffer.seek(0)
     return buffer
 
-# ===================== SECTION ANALYSE DU JOUR =====================
+# ===================== SECTION A : Données historiques =====================
+st.markdown("## 📑 Section A — Données historiques")
+if os.path.exists(csv_hist):
+    df_hist = pd.read_csv(csv_hist)
+    st.dataframe(df_hist.head(20))
+else:
+    st.warning("CSV historique introuvable")
+
+# ===================== SECTION B : Analyse CH₄ du jour =====================
 st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 if st.button("Analyser CH₄ du jour"):
-    st.info("Analyse en cours...")
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
-    if ch4 is None:
+    st.session_state.ch4_day, st.session_state.date_img_day, st.session_state.no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+    if st.session_state.ch4_day is None:
         st.error("⚠️ Aucune image satellite disponible")
-        st.stop()
-    if no_pass_today:
-        st.warning(f"☁️ Pas de passage satellite valide aujourd’hui. Dernière image disponible : {date_img}")
-    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
-
-    if ch4 >= 1900:
-        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
-        action = "Alerter, sécuriser la zone et stopper opérations"
     else:
-        st.success("CH₄ normal")
-        action = "Surveillance continue"
+        if st.session_state.no_pass_today:
+            st.warning(f"☁️ Pas de passage satellite aujourd’hui. Dernière image : {st.session_state.date_img_day}")
+        st.success(f"CH₄ : **{st.session_state.ch4_day:.1f} ppb** (image du {st.session_state.date_img_day})")
+        if st.session_state.ch4_day >= 1900:
+            st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+            st.session_state.action_day = "Alerter, sécuriser la zone et stopper opérations"
+        else:
+            st.session_state.action_day = "Surveillance continue"
 
+# Affichage permanent si analyse déjà faite
+if st.session_state.ch4_day is not None:
     df_day = pd.DataFrame([{
-        "Date image": date_img,
+        "Date image": st.session_state.date_img_day,
         "Site": site_name,
         "Latitude": latitude,
         "Longitude": longitude,
         "Altitude (m)": altitude,
-        "CH₄ (ppb)": round(ch4, 2),
-        "Anomalie": "Oui" if ch4 >= 1900 else "Non",
-        "Action HSE": action
+        "CH₄ (ppb)": round(st.session_state.ch4_day, 2),
+        "Anomalie": "Oui" if st.session_state.ch4_day >= 1900 else "Non",
+        "Action HSE": st.session_state.action_day
     }])
     st.table(df_day)
 
-    # ===================== CARTE AVEC CERCLE =====================
+    # Carte avec cercle critique
     st.subheader("🗺️ Carte du site avec zone critique CH₄")
     m = folium.Map(location=[latitude, longitude], zoom_start=12)
-    color_circle = "red" if ch4 >= 1900 else "green"
+    color_circle = "red" if st.session_state.ch4_day >= 1900 else "green"
     folium.Circle(
         location=[latitude, longitude],
         radius=3500,
         color=color_circle,
         fill=True,
         fill_opacity=0.4,
-        tooltip=f"CH₄ : {ch4:.1f} ppb"
+        tooltip=f"CH₄ : {st.session_state.ch4_day:.1f} ppb"
     ).add_to(m)
     folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
     st_folium(m, width=800, height=500)
 
-    # ===================== PDF =====================
-    if st.button("📄 Générer le PDF Professionnel"):
-        pdf_buffer = generate_professional_pdf(site_name, date_img, ch4, action)
-        st.download_button(
-            "⬇️ Télécharger le PDF Professionnel",
-            pdf_buffer,
-            f"Rapport_HSE_CH4_{site_name}_{date_img}.pdf",
-            "application/pdf"
-        )
+    # PDF
+    st.subheader("📄 Générer PDF Professionnel")
+    pdf_buffer = generate_professional_pdf(site_name, st.session_state.date_img_day, st.session_state.ch4_day, st.session_state.action_day, altitude)
+    st.download_button(
+        "⬇️ Télécharger le PDF Professionnel",
+        pdf_buffer,
+        f"Rapport_HSE_CH4_{site_name}_{st.session_state.date_img_day}.pdf",
+        "application/pdf"
+    )
+
+# ===================== SECTION C : Graphiques temporels =====================
+st.markdown("## 📊 Graphiques temporels 2020–2025")
+if os.path.exists(csv_annual):
+    df_a = pd.read_csv(csv_annual)
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(df_a["year"], df_a["CH4_mean"], marker="o")
+    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+    ax.set_title("CH₄ annuel moyen")
+    ax.set_xlabel("Année")
+    ax.set_ylabel("CH₄ (ppb)")
+    ax.legend()
+    st.pyplot(fig)
+else:
+    st.warning("CSV annuel introuvable")
+
+if os.path.exists(csv_monthly):
+    df_m = pd.read_csv(csv_monthly)
+    df_m[df_m.columns[0]] = pd.to_datetime(df_m[df_m.columns[0]])
+    fig, ax = plt.subplots(figsize=(10,4))
+    ax.plot(df_m[df_m.columns[0]], df_m[df_m.columns[1]], marker="o")
+    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+    ax.set_title("CH₄ mensuel moyen")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("CH₄ (ppb)")
+    ax.legend()
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+else:
+    st.warning("CSV mensuel introuvable")
