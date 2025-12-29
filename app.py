@@ -48,8 +48,8 @@ st.sidebar.markdown(f"**Site :** {selected_site}  \n**Coordonnées :** {lat_site
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 df_hist = pd.read_csv(csv_hist)
 
-# Convertir la première colonne en datetime
-df_hist['date'] = pd.to_datetime(df_hist.iloc[:,0], errors='coerce')
+# Convertir première colonne en datetime
+df_hist['date'] = pd.to_datetime(df_hist.iloc[:,0], errors='coerce', dayfirst=True)
 
 def get_ch4_series(df):
     for col in df.columns:
@@ -62,6 +62,7 @@ if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
     st.session_state.results = {}
     st.session_state.date_img = ""
+    st.session_state.ch4_value = None
 
 # ===================== FONCTIONS =====================
 def get_latest_ch4(lat, lon, days_back=90):
@@ -82,7 +83,7 @@ def get_latest_ch4(lat, lon, days_back=90):
     stats = img.reduceRegion(ee.Reducer.mean(), geom, 7000, maxPixels=1e9).getInfo()
     ch4 = stats.get("CH4_column_volume_mixing_ratio_dry_air")
     date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-    return (ch4 * 1000 if ch4 else None), date_img
+    return (ch4 * 1000 if ch4 else None), date_img  # convertir en ppb
 
 def detect_anomaly(value, series):
     return (value - series.mean()) / series.std()
@@ -125,10 +126,11 @@ def generate_hse_pdf(results, date_img):
 if st.button("🚀 Lancer l’analyse"):
     series = get_ch4_series(df_hist)
     ch4, date_img = get_latest_ch4(lat_site, lon_site)
-    if ch4 is None:
+
+    if ch4 is None or date_img is None:
         st.warning("⚠️ Aucune donnée satellite récente – utilisation du CSV historique")
         ch4 = series.iloc[-1]
-        date_img = df_hist['date'].iloc[-1].strftime("%Y-%m-%d")  # correction date CSV
+        date_img = df_hist['date'].dropna().iloc[-1].strftime("%Y-%m-%d")
 
     z = detect_anomaly(ch4, series)
 
@@ -154,14 +156,16 @@ if st.button("🚀 Lancer l’analyse"):
     }
     st.session_state.analysis_done = True
     st.session_state.date_img = date_img
+    st.session_state.ch4_value = ch4
 
 # ===================== RÉSULTATS =====================
 if st.session_state.analysis_done:
     r = st.session_state.results
     date_img = st.session_state.date_img
+    ch4 = st.session_state.ch4_value
 
     st.subheader(f"📊 Résultats – {selected_site}")
-    st.metric("CH₄ (ppb)", round(r["ch4"], 1))
+    st.metric("CH₄ (ppb)", round(ch4, 1))
     st.metric("Z-score", round(r["z"], 2))
     st.markdown(f"### 🛑 Risque : **{r['risk']}**")
     st.info(f"Action HSE : {r['decision']}")
@@ -177,7 +181,7 @@ if st.session_state.analysis_done:
             color="red",
             fill=True,
             fill_opacity=0.4,
-            tooltip=f"Point critique CH₄ : {r['ch4']:.1f} ppb"
+            tooltip=f"Point critique CH₄ : {ch4:.1f} ppb"
         ).add_to(m)
     else:
         folium.Circle(
@@ -186,7 +190,7 @@ if st.session_state.analysis_done:
             color="green",
             fill=True,
             fill_opacity=0.2,
-            tooltip=f"CH₄ normal : {r['ch4']:.1f} ppb"
+            tooltip=f"CH₄ normal : {ch4:.1f} ppb"
         ).add_to(m)
     st_folium(m, width=850, height=500)
 
