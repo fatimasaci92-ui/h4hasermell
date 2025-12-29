@@ -156,62 +156,14 @@ if st.session_state.analysis_done:
     st.markdown(f"### 🛑 Risque : **{r['risk']}**")
     st.info(f"Action HSE : {r['decision']}")
 
-   # ===================== CARTE =====================
-st.subheader("🗺️ Carte du site avec point critique CH₄")
-m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
+    # ===================== CARTE =====================
+    st.subheader("🗺️ Carte du site avec point critique CH₄")
+    m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
 
-if st.session_state.analysis_done:
-    r = st.session_state.results
-    # On récupère la valeur max et position exacte CH₄
-    geom = ee.Geometry.Point([lon_site, lat_site]).buffer(4000)
-    col = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-           .filterBounds(geom)
-           .filterDate(ee.Date(datetime.utcnow().strftime("%Y-%m-%d")).advance(-60, "day"),
-                       ee.Date(datetime.utcnow().strftime("%Y-%m-%d")))
-           .select("CH4_column_volume_mixing_ratio_dry_air"))
+    # Code du cercle rouge ici...
+    # folium.Circle(...).add_to(m)
 
-    if col.size().getInfo() > 0:
-        imgs = col.toList(col.size())
-        max_val = -np.inf
-        max_coords = (lat_site, lon_site)
-        for i in range(col.size().getInfo()):
-            img = ee.Image(imgs.get(i))
-            stats = img.reduceRegion(
-                reducer=ee.Reducer.max(),
-                geometry=geom,
-                scale=7000,
-                maxPixels=1e9
-            ).getInfo()
-            val = stats.get("CH4_column_volume_mixing_ratio_dry_air")
-            if val and val > max_val:
-                max_val = val
-                # Extraire coordonnées du pixel max
-                coordinates = img.reduceToVectors(
-                    geometry=geom,
-                    scale=7000,
-                    geometryType="centroid",
-                    reducer=ee.Reducer.max(),
-                    maxPixels=1e9
-                ).first().geometry().coordinates().getInfo()
-                max_coords = (coordinates[1], coordinates[0])  # lat, lon
-
-        # Cercle rouge sur le point critique
-        folium.Circle(
-            location=max_coords,
-            radius=3500,
-            color="red",
-            fill=True,
-            fill_opacity=0.4,
-            tooltip=f"Point critique CH₄ : {max_val*1000:.1f} ppb"
-        ).add_to(m)
-    else:
-        folium.Marker(
-            [lat_site, lon_site],
-            tooltip="Aucune donnée CH₄ disponible",
-            icon=folium.Icon(color="gray")
-        ).add_to(m)
-
-st_folium(m, width=850, height=500)
+    st_folium(m, width=850, height=500)
 
     # ===================== PDF =====================
     if st.button("📄 Générer le rapport PDF HSE"):
