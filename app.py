@@ -48,6 +48,9 @@ st.sidebar.markdown(f"**Site :** {selected_site}  \n**Coordonnées :** {lat_site
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 df_hist = pd.read_csv(csv_hist)
 
+# Convertir la première colonne en datetime
+df_hist['date'] = pd.to_datetime(df_hist.iloc[:,0], errors='coerce')
+
 def get_ch4_series(df):
     for col in df.columns:
         if "ch4" in col.lower():
@@ -125,7 +128,7 @@ if st.button("🚀 Lancer l’analyse"):
     if ch4 is None:
         st.warning("⚠️ Aucune donnée satellite récente – utilisation du CSV historique")
         ch4 = series.iloc[-1]
-        date_img = df_hist.iloc[-1,0]  # date du dernier point CSV
+        date_img = df_hist['date'].iloc[-1].strftime("%Y-%m-%d")  # correction date CSV
 
     z = detect_anomaly(ch4, series)
 
