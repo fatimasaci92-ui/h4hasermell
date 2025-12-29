@@ -199,12 +199,33 @@ if st.session_state.analysis_done:
             st_folium(m, width=750, height=450)
         fc.evaluate(cb)
 
-    draw_flares(flares)
+    def draw_flares(fc, fmap):
+    try:
+        fc_json = fc.getInfo()
+    except Exception as e:
+        st.warning(f"Impossible de récupérer les torches : {e}")
+        st_folium(fmap, width=750, height=450)
+        return
 
-    if st.button("📄 Générer PDF HSE"):
-        pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
-        with open(pdf, "rb") as f:
-            st.download_button("⬇️ Télécharger PDF", f, file_name=os.path.basename(pdf))
+    features = fc_json.get("features", [])
+
+    if len(features) > 0:
+        st.markdown("### 🔥 Torches détectées (VIIRS)")
+        st.info(f"Nombre de torches : {len(features)}")
+    else:
+        st.markdown("### ❓ Aucune torche détectée")
+        st.info("Aucune source thermique active détectée")
+
+    for f in features:
+        lon_f, lat_f = f["geometry"]["coordinates"]
+        folium.Marker(
+            location=[lat_f, lon_f],
+            icon=folium.Icon(color="red", icon="fire"),
+            tooltip="Torche détectée (VIIRS)"
+        ).add_to(fmap)
+
+    st_folium(fmap, width=750, height=450)
+
 
 # ===================== GRAPHIQUE =====================
 st.markdown("## 📈 Historique CH₄")
