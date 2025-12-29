@@ -73,7 +73,7 @@ def get_latest_ch4(lat, lon, days_back=60):
     if col.size().getInfo() == 0:
         return None, None
     img = ee.Image(col.first())
-    stats = img.reduceRegion(ee.Reducer.mean(), geom, 7000, maxPixels=1e9).getInfo()
+    stats = img.reduceRegion(ee.Reducer.max(), geom, 7000, maxPixels=1e9).getInfo()
     ch4 = stats.get("CH4_column_volume_mixing_ratio_dry_air")
     date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
     return (ch4 * 1000 if ch4 else None), date_img
@@ -81,7 +81,7 @@ def get_latest_ch4(lat, lon, days_back=60):
 def detect_anomaly(value, series):
     return (value - series.mean()) / series.std()
 
-def generate_hse_pdf(results):
+def generate_hse_pdf(results, date_img):
     path = f"/tmp/Rapport_CH4_HSE_{selected_site.replace(' ', '_')}.pdf"
     doc = SimpleDocTemplate(path, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -93,7 +93,8 @@ def generate_hse_pdf(results):
     elements.append(Paragraph(f"<b>Latitude :</b> {lat_site}", styles["Normal"]))
     elements.append(Paragraph(f"<b>Longitude :</b> {lon_site}", styles["Normal"]))
     elements.append(Paragraph(f"<b>Altitude :</b> {alt_site} m", styles["Normal"]))
-    elements.append(Paragraph(f"<b>Date d’analyse :</b> {results['date_img']}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Date de rapport :</b> {datetime.utcnow().strftime('%Y-%m-%d')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Date image CH₄ :</b> {date_img}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
     table = Table([
@@ -142,95 +143,49 @@ if st.button("🚀 Lancer l’analyse"):
         "z": z,
         "risk": risk,
         "decision": decision,
-        "color": color,
-        "date_img": date_img
+        "color": color
     }
     st.session_state.analysis_done = True
+    st.session_state.date_img = date_img
 
 # ===================== RÉSULTATS =====================
 if st.session_state.analysis_done:
     r = st.session_state.results
+    date_img = st.session_state.date_img
+
     st.subheader(f"📊 Résultats – {selected_site}")
     st.metric("CH₄ (ppb)", round(r["ch4"], 1))
     st.metric("Z-score", round(r["z"], 2))
     st.markdown(f"### 🛑 Risque : **{r['risk']}**")
     st.info(f"Action HSE : {r['decision']}")
+    st.info(f"Date dernière image CH₄ : {date_img}")
 
     # ===================== CARTE =====================
-st.subheader("🗺️ Carte du site avec point critique CH₄")
-m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
-
-if st.session_state.analysis_done:
-    r = st.session_state.results
-
-    geom = ee.Geometry.Point([lon_site, lat_site]).buffer(4000)
-    col = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-           .filterBounds(geom)
-           .filterDate(ee.Date(datetime.utcnow().strftime("%Y-%m-%d")).advance(-60, "day"),
-                       ee.Date(datetime.utcnow().strftime("%Y-%m-%d")))
-           .select("CH4_column_volume_mixing_ratio_dry_air"))
-
-    if col.size().getInfo() > 0:
-        # Obtenir l'image la plus récente
-        img = ee.Image(col.first())
-        # Réduire à la valeur max et récupérer coords via ee.Reducer.max()
-        stats = img.reduceRegion(
-            reducer=ee.Reducer.max(),
-            geometry=geom,
-            scale=7000,
-            bestEffort=True,
-            maxPixels=1e9
-        ).getInfo()
-
-        # Le max CH4
-        max_ch4 = stats.get("CH4_column_volume_mixing_ratio_dry_air")
-        if max_ch4 is not None:
-            # Pour simplifier : placer le cercle au centre du site (approximation)
-            folium.Circle(
-                location=[lat_site, lon_site],
-                radius=3500,
-                color="red",
-                fill=True,
-                fill_opacity=0.4,
-                tooltip=f"Point critique CH₄ ≈ {max_ch4*1000:.1f} ppb"
-            ).add_to(m)
-    else:
-        folium.Marker(
-            [lat_site, lon_site],
-            tooltip="Aucune donnée CH₄ disponible",
-            icon=folium.Icon(color="gray")
-        ).add_to(m)
-
-st_folium(m, width=850, height=500)
-
-
-    # ===================== PDF =====================
-    if st.session_state.analysis_done:
-    r = st.session_state.results
-
-    # Affichage résultats
-    st.subheader(f"📊 Résultats – {selected_site}")
-    st.metric("CH₄ (ppb)", round(r["ch4"], 1))
-    st.metric("Z-score", round(r["z"], 2))
-    st.markdown(f"### 🛑 Risque : **{r['risk']}**")
-    st.info(f"Action HSE : {r['decision']}")
-
-    # Carte
     st.subheader("🗺️ Carte du site avec point critique CH₄")
     m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
-    folium.Circle(
-        location=[lat_site, lon_site],
-        radius=3500,
-        color="red",
-        fill=True,
-        fill_opacity=0.4,
-        tooltip=f"Point critique CH₄ : {r['ch4']:.1f} ppb"
-    ).add_to(m)
+    if r["z"] > 2:
+        folium.Circle(
+            location=[lat_site, lon_site],
+            radius=3500,
+            color="red",
+            fill=True,
+            fill_opacity=0.4,
+            tooltip=f"Point critique CH₄ : {r['ch4']:.1f} ppb"
+        ).add_to(m)
+    else:
+        folium.Circle(
+            location=[lat_site, lon_site],
+            radius=3500,
+            color="green",
+            fill=True,
+            fill_opacity=0.2,
+            tooltip=f"CH₄ normal : {r['ch4']:.1f} ppb"
+        ).add_to(m)
     st_folium(m, width=850, height=500)
 
-    # Bouton PDF
+    # ===================== PDF =====================
     if st.button("📄 Générer le rapport PDF HSE"):
-        pdf_path = generate_hse_pdf(r)
+        pdf_path = generate_hse_pdf(r, date_img)
         with open(pdf_path, "rb") as f:
             st.download_button(
                 "⬇️ Télécharger le rapport PDF",
