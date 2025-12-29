@@ -171,7 +171,6 @@ def send_email_alert(to_email, subject, body):
     except Exception as e:
         st.warning(f"Impossible d'envoyer email: {e}")
 
-# ===================== NOUVELLES FONCTIONS GEE =====================
 def get_active_flares(lat, lon, days_back=7):
     geom = ee.Geometry.Point([lon, lat]).buffer(10000)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
@@ -182,6 +181,7 @@ def get_active_flares(lat, lon, days_back=7):
         .filterDate(start, end)
         .select("Bright_ti4")
     )
+
     def to_point(img):
         return img.gt(330).selfMask().reduceToVectors(
             geometry=geom,
@@ -189,12 +189,14 @@ def get_active_flares(lat, lon, days_back=7):
             geometryType="centroid",
             maxPixels=1e9
         )
+
     flares = fires.map(to_point).flatten()
     return flares
 
 def attribute_ch4_source(lat, lon):
     flares = get_active_flares(lat, lon)
     result = {"flares": flares, "n_flares": 0, "source": "", "icon": ""}
+
     def cb(n):
         result["n_flares"] = n
         if n > 0:
@@ -203,8 +205,41 @@ def attribute_ch4_source(lat, lon):
         else:
             result["source"] = "Aucune torche détectée"
             result["icon"] = "❓"
+
     flares.size().evaluate(cb)
     return result
+
+def display_flares(fc, fmap):
+    def cb(fc_json):
+        n_flares = len(fc_json["features"])
+        if n_flares > 0:
+            source = "Torches détectées"
+            icon = "🔥"
+        else:
+            source = "Aucune torche détectée"
+            icon = "❓"
+
+        st.markdown(f"### {icon} Attribution de la source")
+        st.info(f"{source} — Nombre : {n_flares}")
+
+        for f in fc_json["features"]:
+            lon_f, lat_f = f["geometry"]["coordinates"]
+            folium.Marker(
+                location=[lat_f, lon_f],
+                icon=folium.Icon(color="red", icon="fire"),
+                tooltip="Torche détectée (VIIRS)"
+            ).add_to(fmap)
+
+        st_folium(fmap, width=750, height=450)
+
+        if st.session_state.analysis_done:
+            r = st.session_state.results
+            if r["z"] > 2 and n_flares > 0:
+                r["decision"] = "Élévation CH₄ probablement liée aux torches"
+            elif r["z"] > 2 and n_flares == 0:
+                r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
+
+    fc.evaluate(cb)
 
 # ===================== ANALYSIS =====================
 if st.button("🚀 Lancer l’analyse"):
@@ -264,79 +299,43 @@ if st.session_state.analysis_done:
     folium.Circle([lat_site, lon_site], 3500, color=r["color"], fill=True).add_to(m)
     folium.Marker([lat_site, lon_site], tooltip=selected_site).add_to(m)
     st_folium(m, width=750, height=450)
+
 # ===================== NOUVELLES TORCHES =====================
 flares = get_active_flares(lat_site, lon_site)
+display_flares(flares, m)
 
-def display_flares(fc, fmap):
+flare_info = attribute_ch4_source(lat_site, lon_site)
+st.markdown(f"### {flare_info['icon']} Attribution de la source")
+st.info(f"{flare_info['source']} — Nombre : {flare_info['n_flares']}")
+
+flares = flare_info["flares"]
+
+def add_flares_to_map(fc, fmap):
     def cb(fc_json):
-        n_flares = len(fc_json["features"])
-        if n_flares > 0:
-            source = "Torches détectées"
-            icon = "🔥"
-        else:
-            source = "Aucune torche détectée"
-            icon = "❓"
-
-        st.markdown(f"### {icon} Attribution de la source")
-        st.info(f"{source} — Nombre : {n_flares}")
-
-        # Ajouter les torches sur la carte
-        for f in fc_json["features"]:
+        features = fc_json["features"]
+        for f in features:
             lon_f, lat_f = f["geometry"]["coordinates"]
             folium.Marker(
-                location=[lat_f, lat_f],
+                location=[lat_f, lon_f],
                 icon=folium.Icon(color="red", icon="fire"),
                 tooltip="Torche détectée (VIIRS)"
             ).add_to(fmap)
-
-        # Afficher la carte mise à jour
         st_folium(fmap, width=750, height=450)
-
-        # Mise à jour de la décision HSE
-        if st.session_state.analysis_done:
-            r = st.session_state.results
-            if r["z"] > 2 and n_flares > 0:
-                r["decision"] = "Élévation CH₄ probablement liée aux torches"
-            elif r["z"] > 2 and n_flares == 0:
-                r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
-
     fc.evaluate(cb)
 
-# Appeler la fonction pour afficher les torches
-display_flares(flares, m)
+add_flares_to_map(flares, m)
 
-    # ===================== SOURCES D'ÉMISSION =====================
-    flare_info = attribute_ch4_source(lat_site, lon_site)
-    st.markdown(f"### {flare_info['icon']} Attribution de la source")
-    st.info(f"{flare_info['source']} — Nombre : {flare_info['n_flares']}")
-
-    flares = flare_info["flares"]
-
-    def add_flares_to_map(fc, fmap):
-        def cb(fc_json):
-            features = fc_json["features"]
-            for f in features:
-                lon_f, lat_f = f["geometry"]["coordinates"]
-                folium.Marker(
-                    location=[lat_f, lon_f],
-                    icon=folium.Icon(color="red", icon="fire"),
-                    tooltip="Torche détectée (VIIRS)"
-                ).add_to(fmap)
-            st_folium(fmap, width=750, height=450)
-        fc.evaluate(cb)
-
-    add_flares_to_map(flares, m)
-
-    # ===================== DÉCISION AUTOMATIQUE =====================
+if st.session_state.analysis_done:
+    r = st.session_state.results
     if r["z"] > 2 and flare_info["n_flares"] > 0:
         r["decision"] = "Élévation CH₄ probablement liée aux torches"
     elif r["z"] > 2 and flare_info["n_flares"] == 0:
         r["decision"] = "Élévation CH₄ NON expliquée par les torches – suspicion fuite"
 
-    if st.button("📄 Générer le PDF HSE"):
-        pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
-        with open(pdf, "rb") as f:
-            st.download_button("⬇️ Télécharger PDF", f, file_name=os.path.basename(pdf))
+if st.button("📄 Générer le PDF HSE") and st.session_state.analysis_done:
+    pdf = generate_hse_pdf(r, selected_site, lat_site, lon_site)
+    with open(pdf, "rb") as f:
+        st.download_button("⬇️ Télécharger PDF", f, file_name=os.path.basename(pdf))
 
 # ===================== HISTORIQUE DES ALERTES =====================
 st.markdown("## 📋 Historique des alertes HSE")
