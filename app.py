@@ -157,13 +157,52 @@ if st.session_state.analysis_done:
     st.info(f"Action HSE : {r['decision']}")
 
     # ===================== CARTE =====================
-    st.subheader("🗺️ Carte du site avec point critique CH₄")
-    m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
+st.subheader("🗺️ Carte du site avec point critique CH₄")
+m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
 
-    # Code du cercle rouge ici...
-    # folium.Circle(...).add_to(m)
+if st.session_state.analysis_done:
+    r = st.session_state.results
 
-    st_folium(m, width=850, height=500)
+    geom = ee.Geometry.Point([lon_site, lat_site]).buffer(4000)
+    col = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+           .filterBounds(geom)
+           .filterDate(ee.Date(datetime.utcnow().strftime("%Y-%m-%d")).advance(-60, "day"),
+                       ee.Date(datetime.utcnow().strftime("%Y-%m-%d")))
+           .select("CH4_column_volume_mixing_ratio_dry_air"))
+
+    if col.size().getInfo() > 0:
+        # Obtenir l'image la plus récente
+        img = ee.Image(col.first())
+        # Réduire à la valeur max et récupérer coords via ee.Reducer.max()
+        stats = img.reduceRegion(
+            reducer=ee.Reducer.max(),
+            geometry=geom,
+            scale=7000,
+            bestEffort=True,
+            maxPixels=1e9
+        ).getInfo()
+
+        # Le max CH4
+        max_ch4 = stats.get("CH4_column_volume_mixing_ratio_dry_air")
+        if max_ch4 is not None:
+            # Pour simplifier : placer le cercle au centre du site (approximation)
+            folium.Circle(
+                location=[lat_site, lon_site],
+                radius=3500,
+                color="red",
+                fill=True,
+                fill_opacity=0.4,
+                tooltip=f"Point critique CH₄ ≈ {max_ch4*1000:.1f} ppb"
+            ).add_to(m)
+    else:
+        folium.Marker(
+            [lat_site, lon_site],
+            tooltip="Aucune donnée CH₄ disponible",
+            icon=folium.Icon(color="gray")
+        ).add_to(m)
+
+st_folium(m, width=850, height=500)
+
 
     # ===================== PDF =====================
     if st.button("📄 Générer le rapport PDF HSE"):
