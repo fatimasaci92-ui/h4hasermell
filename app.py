@@ -42,7 +42,6 @@ selected_site = st.sidebar.selectbox("📍 Choisir le site", list(sites.keys()))
 lat_site = st.sidebar.number_input("Latitude", value=sites[selected_site]["lat"], format="%.6f")
 lon_site = st.sidebar.number_input("Longitude", value=sites[selected_site]["lon"], format="%.6f")
 alt_site = st.sidebar.number_input("Altitude (m)", value=sites[selected_site]["alt"])
-
 st.sidebar.markdown(f"**Site :** {selected_site}  \n**Coordonnées :** {lat_site}, {lon_site}  \n**Altitude :** {alt_site} m")
 
 # ===================== DONNÉES HISTORIQUES =====================
@@ -59,9 +58,10 @@ def get_ch4_series(df):
 if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
     st.session_state.results = {}
+    st.session_state.date_img = ""
 
 # ===================== FONCTIONS =====================
-def get_latest_ch4(lat, lon, days_back=60):
+def get_latest_ch4(lat, lon, days_back=90):
     geom = ee.Geometry.Point([lon, lat]).buffer(4000)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
@@ -70,10 +70,13 @@ def get_latest_ch4(lat, lon, days_back=60):
            .filterDate(start, end)
            .select("CH4_column_volume_mixing_ratio_dry_air")
            .sort("system:time_start", False))
-    if col.size().getInfo() == 0:
+    
+    size = col.size().getInfo()
+    if size == 0:
         return None, None
+    
     img = ee.Image(col.first())
-    stats = img.reduceRegion(ee.Reducer.max(), geom, 7000, maxPixels=1e9).getInfo()
+    stats = img.reduceRegion(ee.Reducer.mean(), geom, 7000, maxPixels=1e9).getInfo()
     ch4 = stats.get("CH4_column_volume_mixing_ratio_dry_air")
     date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
     return (ch4 * 1000 if ch4 else None), date_img
@@ -120,8 +123,9 @@ if st.button("🚀 Lancer l’analyse"):
     series = get_ch4_series(df_hist)
     ch4, date_img = get_latest_ch4(lat_site, lon_site)
     if ch4 is None:
+        st.warning("⚠️ Aucune donnée satellite récente – utilisation du CSV historique")
         ch4 = series.iloc[-1]
-        date_img = "Historique CSV"
+        date_img = df_hist.iloc[-1,0]  # date du dernier point CSV
 
     z = detect_anomaly(ch4, series)
 
