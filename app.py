@@ -199,7 +199,7 @@ if st.session_state.analysis_done:
             st_folium(m, width=750, height=450)
         fc.evaluate(cb)
 
-    def draw_flares(fc, fmap):
+def draw_flares(fc, fmap):
     try:
         fc_json = fc.getInfo()
     except Exception as e:
@@ -225,6 +225,7 @@ if st.session_state.analysis_done:
         ).add_to(fmap)
 
     st_folium(fmap, width=750, height=450)
+
 
 
 # ===================== GRAPHIQUE =====================
