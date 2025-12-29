@@ -205,7 +205,35 @@ st_folium(m, width=850, height=500)
 
 
     # ===================== PDF =====================
+    if st.session_state.analysis_done:
+    r = st.session_state.results
+
+    # Affichage résultats
+    st.subheader(f"📊 Résultats – {selected_site}")
+    st.metric("CH₄ (ppb)", round(r["ch4"], 1))
+    st.metric("Z-score", round(r["z"], 2))
+    st.markdown(f"### 🛑 Risque : **{r['risk']}**")
+    st.info(f"Action HSE : {r['decision']}")
+
+    # Carte
+    st.subheader("🗺️ Carte du site avec point critique CH₄")
+    m = folium.Map(location=[lat_site, lon_site], zoom_start=12)
+    folium.Circle(
+        location=[lat_site, lon_site],
+        radius=3500,
+        color="red",
+        fill=True,
+        fill_opacity=0.4,
+        tooltip=f"Point critique CH₄ : {r['ch4']:.1f} ppb"
+    ).add_to(m)
+    st_folium(m, width=850, height=500)
+
+    # Bouton PDF
     if st.button("📄 Générer le rapport PDF HSE"):
         pdf_path = generate_hse_pdf(r)
         with open(pdf_path, "rb") as f:
-            st.download_button("⬇️ Télécharger le rapport PDF", f, file_name=os.path.basename(pdf_path))
+            st.download_button(
+                "⬇️ Télécharger le rapport PDF",
+                f,
+                file_name=os.path.basename(pdf_path)
+            )
