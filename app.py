@@ -136,7 +136,7 @@ def generate_professional_pdf(site_name, date_img, ch4_value, action, altitude, 
     return buffer
 
 # ===================== SECTION A : Données historiques =====================
-st.markdown("## 📑 Section A — Données historiques")
+st.markdown("## 📑 Données historiques")
 if os.path.exists(csv_hist):
     df_hist = pd.read_csv(csv_hist)
     st.dataframe(df_hist.head(20))
