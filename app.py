@@ -120,7 +120,7 @@ def generate_professional_pdf(site_name, date_img, ch4_value, action, altitude, 
     buffer.seek(0)
     return buffer
 
-def get_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max):
+def get_latest_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max, date_gee):
     url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
     try:
         response = requests.get(url, timeout=10)
@@ -131,11 +131,26 @@ def get_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max):
                 coords = plumes["geometry.coordinates"]
                 plumes["lon"] = coords.apply(lambda x: x[0])
                 plumes["lat"] = coords.apply(lambda x: x[1])
+                
+                # convertir la date de plume
+                plumes["date"] = pd.to_datetime(plumes["properties.observation_date"])
+                date_gee_dt = pd.to_datetime(date_gee)
+                
+                # garder uniquement les plumes ≤ date GEE
+                plumes = plumes[plumes["date"] <= date_gee_dt]
+                
+                # filtrer par zone
                 plumes_zone = plumes[
                     (plumes["lon"] >= lon_min) & (plumes["lon"] <= lon_max) &
                     (plumes["lat"] >= lat_min) & (plumes["lat"] <= lat_max)
                 ]
-                return plumes_zone
+                
+                if not plumes_zone.empty:
+                    # prendre la plume la plus récente avant la date GEE
+                    latest_plume = plumes_zone.loc[plumes_zone["date"].idxmax()]
+                    return pd.DataFrame([latest_plume])
+                else:
+                    return pd.DataFrame()
             else:
                 return pd.DataFrame()
         else:
@@ -166,11 +181,11 @@ if st.button("Analyser CH₄ du jour"):
 
     # ===================== CARBON MAPPER =====================
     st.subheader("Fuites CH₄ détectées (Carbon Mapper)")
-    plumes_zone = get_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max)
+    plumes_zone = get_latest_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max, date_img)
     if plumes_zone.empty:
-        st.info(f"Aucune fuite CH₄ détectée dans la zone {zone}.")
+        st.info(f"Aucune fuite CH₄ proche de la date GEE dans la zone {zone}.")
     else:
-        st.dataframe(plumes_zone[["lat","lon","properties.emission_rate"]])
+        st.dataframe(plumes_zone[["lat","lon","properties.emission_rate","date"]])
         m = folium.Map(location=[(lat_min+lat_max)/2,(lon_min+lon_max)/2], zoom_start=10)
         for i,row in plumes_zone.iterrows():
             folium.CircleMarker(
@@ -178,7 +193,7 @@ if st.button("Analyser CH₄ du jour"):
                 radius=6,
                 color="red",
                 fill=True,
-                popup=f"Emission: {row['properties.emission_rate']} kg/h"
+                popup=f"Emission: {row['properties.emission_rate']} kg/h\nDate: {row['date'].date()}"
             ).add_to(m)
         st_folium(m, width=700, height=500)
 
