@@ -49,7 +49,6 @@ site_name = st.sidebar.text_input("Nom du site", value=selected_site)
 # ===================== ZONE =====================
 st.sidebar.header("📍 Zone d'analyse")
 zone = st.sidebar.selectbox("Choisir la zone", ["Nord", "Centre", "Sud"])
-
 if zone == "Nord":
     lon_min, lon_max = 3.18, 3.81
     lat_min, lat_max = 33.01, 33.28
@@ -121,6 +120,31 @@ def generate_professional_pdf(site_name, date_img, ch4_value, action, altitude, 
     buffer.seek(0)
     return buffer
 
+def get_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max):
+    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200 and response.text.strip() != "":
+            data = response.json()
+            if "features" in data and isinstance(data["features"], list):
+                plumes = pd.json_normalize(data["features"])
+                coords = plumes["geometry.coordinates"]
+                plumes["lon"] = coords.apply(lambda x: x[0])
+                plumes["lat"] = coords.apply(lambda x: x[1])
+                plumes_zone = plumes[
+                    (plumes["lon"] >= lon_min) & (plumes["lon"] <= lon_max) &
+                    (plumes["lat"] >= lat_min) & (plumes["lat"] <= lat_max)
+                ]
+                return plumes_zone
+            else:
+                return pd.DataFrame()
+        else:
+            st.warning(f"Erreur connexion Carbon Mapper : statut {response.status_code}")
+            return pd.DataFrame()
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Erreur connexion Carbon Mapper : {e}")
+        return pd.DataFrame()
+
 # ===================== ANALYSE DU JOUR =====================
 st.markdown("## 🔍 Analyse CH₄ du jour")
 if st.button("Analyser CH₄ du jour"):
@@ -142,47 +166,21 @@ if st.button("Analyser CH₄ du jour"):
 
     # ===================== CARBON MAPPER =====================
     st.subheader("Fuites CH₄ détectées (Carbon Mapper)")
-    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200 and response.text.strip() != "":
-            try:
-                data = response.json()
-                if "features" in data and isinstance(data["features"], list):
-                    plumes = pd.json_normalize(data["features"])
-                    if plumes.empty:
-                        st.info("Aucune fuite CH₄ détectée aujourd'hui")
-                    else:
-                        coords = plumes["geometry.coordinates"]
-                        plumes["lon"] = coords.apply(lambda x: x[0])
-                        plumes["lat"] = coords.apply(lambda x: x[1])
-                        plumes_zone = plumes[
-                            (plumes["lon"] >= lon_min) & (plumes["lon"] <= lon_max) &
-                            (plumes["lat"] >= lat_min) & (plumes["lat"] <= lat_max)
-                        ]
-                        if plumes_zone.empty:
-                            st.info(f"Aucune fuite CH₄ détectée dans la zone {zone}")
-                        else:
-                            st.dataframe(plumes_zone[["lat","lon","properties.emission_rate"]])
-                            # Carte
-                            m = folium.Map(location=[(lat_min+lat_max)/2,(lon_min+lon_max)/2], zoom_start=10)
-                            for i,row in plumes_zone.iterrows():
-                                folium.CircleMarker(
-                                    location=[row["lat"], row["lon"]],
-                                    radius=6,
-                                    color="red",
-                                    fill=True,
-                                    popup=f"Emission: {row['properties.emission_rate']} kg/h"
-                                ).add_to(m)
-                            st_folium(m, width=700, height=500)
-                else:
-                    st.info("Aucune fuite CH₄ disponible dans la réponse Carbon Mapper")
-            except json.JSONDecodeError:
-                st.warning("Réponse Carbon Mapper non valide ou vide")
-        else:
-            st.warning(f"Erreur connexion Carbon Mapper : statut {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Erreur connexion Carbon Mapper : {e}")
+    plumes_zone = get_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max)
+    if plumes_zone.empty:
+        st.info(f"Aucune fuite CH₄ détectée dans la zone {zone}.")
+    else:
+        st.dataframe(plumes_zone[["lat","lon","properties.emission_rate"]])
+        m = folium.Map(location=[(lat_min+lat_max)/2,(lon_min+lon_max)/2], zoom_start=10)
+        for i,row in plumes_zone.iterrows():
+            folium.CircleMarker(
+                location=[row["lat"], row["lon"]],
+                radius=6,
+                color="red",
+                fill=True,
+                popup=f"Emission: {row['properties.emission_rate']} kg/h"
+            ).add_to(m)
+        st_folium(m, width=700, height=500)
 
 # ===================== PDF =====================
 st.markdown("## 📄 Générer PDF Professionnel")
