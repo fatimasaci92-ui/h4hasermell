@@ -5,21 +5,10 @@ import requests
 import folium
 from streamlit_folium import st_folium
 
-# -----------------------------
-# INITIALISATION GOOGLE EARTH ENGINE
-# -----------------------------
-try:
-    ee.Initialize()
-except:
-    ee.Authenticate()
-    ee.Initialize()
+# Initialiser Google Earth Engine
+ee.Initialize()
 
-# -----------------------------
-# TITRE APPLICATION
-# -----------------------------
 st.title("Methane Monitoring Platform - Hassi R'Mel")
-
-st.write("Analyse CH4 avec Google Earth Engine et Carbon Mapper")
 
 # -----------------------------
 # BOUTON ANALYSE
