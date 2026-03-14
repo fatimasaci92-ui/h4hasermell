@@ -1,218 +1,187 @@
-# ===================== IMPORTS =====================
 import streamlit as st
+import os
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 import folium
 from streamlit_folium import st_folium
-import requests
-import json
-import os
-import ee
-import tempfile
-from datetime import datetime
-import matplotlib.pyplot as plt
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib.styles import getSampleStyleSheet
-import io
 
-# ===================== CONFIG =====================
-st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
-st.title("Surveillance du Méthane (CH₄) – HSE")
+# =====================
+# Variables site
+# =====================
+site_name = "MonSite"
+latitude = 33.05   # exemple
+longitude = 3.5    # exemple
+altitude = 100     # exemple
+csv_hist = "historique.csv"
+csv_annual = "annual.csv"
+csv_monthly = "monthly.csv"
 
-# ===================== INIT GEE =====================
-ee_available = True
-try:
-    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-        json.dump(ee_key_json, f)
-        key_path = f.name
-    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
-    ee.Initialize(credentials)
-    os.remove(key_path)
-except Exception as e:
-    ee_available = False
-    st.warning(f"Google Earth Engine non initialisé : {e}")
+# =====================
+# Fonctions fictives (à remplacer par tes fonctions réelles)
+# =====================
+def get_latest_ch4_from_gee(lat, lon):
+    # Exemple : retourner valeurs simulées
+    return 1920, "2026-03-15", False
 
-# ===================== INFOS SITE =====================
-st.sidebar.header("📍 Paramètres du site")
-sites = {
-    "Hassi R'mel": {"lat": 32.93, "lon": 3.30, "alt": 750},
-    "Hasarmin": {"lat": 32.87, "lon": 3.15, "alt": 520}
-}
-selected_site = st.sidebar.selectbox("Choisir le site", list(sites.keys()))
-latitude = st.sidebar.number_input("Latitude", value=sites[selected_site]["lat"], format="%.6f")
-longitude = st.sidebar.number_input("Longitude", value=sites[selected_site]["lon"], format="%.6f")
-altitude = st.sidebar.number_input("Altitude (m)", value=sites[selected_site]["alt"])
-site_name = st.sidebar.text_input("Nom du site", value=selected_site)
+def generate_professional_pdf(site_name, date_img, ch4, action, altitude):
+    from io import BytesIO
+    pdf_buffer = BytesIO()
+    pdf_buffer.write(b"PDF exemple")
+    pdf_buffer.seek(0)
+    return pdf_buffer
 
-# ===================== ZONE =====================
-st.sidebar.header("📍 Zone d'analyse")
-zone = st.sidebar.selectbox("Choisir la zone", ["Nord", "Centre", "Sud"])
-if zone == "Nord":
-    lon_min, lon_max = 3.18, 3.81
-    lat_min, lat_max = 33.01, 33.28
-elif zone == "Centre":
-    lon_min, lon_max = 3.14, 3.61
-    lat_min, lat_max = 32.75, 33.01
-else:  # Sud
-    lon_min, lon_max = 2.92, 3.61
-    lat_min, lat_max = 32.75, 32.89
-
-# ===================== SESSION STATE =====================
+# =====================
+# Initialisation session_state
+# =====================
 if "ch4_day" not in st.session_state:
     st.session_state.ch4_day = None
     st.session_state.date_img_day = None
-    st.session_state.action_day = None
     st.session_state.no_pass_today = False
+    st.session_state.action_day = None
 
-# ===================== FONCTIONS =====================
-def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
-    if not ee_available:
-        return None, None, True
-    try:
-        point = ee.Geometry.Point([longitude, latitude])
-        end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-        start = end.advance(-days_back, "day")
-        collection = (
-            ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-            .filterBounds(point)
-            .filterDate(start, end)
-        )
-        image = collection.mean()
-        stats = image.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=point,
-            scale=7000,
-            maxPixels=1e9
-        )
-        ch4_ppb = stats.get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
-        date_img = collection.first().get("system:time_start").getInfo()
-        date_img = datetime.utcfromtimestamp(date_img/1000).strftime("%Y-%m-%d")
-        return ch4_ppb, date_img, False
-    except:
-        return None, None, True
+# =====================
+# SECTION A : Données historiques
+# =====================
+st.markdown("## 📑 Section A — Données historiques")
+if os.path.exists(csv_hist):
+    df_hist = pd.read_csv(csv_hist)
+    st.dataframe(df_hist.head(20))
+else:
+    st.warning("CSV historique introuvable")
 
-def generate_professional_pdf(site_name, date_img, ch4_value, action, altitude, responsable="HSE Manager"):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    story = []
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    story.append(Paragraph(f"<b>Site :</b> {site_name}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Date du rapport :</b> {now}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Date image satellite :</b> {date_img}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Altitude :</b> {altitude} m", styles["Normal"]))
-    story.append(Paragraph(f"<b>Responsable action :</b> {responsable}", styles["Normal"]))
-    story.append(Spacer(1,12))
-    story.append(Paragraph(
-        "Ce rapport présente la surveillance du méthane (CH₄) sur le site, "
-        "les valeurs mesurées, et les actions correctives recommandées. "
-        "Les seuils HSE sont : Élevé ≥1850 ppb, Critique ≥1900 ppb. "
-        "Le suivi quotidien permet de détecter rapidement toute anomalie et de sécuriser le site.",
-        styles["Normal"]
-    ))
-    story.append(Spacer(1,12))
-    data_table = [["Paramètre", "Valeur"], ["CH₄ (ppb)", f"{ch4_value:.1f}"], ["Action HSE", action]]
-    story.append(Table(data_table))
-    story.append(Spacer(1,12))
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-def get_latest_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max, date_gee):
-    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200 and response.text.strip() != "":
-            data = response.json()
-            if "features" in data and isinstance(data["features"], list):
-                plumes = pd.json_normalize(data["features"])
-                coords = plumes["geometry.coordinates"]
-                plumes["lon"] = coords.apply(lambda x: x[0])
-                plumes["lat"] = coords.apply(lambda x: x[1])
-                
-                # convertir la date de plume
-                plumes["date"] = pd.to_datetime(plumes["properties.observation_date"])
-                date_gee_dt = pd.to_datetime(date_gee)
-                
-                # garder uniquement les plumes ≤ date GEE
-                plumes = plumes[plumes["date"] <= date_gee_dt]
-                
-                # filtrer par zone
-                plumes_zone = plumes[
-                    (plumes["lon"] >= lon_min) & (plumes["lon"] <= lon_max) &
-                    (plumes["lat"] >= lat_min) & (plumes["lat"] <= lat_max)
-                ]
-                
-                if not plumes_zone.empty:
-                    # prendre la plume la plus récente avant la date GEE
-                    latest_plume = plumes_zone.loc[plumes_zone["date"].idxmax()]
-                    return pd.DataFrame([latest_plume])
-                else:
-                    return pd.DataFrame()
-            else:
-                return pd.DataFrame()
-        else:
-            st.warning(f"Erreur connexion Carbon Mapper : statut {response.status_code}")
-            return pd.DataFrame()
-    except requests.exceptions.RequestException as e:
-        st.warning(f"Erreur connexion Carbon Mapper : {e}")
-        return pd.DataFrame()
-
-# ===================== ANALYSE DU JOUR =====================
-st.markdown("## 🔍 Analyse CH₄ du jour")
+# =====================
+# SECTION B : Analyse CH₄ du jour
+# =====================
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 if st.button("Analyser CH₄ du jour"):
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
-    if ch4 is None:
-        st.error("⚠️ Aucune image satellite disponible")
-    elif no_pass_today:
-        st.warning("☁️ Pas de passage satellite valide aujourd’hui")
-    else:
-        st.success(f"CH₄ : {ch4:.1f} ppb (image du {date_img})")
-        if ch4 >= 1900:
-            st.error("⚠️ Niveau critique de CH₄ !")
-            action = "Alerter et stopper opérations"
-        else:
-            action = "Surveillance continue"
-        st.session_state.ch4_day = ch4
-        st.session_state.date_img_day = date_img
-        st.session_state.action_day = action
-
-    # ===================== CARBON MAPPER =====================
-    st.subheader("Fuites CH₄ détectées (Carbon Mapper)")
-    plumes_zone = get_latest_carbon_mapper_plumes(lon_min, lon_max, lat_min, lat_max, date_img)
-    if plumes_zone.empty:
-        st.info(f"Aucune fuite CH₄ proche de la date GEE dans la zone {zone}.")
-    else:
-        st.dataframe(plumes_zone[["lat","lon","properties.emission_rate","date"]])
-        m = folium.Map(location=[(lat_min+lat_max)/2,(lon_min+lon_max)/2], zoom_start=10)
-        for i,row in plumes_zone.iterrows():
-            folium.CircleMarker(
-                location=[row["lat"], row["lon"]],
-                radius=6,
-                color="red",
-                fill=True,
-                popup=f"Emission: {row['properties.emission_rate']} kg/h\nDate: {row['date'].date()}"
-            ).add_to(m)
-        st_folium(m, width=700, height=500)
-
-# ===================== PDF =====================
-st.markdown("## 📄 Générer PDF Professionnel")
-if st.button("Télécharger PDF Professionnel"):
+    st.session_state.ch4_day, st.session_state.date_img_day, st.session_state.no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
     if st.session_state.ch4_day is None:
-        st.warning("Lancez d'abord l'analyse du jour")
+        st.error("⚠️ Aucune image satellite disponible")
     else:
-        pdf_buffer = generate_professional_pdf(
-            site_name,
-            st.session_state.date_img_day,
-            st.session_state.ch4_day,
-            st.session_state.action_day,
-            altitude
-        )
-        st.download_button(
-            "⬇️ Télécharger le PDF Professionnel",
-            pdf_buffer,
-            f"Rapport_HSE_CH4_{site_name}_{st.session_state.date_img_day}.pdf",
-            "application/pdf"
-        )
+        if st.session_state.no_pass_today:
+            st.warning(f"☁️ Pas de passage satellite aujourd’hui. Dernière image : {st.session_state.date_img_day}")
+        st.success(f"CH₄ : **{st.session_state.ch4_day:.1f} ppb** (image du {st.session_state.date_img_day})")
+        if st.session_state.ch4_day >= 1900:
+            st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
+            st.session_state.action_day = "Alerter, sécuriser la zone et stopper opérations"
+        else:
+            st.session_state.action_day = "Surveillance continue"
+
+# Affichage permanent si analyse déjà faite
+if st.session_state.ch4_day is not None:
+    df_day = pd.DataFrame([{
+        "Date image": st.session_state.date_img_day,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "Altitude (m)": altitude,
+        "CH₄ (ppb)": round(st.session_state.ch4_day, 2),
+        "Anomalie": "Oui" if st.session_state.ch4_day >= 1900 else "Non",
+        "Action HSE": st.session_state.action_day
+    }])
+    st.table(df_day)
+
+    # Carte avec cercle critique + zones
+    st.subheader("🗺️ Carte du site avec zone critique CH₄ et zones")
+    m = folium.Map(location=[latitude, longitude], zoom_start=9)
+
+    # Cercle critique CH₄
+    color_circle = "red" if st.session_state.ch4_day >= 1900 else "green"
+    folium.Circle(
+        location=[latitude, longitude],
+        radius=3500,
+        color=color_circle,
+        fill=True,
+        fill_opacity=0.4,
+        tooltip=f"CH₄ : {st.session_state.ch4_day:.1f} ppb"
+    ).add_to(m)
+
+    # =====================
+    # POLYGONES DES ZONES
+    # =====================
+    zone_centre_coords = [
+        [32.75662617, 3.37696562],
+        [32.75663435, 3.61159117],
+        [33.01349055, 3.60634757],
+        [33.02401464, 2.93385218],
+        [32.89394392, 2.92757292],
+        [32.88954646, 3.3769424],
+        [32.75662617, 3.37696562]
+    ]
+
+    zone_sud_coords = [
+        [32.45093128, 2.88567251],
+        [32.45092697, 3.37963967],
+        [32.88379946, 3.37964793],
+        [32.88378899, 2.88561768],
+        [32.45093128, 2.88567251]
+    ]
+
+    zone_nord_coords = [
+        [33.01358581, 3.18513508],
+        [33.28297225, 3.18482285],
+        [33.27857017, 3.81093387],
+        [33.01358819, 3.81077745],
+        [33.01358581, 3.18513508]
+    ]
+
+    # Ajouter polygones
+    folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
+    folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
+    folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
+
+    # Ajouter labels au centre
+    def add_label(coords, label, color):
+        lat_center = sum([c[0] for c in coords]) / len(coords)
+        lon_center = sum([c[1] for c in coords]) / len(coords)
+        folium.Marker([lat_center, lon_center], tooltip=label, icon=folium.Icon(color=color)).add_to(m)
+
+    add_label(zone_centre_coords, "Centre", "red")
+    add_label(zone_sud_coords, "Sud", "green")
+    add_label(zone_nord_coords, "Nord", "blue")
+
+    st_folium(m, width=800, height=500)
+
+    # PDF
+    st.subheader("📄 Générer PDF Professionnel")
+    pdf_buffer = generate_professional_pdf(site_name, st.session_state.date_img_day, st.session_state.ch4_day, st.session_state.action_day, altitude)
+    st.download_button(
+        "⬇️ Télécharger le PDF Professionnel",
+        pdf_buffer,
+        f"Rapport_HSE_CH4_{site_name}_{st.session_state.date_img_day}.pdf",
+        "application/pdf"
+    )
+
+# =====================
+# SECTION C : Graphiques temporels
+# =====================
+st.markdown("## 📊 Graphiques temporels 2020–2025")
+if os.path.exists(csv_annual):
+    df_a = pd.read_csv(csv_annual)
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.plot(df_a["year"], df_a["CH4_mean"], marker="o")
+    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+    ax.set_title("CH₄ annuel moyen")
+    ax.set_xlabel("Année")
+    ax.set_ylabel("CH₄ (ppb)")
+    ax.legend()
+    st.pyplot(fig)
+else:
+    st.warning("CSV annuel introuvable")
+
+if os.path.exists(csv_monthly):
+    df_m = pd.read_csv(csv_monthly)
+    df_m[df_m.columns[0]] = pd.to_datetime(df_m[df_m.columns[0]])
+    fig, ax = plt.subplots(figsize=(10,4))
+    ax.plot(df_m[df_m.columns[0]], df_m[df_m.columns[1]], marker="o")
+    ax.axhline(1850, linestyle="--", color="orange", label="Seuil HSE élevé")
+    ax.axhline(1900, linestyle="--", color="red", label="Seuil HSE critique")
+    ax.set_title("CH₄ mensuel moyen")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("CH₄ (ppb)")
+    ax.legend()
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+else:
+    st.warning("CSV mensuel introuvable")
