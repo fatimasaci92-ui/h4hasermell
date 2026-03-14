@@ -87,7 +87,83 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         no_pass_today = date_img != today
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
+# ---------------------------
+# SIDEBAR : Sélection zone et affichage coordonnées
+# ---------------------------
+st.sidebar.header("🌐 Sélection de la zone")
+selected_zone = st.sidebar.selectbox("Choisir une zone", ["Centre", "Nord", "Sud"])
 
+# Coordonnées et altitude des zones
+zone_coords = {
+    "Centre": {"latitude": 32.93, "longitude": 3.4, "altitude": 100},
+    "Nord": {"latitude": 33.2, "longitude": 3.5, "altitude": 120},
+    "Sud": {"latitude": 32.6, "longitude": 3.1, "altitude": 80},
+}
+
+latitude = zone_coords[selected_zone]["latitude"]
+longitude = zone_coords[selected_zone]["longitude"]
+altitude = zone_coords[selected_zone]["altitude"]
+
+st.sidebar.markdown(f"**Zone sélectionnée :** {selected_zone}")
+st.sidebar.markdown(f"**Latitude :** {latitude}")
+st.sidebar.markdown(f"**Longitude :** {longitude}")
+st.sidebar.markdown(f"**Altitude :** {altitude} m")
+
+# ---------------------------
+# POLYGONES DES ZONES (pour Folium)
+# ---------------------------
+zone_centre_coords = [
+    [32.75662617, 3.37696562],
+    [32.75663435, 3.61159117],
+    [33.01349055, 3.60634757],
+    [33.02401464, 2.93385218],
+    [32.89394392, 2.92757292],
+    [32.88954646, 3.3769424],
+    [32.75662617, 3.37696562]
+]
+
+zone_sud_coords = [
+    [32.45093128, 2.88567251],
+    [32.45092697, 3.37963967],
+    [32.88379946, 3.37964793],
+    [32.88378899, 2.88561768],
+    [32.45093128, 2.88567251]
+]
+
+zone_nord_coords = [
+    [33.01358581, 3.18513508],
+    [33.28297225, 3.18482285],
+    [33.27857017, 3.81093387],
+    [33.01358819, 3.81077745],
+    [33.01358581, 3.18513508]
+]
+
+zone_polygons = {
+    "Centre": zone_centre_coords,
+    "Nord": zone_nord_coords,
+    "Sud": zone_sud_coords
+}
+
+# ---------------------------
+# Carte interactive avec polygones
+# ---------------------------
+st.markdown("## 🗺️ Carte interactive avec zones")
+m = folium.Map(location=[latitude, longitude], zoom_start=9)
+
+# Ajouter tous les polygones, avec surbrillance de la zone sélectionnée
+for zone, coords in zone_polygons.items():
+    color = "red" if zone == "Centre" else "green" if zone == "Sud" else "blue"
+    fill_opacity = 0.4 if zone == selected_zone else 0.1
+    folium.Polygon(coords, color=color, fill=True, fill_opacity=fill_opacity, tooltip=f"Zone {zone}").add_to(m)
+    # Ajouter label au centre
+    lat_center = sum([c[0] for c in coords]) / len(coords)
+    lon_center = sum([c[1] for c in coords]) / len(coords)
+    folium.Marker([lat_center, lon_center], tooltip=f"{zone} (centre)", icon=folium.Icon(color=color)).add_to(m)
+
+# Ajouter le marker du site actuel
+folium.Marker([latitude, longitude], tooltip=site_name, icon=folium.Icon(color="black")).add_to(m)
+
+st_folium(m, width=800, height=500)
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
