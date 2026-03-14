@@ -6,21 +6,39 @@ import folium
 from streamlit_folium import st_folium
 
 # =====================
-# Variables site
+# Variables site et fichiers CSV
 # =====================
 site_name = "MonSite"
-latitude = 33.05   # exemple
-longitude = 3.5    # exemple
-altitude = 100     # exemple
-csv_hist = "historique.csv"
-csv_annual = "annual.csv"
-csv_monthly = "monthly.csv"
+csv_hist = "historique_site.csv"    # <-- utilise ton vrai fichier historique
+csv_annual = "annual_site.csv"      # <-- fichier annuel
+csv_monthly = "monthly_site.csv"    # <-- fichier mensuel
+
+# Coordonnées et altitude par défaut
+zone_coords = {
+    "Centre": {"latitude": 32.9, "longitude": 3.4, "altitude": 100},
+    "Sud":    {"latitude": 32.6, "longitude": 3.1, "altitude": 80},
+    "Nord":   {"latitude": 33.2, "longitude": 3.5, "altitude": 120}
+}
 
 # =====================
-# Fonctions fictives (à remplacer par tes fonctions réelles)
+# Sidebar : choix de la zone et affichage coordonnées
+# =====================
+st.sidebar.header("🛰️ Paramètres du site")
+selected_zone = st.sidebar.selectbox("Sélectionner une zone", ["Centre", "Sud", "Nord"])
+
+latitude = zone_coords[selected_zone]["latitude"]
+longitude = zone_coords[selected_zone]["longitude"]
+altitude = zone_coords[selected_zone]["altitude"]
+
+st.sidebar.markdown(f"**Zone sélectionnée :** {selected_zone}")
+st.sidebar.markdown(f"**Latitude :** {latitude}")
+st.sidebar.markdown(f"**Longitude :** {longitude}")
+st.sidebar.markdown(f"**Altitude (m) :** {altitude}")
+
+# =====================
+# Fonctions fictives à remplacer par tes réelles
 # =====================
 def get_latest_ch4_from_gee(lat, lon):
-    # Exemple : retourner valeurs simulées
     return 1920, "2026-03-15", False
 
 def generate_professional_pdf(site_name, date_img, ch4, action, altitude):
@@ -30,9 +48,6 @@ def generate_professional_pdf(site_name, date_img, ch4, action, altitude):
     pdf_buffer.seek(0)
     return pdf_buffer
 
-# =====================
-# Initialisation session_state
-# =====================
 if "ch4_day" not in st.session_state:
     st.session_state.ch4_day = None
     st.session_state.date_img_day = None
@@ -47,12 +62,13 @@ if os.path.exists(csv_hist):
     df_hist = pd.read_csv(csv_hist)
     st.dataframe(df_hist.head(20))
 else:
-    st.warning("CSV historique introuvable")
+    st.warning(f"CSV historique introuvable : {csv_hist}")
 
 # =====================
 # SECTION B : Analyse CH₄ du jour
 # =====================
 st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+
 if st.button("Analyser CH₄ du jour"):
     st.session_state.ch4_day, st.session_state.date_img_day, st.session_state.no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
     if st.session_state.ch4_day is None:
@@ -72,6 +88,7 @@ if st.session_state.ch4_day is not None:
     df_day = pd.DataFrame([{
         "Date image": st.session_state.date_img_day,
         "Site": site_name,
+        "Zone": selected_zone,
         "Latitude": latitude,
         "Longitude": longitude,
         "Altitude (m)": altitude,
@@ -96,9 +113,9 @@ if st.session_state.ch4_day is not None:
         tooltip=f"CH₄ : {st.session_state.ch4_day:.1f} ppb"
     ).add_to(m)
 
-    # =====================
-    # POLYGONES DES ZONES
-    # =====================
+    # ---------------------------
+    # Polygones exacts des zones
+    # ---------------------------
     zone_centre_coords = [
         [32.75662617, 3.37696562],
         [32.75663435, 3.61159117],
@@ -125,7 +142,6 @@ if st.session_state.ch4_day is not None:
         [33.01358581, 3.18513508]
     ]
 
-    # Ajouter polygones
     folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
     folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
     folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
@@ -168,7 +184,7 @@ if os.path.exists(csv_annual):
     ax.legend()
     st.pyplot(fig)
 else:
-    st.warning("CSV annuel introuvable")
+    st.warning(f"CSV annuel introuvable : {csv_annual}")
 
 if os.path.exists(csv_monthly):
     df_m = pd.read_csv(csv_monthly)
@@ -184,4 +200,4 @@ if os.path.exists(csv_monthly):
     plt.xticks(rotation=45)
     st.pyplot(fig)
 else:
-    st.warning("CSV mensuel introuvable")
+    st.warning(f"CSV mensuel introuvable : {csv_monthly}")
