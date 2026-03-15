@@ -264,19 +264,27 @@ if st.button("Afficher graphiques CH₄"):
         st.warning("CSV mensuel introuvable")
 
 # ================= SECTION H : Carte interactive stable =================
+import streamlit as st
+import folium
+from streamlit_folium import st_folium
+import numpy as np
+import pandas as pd
+import os
+
 st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
-# Choix zone
+# Sélection zone
 zone_select = st.selectbox("Sélectionner une zone", ["Toutes", "Centre", "Nord", "Sud"])
 
-# Charger CSV une seule fois
+# Charger CSV historique une seule fois
 if "df_all_sites" not in st.session_state:
+    csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
     if os.path.exists(csv_hist):
         st.session_state.df_all_sites = pd.read_csv(csv_hist)
     else:
-        st.session_state.df_all_sites = pd.DataFrame()
+        st.session_state.df_all_sites = pd.DataFrame(columns=["Latitude","Longitude","Site"])
 
-# Définir les polygones de zones (disponible globalement)
+# Définir polygones zones (global)
 zones = {
     "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
                [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
@@ -287,50 +295,51 @@ zones = {
 }
 colors = {"Centre":"red","Sud":"green","Nord":"blue"}
 
-# Créer la carte une seule fois
-if "map_ready" not in st.session_state:
+# Créer la carte qu'une seule fois
+if "folium_map" not in st.session_state:
+    # Carte de base
+    latitude, longitude = 32.93, 3.30
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
-    # Ajouter sites Oil & Gas
-    df_sites = st.session_state.df_all_sites
-    for _, r in df_sites.iterrows():
+    # Ajouter tous les sites Oil & Gas
+    for _, r in st.session_state.df_all_sites.iterrows():
         try:
-            lat_site = float(r["Latitude"])
-            lon_site = float(r["Longitude"])
-            site_label = r.get("Site", "Site Oil & Gas")
             folium.CircleMarker(
-                location=[lat_site, lon_site],
+                location=[r["Latitude"], r["Longitude"]],
                 radius=5,
                 color="darkred",
                 fill=True,
                 fill_opacity=0.8,
-                tooltip=site_label
+                tooltip=r.get("Site","Site Oil & Gas")
             ).add_to(m)
         except:
             pass
 
-    # Ajouter les zones
+    # Ajouter polygones zones
     for z_name, coords in zones.items():
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 
-    # Marker du site actif
-    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
+    # Marker du site principal
+    site_name = "Hassi R'mel"
+    folium.Marker([latitude, longitude],
+                  tooltip=f"Analyse CH₄ – {site_name}",
                   icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
 
     folium.LayerControl().add_to(m)
     st.session_state.folium_map = m
-    st.session_state.map_ready = True
 
-# Filtrer la zone si nécessaire
+# Récupérer la carte
 m_to_show = st.session_state.folium_map
+
+# Recentrer selon la zone sélectionnée
 if zone_select != "Toutes":
-    z_coords = zones[zone_select]  # <-- maintenant zones existe
+    z_coords = zones[zone_select]
     lat_center = np.mean([c[0] for c in z_coords])
     lon_center = np.mean([c[1] for c in z_coords])
     m_to_show.location = [lat_center, lon_center]
     m_to_show.zoom_start = 10
 
-# Affichage stable
+# Afficher carte **une seule fois**, stable
 st_folium(m_to_show, width=900, height=550)
 
 # ================= SECTION I : Agent IA =================
