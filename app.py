@@ -1,5 +1,4 @@
-# app.py — VERSION COMPLÈTE FINALE
-
+# ================= app.py — VERSION COMPLÈTE FINALE + CARTE STABLE =================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -24,14 +23,9 @@ try:
     with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
         json.dump(ee_key_json, f)
         key_path = f.name
-
-    credentials = ee.ServiceAccountCredentials(
-        ee_key_json["client_email"],
-        key_path
-    )
+    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
     ee.Initialize(credentials)
     os.remove(key_path)
-
 except Exception as e:
     st.error(f"Erreur GEE : {e}")
     st.stop()
@@ -70,12 +64,7 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
     for i in range(size):
         img = ee.Image(images.get(i))
         date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-        value = img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=point,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
+        value = img.reduceRegion(reducer=ee.Reducer.mean(), geometry=point, scale=7000, maxPixels=1e9).get("CH4_column_volume_mixing_ratio_dry_air")
         try:
             v = value.getInfo()
         except:
@@ -274,10 +263,10 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive stable et pro =================
+# ================= SECTION H : Carte interactive stable =================
 st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
-# Charger CSV historique une seule fois
+# Charger CSV une seule fois pour carte
 if "df_all_sites" not in st.session_state:
     if os.path.exists(csv_hist):
         st.session_state.df_all_sites = pd.read_csv(csv_hist)
@@ -286,16 +275,14 @@ if "df_all_sites" not in st.session_state:
 
 # Créer la carte une seule fois si elle n'existe pas
 if "folium_map" not in st.session_state or st.session_state.folium_map is None:
-    # Carte de base type Carbon Mapper (claire et professionnelle)
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-
     # Fonds alternatifs
     folium.TileLayer("OpenStreetMap", attr="OpenStreetMap").add_to(m)
     folium.TileLayer("Stamen Terrain", attr="Stamen").add_to(m)
     folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
     folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
 
-    # Ajouter tous les sites Oil & Gas
+    # Sites Oil & Gas
     df_sites = st.session_state.df_all_sites
     for _, r in df_sites.iterrows():
         try:
@@ -313,7 +300,7 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
         except:
             pass
 
-    # Ajouter les polygones des zones (Centre, Sud, Nord)
+    # Zones Centre/Nord/Sud
     zones = {
         "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
                    [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
@@ -327,20 +314,15 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 
     # Marker du site actif
-    folium.Marker(
-        [latitude, longitude],
-        tooltip=f"Analyse CH₄ – {site_name}",
-        icon=folium.Icon(color="black", icon="info-sign")
-    ).add_to(m)
+    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
+                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
 
-    # Légende des couches
     folium.LayerControl().add_to(m)
-
-    # Stocker la carte dans session_state pour qu'elle ne disparaisse jamais
     st.session_state.folium_map = m
 
-# Affichage de la carte stable
+# Affichage stable
 st_folium(st.session_state.folium_map, width=900, height=550)
+
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
