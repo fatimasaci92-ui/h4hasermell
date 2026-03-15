@@ -266,17 +266,20 @@ if st.button("Afficher graphiques CH₄"):
 # ================= SECTION H : Carte interactive stable =================
 st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
-# Charger CSV une seule fois pour carte
+# Choix zone
+zone_select = st.selectbox("Sélectionner une zone", ["Toutes", "Centre", "Nord", "Sud"])
+
+# Charger CSV une seule fois
 if "df_all_sites" not in st.session_state:
     if os.path.exists(csv_hist):
         st.session_state.df_all_sites = pd.read_csv(csv_hist)
     else:
         st.session_state.df_all_sites = pd.DataFrame()
 
-# Créer la carte une seule fois si elle n'existe pas
-if "folium_map" not in st.session_state or st.session_state.folium_map is None:
+# Créer la carte une seule fois
+if "map_ready" not in st.session_state:
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-    # Fonds alternatifs
+    # Ajout de tuiles alternatives
     folium.TileLayer("OpenStreetMap", attr="OpenStreetMap").add_to(m)
     folium.TileLayer("Stamen Terrain", attr="Stamen").add_to(m)
     folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
@@ -291,7 +294,7 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
             site_label = r.get("Site", "Site Oil & Gas")
             folium.CircleMarker(
                 location=[lat_site, lon_site],
-                radius=6,
+                radius=5,
                 color="darkred",
                 fill=True,
                 fill_opacity=0.8,
@@ -319,9 +322,20 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
 
     folium.LayerControl().add_to(m)
     st.session_state.folium_map = m
+    st.session_state.map_ready = True
+
+# Filtrer la zone si nécessaire
+m_to_show = st.session_state.folium_map
+if zone_select != "Toutes":
+    # Pour simplifier, on recentre sur le polygone choisi
+    z_coords = zones[zone_select]
+    lat_center = np.mean([c[0] for c in z_coords])
+    lon_center = np.mean([c[1] for c in z_coords])
+    m_to_show.location = [lat_center, lon_center]
+    m_to_show.zoom_start = 10
 
 # Affichage stable
-st_folium(st.session_state.folium_map, width=900, height=550)
+st_folium(m_to_show, width=900, height=550)
 
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
