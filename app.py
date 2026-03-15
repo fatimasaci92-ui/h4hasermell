@@ -87,78 +87,7 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         no_pass_today = date_img != today
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
-# ================= SECTION H : Carte interactive Folium améliorée =================
-st.markdown("## 🗺️ Carte interactive améliorée")
 
-if st.button("Afficher carte interactive améliorée"):
-    # Fond de carte clair et pro
-    m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-
-    # 📌 Couches de fonds alternatifs (à activer via la légende)
-    folium.TileLayer("OpenStreetMap").add_to(m)
-    folium.TileLayer("Stamen Terrain").add_to(m)
-    folium.TileLayer("Stamen Toner").add_to(m)
-    folium.TileLayer("Esri.WorldImagery").add_to(m)
-
-    # 🔴 Ajouter tous les sites du CSV historique
-    if os.path.exists(csv_hist):
-        df_all_sites = pd.read_csv(csv_hist)
-        for _, r in df_all_sites.iterrows():
-            try:
-                lat_site = float(r["Latitude"])
-                lon_site = float(r["Longitude"])
-                site_label = r.get("Site", "Site Oil & Gas")
-                folium.CircleMarker(
-                    location=[lat_site, lon_site],
-                    radius=6,
-                    color="darkred",
-                    fill=True,
-                    fill_opacity=0.8,
-                    tooltip=f"{site_label}"
-                ).add_to(m)
-            except:
-                pass
-
-    # 🟦 Polygones des zones (Centre, Sud, Nord)
-    zone_centre_coords = [
-        [32.75662617, 3.37696562],
-        [32.75663435, 3.61159117],
-        [33.01349055, 3.60634757],
-        [33.02401464, 2.93385218],
-        [32.89394392, 2.92757292],
-        [32.88954646, 3.3769424],
-        [32.75662617, 3.37696562]
-    ]
-
-    zone_sud_coords = [
-        [32.45093128, 2.88567251],
-        [32.45092697, 3.37963967],
-        [32.88379946, 3.37964793],
-        [32.88378899, 2.88561768],
-        [32.45093128, 2.88567251]
-    ]
-
-    zone_nord_coords = [
-        [33.01358581, 3.18513508],
-        [33.28297225, 3.18482285],
-        [33.27857017, 3.81093387],
-        [33.01358819, 3.81077745],
-        [33.01358581, 3.18513508]
-    ]
-
-    folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
-    folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
-    folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
-
-    # 📍 Marker du point CH₄ sélectionné (le site actif)
-    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
-                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
-
-    # 🧭 Légende des couches
-    folium.LayerControl().add_to(m)
-
-    # ✨ Affichage dans Streamlit
-    st_folium(m, width=900, height=550)
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
@@ -345,13 +274,78 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive Folium =================
-st.markdown("## 🗺️ Carte interactive")
-if st.button("Afficher carte interactive"):
-    m = folium.Map(location=[latitude, longitude], zoom_start=6)
-    folium.Marker([latitude, longitude], tooltip=site_name).add_to(m)
-    st_folium(m, width=700, height=400)
+# ================= SECTION H : Carte interactive Folium améliorée =================
+st.markdown("## 🗺️ Carte interactive améliorée")
 
+if st.button("Afficher carte interactive améliorée"):
+    # Fond de carte clair et pro
+    m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
+
+    # 📌 Couches de fonds alternatifs (à activer via la légende)
+    folium.TileLayer("OpenStreetMap", attr="OpenStreetMap").add_to(m)
+    folium.TileLayer("Stamen Terrain", attr="Stamen").add_to(m)
+    folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
+    folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
+
+    # 🔴 Ajouter tous les sites du CSV historique
+    if os.path.exists(csv_hist):
+        df_all_sites = pd.read_csv(csv_hist)
+        for _, r in df_all_sites.iterrows():
+            try:
+                lat_site = float(r["Latitude"])
+                lon_site = float(r["Longitude"])
+                site_label = r.get("Site", "Site Oil & Gas")
+                folium.CircleMarker(
+                    location=[lat_site, lon_site],
+                    radius=6,
+                    color="darkred",
+                    fill=True,
+                    fill_opacity=0.8,
+                    tooltip=f"{site_label}"
+                ).add_to(m)
+            except:
+                pass
+
+    # 🟦 Polygones des zones (Centre, Sud, Nord)
+    zone_centre_coords = [
+        [32.75662617, 3.37696562],
+        [32.75663435, 3.61159117],
+        [33.01349055, 3.60634757],
+        [33.02401464, 2.93385218],
+        [32.89394392, 2.92757292],
+        [32.88954646, 3.3769424],
+        [32.75662617, 3.37696562]
+    ]
+
+    zone_sud_coords = [
+        [32.45093128, 2.88567251],
+        [32.45092697, 3.37963967],
+        [32.88379946, 3.37964793],
+        [32.88378899, 2.88561768],
+        [32.45093128, 2.88567251]
+    ]
+
+    zone_nord_coords = [
+        [33.01358581, 3.18513508],
+        [33.28297225, 3.18482285],
+        [33.27857017, 3.81093387],
+        [33.01358819, 3.81077745],
+        [33.01358581, 3.18513508]
+    ]
+
+    folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
+    folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
+    folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
+
+    # 📍 Marker du point CH₄ sélectionné (le site actif)
+    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
+                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
+
+    # 🧭 Légende des couches
+    folium.LayerControl().add_to(m)
+
+    # ✨ Affichage dans Streamlit
+    st_folium(m, width=900, height=550)
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
