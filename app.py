@@ -274,39 +274,47 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive Folium améliorée =================
-st.markdown("## 🗺️ Carte interactive améliorée")
+# ================= SECTION H : Carte interactive Folium améliorée et stable =================
+st.markdown("## 🗺️ Carte interactive améliorée et stable")
 
-if st.button("Afficher carte interactive améliorée"):
-    # Fond de carte clair et pro
+# Charger le CSV historique une seule fois
+if "df_all_sites" not in st.session_state:
+    if os.path.exists(csv_hist):
+        st.session_state.df_all_sites = pd.read_csv(csv_hist)
+    else:
+        st.session_state.df_all_sites = pd.DataFrame()
+
+# Créer la carte si elle n'existe pas encore
+if "folium_map" not in st.session_state or st.session_state.folium_map is None:
+
+    # Carte de base
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
-    # 📌 Couches de fonds alternatifs (à activer via la légende)
+    # Fonds alternatifs
     folium.TileLayer("OpenStreetMap", attr="OpenStreetMap").add_to(m)
     folium.TileLayer("Stamen Terrain", attr="Stamen").add_to(m)
     folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
     folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
 
-    # 🔴 Ajouter tous les sites du CSV historique
-    if os.path.exists(csv_hist):
-        df_all_sites = pd.read_csv(csv_hist)
-        for _, r in df_all_sites.iterrows():
-            try:
-                lat_site = float(r["Latitude"])
-                lon_site = float(r["Longitude"])
-                site_label = r.get("Site", "Site Oil & Gas")
-                folium.CircleMarker(
-                    location=[lat_site, lon_site],
-                    radius=6,
-                    color="darkred",
-                    fill=True,
-                    fill_opacity=0.8,
-                    tooltip=f"{site_label}"
-                ).add_to(m)
-            except:
-                pass
+    # Ajouter tous les sites du CSV historique
+    df_sites = st.session_state.df_all_sites
+    for _, r in df_sites.iterrows():
+        try:
+            lat_site = float(r["Latitude"])
+            lon_site = float(r["Longitude"])
+            site_label = r.get("Site", "Site Oil & Gas")
+            folium.CircleMarker(
+                location=[lat_site, lon_site],
+                radius=6,
+                color="darkred",
+                fill=True,
+                fill_opacity=0.8,
+                tooltip=f"{site_label}"
+            ).add_to(m)
+        except:
+            pass
 
-    # 🟦 Polygones des zones (Centre, Sud, Nord)
+    # Polygones des zones
     zone_centre_coords = [
         [32.75662617, 3.37696562],
         [32.75663435, 3.61159117],
@@ -316,7 +324,6 @@ if st.button("Afficher carte interactive améliorée"):
         [32.88954646, 3.3769424],
         [32.75662617, 3.37696562]
     ]
-
     zone_sud_coords = [
         [32.45093128, 2.88567251],
         [32.45092697, 3.37963967],
@@ -324,7 +331,6 @@ if st.button("Afficher carte interactive améliorée"):
         [32.88378899, 2.88561768],
         [32.45093128, 2.88567251]
     ]
-
     zone_nord_coords = [
         [33.01358581, 3.18513508],
         [33.28297225, 3.18482285],
@@ -332,20 +338,23 @@ if st.button("Afficher carte interactive améliorée"):
         [33.01358819, 3.81077745],
         [33.01358581, 3.18513508]
     ]
-
     folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
     folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
     folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
 
-    # 📍 Marker du point CH₄ sélectionné (le site actif)
+    # Marker du site actif
     folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
                   icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
 
-    # 🧭 Légende des couches
+    # Légende pour basculer entre les couches
     folium.LayerControl().add_to(m)
 
-    # ✨ Affichage dans Streamlit
-    st_folium(m, width=900, height=550)
+    # Stocker dans session_state pour garder la carte
+    st.session_state.folium_map = m
+
+# Afficher la carte stockée dans session_state
+if st.session_state.folium_map:
+    st_folium(st.session_state.folium_map, width=900, height=550)
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
