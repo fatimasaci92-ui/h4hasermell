@@ -276,16 +276,22 @@ if "df_all_sites" not in st.session_state:
     else:
         st.session_state.df_all_sites = pd.DataFrame()
 
+# Définir les polygones de zones (disponible globalement)
+zones = {
+    "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
+               [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
+    "Sud": [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
+            [32.88378899,2.88561768],[32.45093128,2.88567251]],
+    "Nord": [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
+             [33.01358819,3.81077745],[33.01358581,3.18513508]]
+}
+colors = {"Centre":"red","Sud":"green","Nord":"blue"}
+
 # Créer la carte une seule fois
 if "map_ready" not in st.session_state:
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-    # Ajout de tuiles alternatives
-    folium.TileLayer("OpenStreetMap", attr="OpenStreetMap").add_to(m)
-    folium.TileLayer("Stamen Terrain", attr="Stamen").add_to(m)
-    folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
-    folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
 
-    # Sites Oil & Gas
+    # Ajouter sites Oil & Gas
     df_sites = st.session_state.df_all_sites
     for _, r in df_sites.iterrows():
         try:
@@ -303,16 +309,7 @@ if "map_ready" not in st.session_state:
         except:
             pass
 
-    # Zones Centre/Nord/Sud
-    zones = {
-        "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
-                   [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
-        "Sud": [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
-                [32.88378899,2.88561768],[32.45093128,2.88567251]],
-        "Nord": [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
-                 [33.01358819,3.81077745],[33.01358581,3.18513508]]
-    }
-    colors = {"Centre":"red","Sud":"green","Nord":"blue"}
+    # Ajouter les zones
     for z_name, coords in zones.items():
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 
@@ -327,8 +324,7 @@ if "map_ready" not in st.session_state:
 # Filtrer la zone si nécessaire
 m_to_show = st.session_state.folium_map
 if zone_select != "Toutes":
-    # Pour simplifier, on recentre sur le polygone choisi
-    z_coords = zones[zone_select]
+    z_coords = zones[zone_select]  # <-- maintenant zones existe
     lat_center = np.mean([c[0] for c in z_coords])
     lon_center = np.mean([c[1] for c in z_coords])
     m_to_show.location = [lat_center, lon_center]
