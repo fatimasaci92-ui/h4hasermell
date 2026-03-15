@@ -274,23 +274,19 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive stable =================
-st.markdown("## 🗺️ Carte interactive stable")
+# ================= SECTION H : Carte interactive stable et pro =================
+st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
-# Charger CSV une seule fois
+# Charger CSV historique une seule fois
 if "df_all_sites" not in st.session_state:
     if os.path.exists(csv_hist):
         st.session_state.df_all_sites = pd.read_csv(csv_hist)
     else:
         st.session_state.df_all_sites = pd.DataFrame()
 
-# Vérifier si la carte existe déjà
-if "folium_map" not in st.session_state:
-    st.session_state.folium_map = None
-
-# Bouton pour créer ou rafraîchir la carte
-if st.button("Afficher / Mettre à jour la carte"):
-    # Créer carte seulement ici
+# Créer la carte une seule fois si elle n'existe pas
+if "folium_map" not in st.session_state or st.session_state.folium_map is None:
+    # Carte de base type Carbon Mapper (claire et professionnelle)
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
     # Fonds alternatifs
@@ -299,8 +295,9 @@ if st.button("Afficher / Mettre à jour la carte"):
     folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
     folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
 
-    # Ajouter tous les sites
-    for _, r in st.session_state.df_all_sites.iterrows():
+    # Ajouter tous les sites Oil & Gas
+    df_sites = st.session_state.df_all_sites
+    for _, r in df_sites.iterrows():
         try:
             lat_site = float(r["Latitude"])
             lon_site = float(r["Longitude"])
@@ -311,39 +308,39 @@ if st.button("Afficher / Mettre à jour la carte"):
                 color="darkred",
                 fill=True,
                 fill_opacity=0.8,
-                tooltip=f"{site_label}"
+                tooltip=site_label
             ).add_to(m)
         except:
             pass
 
-    # Polygones des zones
-    folium.Polygon(
-        [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
-         [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],
-         [32.75662617,3.37696562]], color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre"
-    ).add_to(m)
-    folium.Polygon(
-        [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
-         [32.88378899,2.88561768],[32.45093128,2.88567251]], color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud"
-    ).add_to(m)
-    folium.Polygon(
-        [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
-         [33.01358819,3.81077745],[33.01358581,3.18513508]], color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord"
-    ).add_to(m)
+    # Ajouter les polygones des zones (Centre, Sud, Nord)
+    zones = {
+        "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
+                   [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
+        "Sud": [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
+                [32.88378899,2.88561768],[32.45093128,2.88567251]],
+        "Nord": [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
+                 [33.01358819,3.81077745],[33.01358581,3.18513508]]
+    }
+    colors = {"Centre":"red","Sud":"green","Nord":"blue"}
+    for z_name, coords in zones.items():
+        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 
     # Marker du site actif
-    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
-                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
+    folium.Marker(
+        [latitude, longitude],
+        tooltip=f"Analyse CH₄ – {site_name}",
+        icon=folium.Icon(color="black", icon="info-sign")
+    ).add_to(m)
 
-    # Légende
+    # Légende des couches
     folium.LayerControl().add_to(m)
 
-    # Stocker dans session_state pour garder la carte
+    # Stocker la carte dans session_state pour qu'elle ne disparaisse jamais
     st.session_state.folium_map = m
 
-# Afficher la carte stockée
-if st.session_state.folium_map:
-    st_folium(st.session_state.folium_map, width=900, height=550)
+# Affichage de la carte stable
+st_folium(st.session_state.folium_map, width=900, height=550)
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
