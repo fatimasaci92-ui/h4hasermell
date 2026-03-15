@@ -87,83 +87,78 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         no_pass_today = date_img != today
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
-# ---------------------------
-# SIDEBAR : Sélection zone et affichage coordonnées
-# ---------------------------
-st.sidebar.header("🌐 Sélection de la zone")
-selected_zone = st.sidebar.selectbox("Choisir une zone", ["Centre", "Nord", "Sud"])
+# ================= SECTION H : Carte interactive Folium améliorée =================
+st.markdown("## 🗺️ Carte interactive améliorée")
 
-# Coordonnées et altitude des zones
-zone_coords = {
-    "Centre": {"latitude": 32.93, "longitude": 3.4, "altitude": 100},
-    "Nord": {"latitude": 33.2, "longitude": 3.5, "altitude": 120},
-    "Sud": {"latitude": 32.6, "longitude": 3.1, "altitude": 80},
-}
+if st.button("Afficher carte interactive améliorée"):
+    # Fond de carte clair et pro
+    m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
-latitude = zone_coords[selected_zone]["latitude"]
-longitude = zone_coords[selected_zone]["longitude"]
-altitude = zone_coords[selected_zone]["altitude"]
+    # 📌 Couches de fonds alternatifs (à activer via la légende)
+    folium.TileLayer("OpenStreetMap").add_to(m)
+    folium.TileLayer("Stamen Terrain").add_to(m)
+    folium.TileLayer("Stamen Toner").add_to(m)
+    folium.TileLayer("Esri.WorldImagery").add_to(m)
 
-st.sidebar.markdown(f"**Zone sélectionnée :** {selected_zone}")
-st.sidebar.markdown(f"**Latitude :** {latitude}")
-st.sidebar.markdown(f"**Longitude :** {longitude}")
-st.sidebar.markdown(f"**Altitude :** {altitude} m")
+    # 🔴 Ajouter tous les sites du CSV historique
+    if os.path.exists(csv_hist):
+        df_all_sites = pd.read_csv(csv_hist)
+        for _, r in df_all_sites.iterrows():
+            try:
+                lat_site = float(r["Latitude"])
+                lon_site = float(r["Longitude"])
+                site_label = r.get("Site", "Site Oil & Gas")
+                folium.CircleMarker(
+                    location=[lat_site, lon_site],
+                    radius=6,
+                    color="darkred",
+                    fill=True,
+                    fill_opacity=0.8,
+                    tooltip=f"{site_label}"
+                ).add_to(m)
+            except:
+                pass
 
-# ---------------------------
-# POLYGONES DES ZONES (pour Folium)
-# ---------------------------
-zone_centre_coords = [
-    [32.75662617, 3.37696562],
-    [32.75663435, 3.61159117],
-    [33.01349055, 3.60634757],
-    [33.02401464, 2.93385218],
-    [32.89394392, 2.92757292],
-    [32.88954646, 3.3769424],
-    [32.75662617, 3.37696562]
-]
+    # 🟦 Polygones des zones (Centre, Sud, Nord)
+    zone_centre_coords = [
+        [32.75662617, 3.37696562],
+        [32.75663435, 3.61159117],
+        [33.01349055, 3.60634757],
+        [33.02401464, 2.93385218],
+        [32.89394392, 2.92757292],
+        [32.88954646, 3.3769424],
+        [32.75662617, 3.37696562]
+    ]
 
-zone_sud_coords = [
-    [32.45093128, 2.88567251],
-    [32.45092697, 3.37963967],
-    [32.88379946, 3.37964793],
-    [32.88378899, 2.88561768],
-    [32.45093128, 2.88567251]
-]
+    zone_sud_coords = [
+        [32.45093128, 2.88567251],
+        [32.45092697, 3.37963967],
+        [32.88379946, 3.37964793],
+        [32.88378899, 2.88561768],
+        [32.45093128, 2.88567251]
+    ]
 
-zone_nord_coords = [
-    [33.01358581, 3.18513508],
-    [33.28297225, 3.18482285],
-    [33.27857017, 3.81093387],
-    [33.01358819, 3.81077745],
-    [33.01358581, 3.18513508]
-]
+    zone_nord_coords = [
+        [33.01358581, 3.18513508],
+        [33.28297225, 3.18482285],
+        [33.27857017, 3.81093387],
+        [33.01358819, 3.81077745],
+        [33.01358581, 3.18513508]
+    ]
 
-zone_polygons = {
-    "Centre": zone_centre_coords,
-    "Nord": zone_nord_coords,
-    "Sud": zone_sud_coords
-}
+    folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
+    folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
+    folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
 
-# ---------------------------
-# Carte interactive avec polygones
-# ---------------------------
-st.markdown("## 🗺️ Carte interactive avec zones")
-m = folium.Map(location=[latitude, longitude], zoom_start=9)
+    # 📍 Marker du point CH₄ sélectionné (le site actif)
+    folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
+                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
 
-# Ajouter tous les polygones, avec surbrillance de la zone sélectionnée
-for zone, coords in zone_polygons.items():
-    color = "red" if zone == "Centre" else "green" if zone == "Sud" else "blue"
-    fill_opacity = 0.4 if zone == selected_zone else 0.1
-    folium.Polygon(coords, color=color, fill=True, fill_opacity=fill_opacity, tooltip=f"Zone {zone}").add_to(m)
-    # Ajouter label au centre
-    lat_center = sum([c[0] for c in coords]) / len(coords)
-    lon_center = sum([c[1] for c in coords]) / len(coords)
-    folium.Marker([lat_center, lon_center], tooltip=f"{zone} (centre)", icon=folium.Icon(color=color)).add_to(m)
+    # 🧭 Légende des couches
+    folium.LayerControl().add_to(m)
 
-# Ajouter le marker du site actuel
-folium.Marker([latitude, longitude], tooltip=site_name, icon=folium.Icon(color="black")).add_to(m)
-
-st_folium(m, width=800, height=500)
+    # ✨ Affichage dans Streamlit
+    st_folium(m, width=900, height=550)
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
