@@ -274,20 +274,23 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive Folium améliorée et stable =================
-st.markdown("## 🗺️ Carte interactive améliorée et stable")
+# ================= SECTION H : Carte interactive stable =================
+st.markdown("## 🗺️ Carte interactive stable")
 
-# Charger le CSV historique une seule fois
+# Charger CSV une seule fois
 if "df_all_sites" not in st.session_state:
     if os.path.exists(csv_hist):
         st.session_state.df_all_sites = pd.read_csv(csv_hist)
     else:
         st.session_state.df_all_sites = pd.DataFrame()
 
-# Créer la carte si elle n'existe pas encore
-if "folium_map" not in st.session_state or st.session_state.folium_map is None:
+# Vérifier si la carte existe déjà
+if "folium_map" not in st.session_state:
+    st.session_state.folium_map = None
 
-    # Carte de base
+# Bouton pour créer ou rafraîchir la carte
+if st.button("Afficher / Mettre à jour la carte"):
+    # Créer carte seulement ici
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
     # Fonds alternatifs
@@ -296,9 +299,8 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
     folium.TileLayer("Stamen Toner", attr="Stamen").add_to(m)
     folium.TileLayer("Esri.WorldImagery", attr="Esri").add_to(m)
 
-    # Ajouter tous les sites du CSV historique
-    df_sites = st.session_state.df_all_sites
-    for _, r in df_sites.iterrows():
+    # Ajouter tous les sites
+    for _, r in st.session_state.df_all_sites.iterrows():
         try:
             lat_site = float(r["Latitude"])
             lon_site = float(r["Longitude"])
@@ -315,44 +317,31 @@ if "folium_map" not in st.session_state or st.session_state.folium_map is None:
             pass
 
     # Polygones des zones
-    zone_centre_coords = [
-        [32.75662617, 3.37696562],
-        [32.75663435, 3.61159117],
-        [33.01349055, 3.60634757],
-        [33.02401464, 2.93385218],
-        [32.89394392, 2.92757292],
-        [32.88954646, 3.3769424],
-        [32.75662617, 3.37696562]
-    ]
-    zone_sud_coords = [
-        [32.45093128, 2.88567251],
-        [32.45092697, 3.37963967],
-        [32.88379946, 3.37964793],
-        [32.88378899, 2.88561768],
-        [32.45093128, 2.88567251]
-    ]
-    zone_nord_coords = [
-        [33.01358581, 3.18513508],
-        [33.28297225, 3.18482285],
-        [33.27857017, 3.81093387],
-        [33.01358819, 3.81077745],
-        [33.01358581, 3.18513508]
-    ]
-    folium.Polygon(zone_centre_coords, color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre").add_to(m)
-    folium.Polygon(zone_sud_coords, color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud").add_to(m)
-    folium.Polygon(zone_nord_coords, color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord").add_to(m)
+    folium.Polygon(
+        [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
+         [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],
+         [32.75662617,3.37696562]], color="red", fill=True, fill_opacity=0.2, tooltip="Zone Centre"
+    ).add_to(m)
+    folium.Polygon(
+        [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
+         [32.88378899,2.88561768],[32.45093128,2.88567251]], color="green", fill=True, fill_opacity=0.2, tooltip="Zone Sud"
+    ).add_to(m)
+    folium.Polygon(
+        [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
+         [33.01358819,3.81077745],[33.01358581,3.18513508]], color="blue", fill=True, fill_opacity=0.2, tooltip="Zone Nord"
+    ).add_to(m)
 
     # Marker du site actif
     folium.Marker([latitude, longitude], tooltip=f"Analyse CH₄ – {site_name}",
                   icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
 
-    # Légende pour basculer entre les couches
+    # Légende
     folium.LayerControl().add_to(m)
 
     # Stocker dans session_state pour garder la carte
     st.session_state.folium_map = m
 
-# Afficher la carte stockée dans session_state
+# Afficher la carte stockée
 if st.session_state.folium_map:
     st_folium(st.session_state.folium_map, width=900, height=550)
 # ================= SECTION I : Agent IA =================
