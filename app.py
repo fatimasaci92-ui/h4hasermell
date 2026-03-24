@@ -81,30 +81,51 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
     return None, None, True
 # ================= FONCTION CARBON MAPPER =================
 def get_ch4_plumes_carbonmapper(lat, lon):
+    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
+    headers = {
+        "Authorization": f"Bearer {CARBON_API_TOKEN}"
+    }
 
-headers = {
-"Authorization": f"Bearer {CARBON_API_TOKEN}"
-}
+    params = {
+        "gas": "CH4",
+        "limit": 20
+    }
 
-params = {
-"gas": "CH4",
-"limit": 20
-}
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=20
+        )
 
-try:
-response = requests.get(
-url,
-headers=headers,
-params=params,
-timeout=20
-)
+        if response.status_code != 200:
+            st.warning("Carbon Mapper API indisponible")
+            return []
 
-if response.status_code != 200:
-st.warning("Carbon Mapper API indisponible")
-return []
+        data = response.json()
+        plumes = []
 
+        for item in data.get("features", []):
+            coords = item["geometry"]["coordinates"]
+            props = item["properties"]
+
+            plume_lat = coords[1]
+            plume_lon = coords[0]
+            emission = props.get("emission_rate", 0)
+
+            plumes.append({
+                "lat": plume_lat,
+                "lon": plume_lon,
+                "emission": emission
+            })
+
+        return plumes
+
+    except Exception as e:
+        st.error(f"Erreur Carbon Mapper : {e}")
+        return []
 data = response.json()
 
 plumes = []
