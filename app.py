@@ -31,7 +31,7 @@ except Exception as e:
     st.stop()
 # ================= CARBON MEPPER API =================
 
- CARBON_API_TOKEN= st.secrets["CARBON_API_TOKEN"] 
+CARBON_API_TOKEN= st.secrets["CARBON_API_TOKEN"] 
 
 # ================= CONFIG STREAMLIT =================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
