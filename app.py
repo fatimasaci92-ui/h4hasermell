@@ -131,20 +131,18 @@ data = response.json()
 plumes = []
 
 for item in data.get("features", []):
+    coords = item["geometry"]["coordinates"]
+    props = item["properties"]
 
-coords = item["geometry"]["coordinates"]
-props = item["properties"]
+    plume_lat = coords[1]
+    plume_lon = coords[0]
+    emission = props.get("emission_rate", 0)
 
-plume_lat = coords[1]
-plume_lon = coords[0]
-
-emission = props.get("emission_rate", 0)
-
-plumes.append({
-"lat": plume_lat,
-"lon": plume_lon,
-"emission": emission
-})
+    plumes.append({
+        "lat": plume_lat,
+        "lon": plume_lon,
+        "emission": emission
+    })
 
 return plumes
 
