@@ -221,16 +221,9 @@ if st.button("Analyser CH₄ du jour"):
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
 if len(plumes) > 0:
-
-st.error(
-f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !"
-)
-
+    st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
 else:
-
-st.success(
-"✅ Aucune fuite détectée par Carbon Mapper"
-)
+    st.success("✅ Aucune fuite détectée par Carbon Mapper")
 # ================= SECTION F : PDF Professionnel =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
