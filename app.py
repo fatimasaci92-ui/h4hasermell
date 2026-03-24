@@ -29,6 +29,9 @@ try:
 except Exception as e:
     st.error(f"Erreur GEE : {e}")
     st.stop()
+# ================= CARBON MEPPER API =================
+
+ CARBON_API_TOKEN= st.secrets["CARBON_API_TOKEN"] 
 
 # ================= CONFIG STREAMLIT =================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
@@ -76,7 +79,57 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         no_pass_today = date_img != today
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
+# ================= FONCTION CARBON MAPPER =================
+def get_ch4_plumes_carbonmapper(lat, lon):
 
+url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
+
+headers = {
+"Authorization": f"Bearer {CARBON_API_TOKEN}"
+}
+
+params = {
+"gas": "CH4",
+"limit": 20
+}
+
+try:
+response = requests.get(
+url,
+headers=headers,
+params=params,
+timeout=20
+)
+
+if response.status_code != 200:
+st.warning("Carbon Mapper API indisponible")
+return []
+
+data = response.json()
+
+plumes = []
+
+for item in data.get("features", []):
+
+coords = item["geometry"]["coordinates"]
+props = item["properties"]
+
+plume_lat = coords[1]
+plume_lon = coords[0]
+
+emission = props.get("emission_rate", 0)
+
+plumes.append({
+"lat": plume_lat,
+"lon": plume_lon,
+"emission": emission
+})
+
+return plumes
+
+except Exception as e:
+st.error(f"Erreur Carbon Mapper : {e}")
+return []
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
@@ -167,7 +220,21 @@ if st.button("Analyser CH₄ du jour"):
         "Action HSE": action
     }])
     st.table(df_day)
+# ================= ANALYSE CARBON MAPPER =================
 
+plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+if len(plumes) > 0:
+
+st.error(
+f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !"
+)
+
+else:
+
+st.success(
+"✅ Aucune fuite détectée par Carbon Mapper"
+)
 # ================= SECTION F : PDF Professionnel =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
@@ -318,7 +385,21 @@ if "folium_map" not in st.session_state:
     # Ajouter polygones zones
     for z_name, coords in zones.items():
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
+# ================= AJOUT PLUMES CARBON MAPPER =================
 
+plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+for plume in plumes:
+
+folium.CircleMarker(
+location=[plume["lat"], plume["lon"]],
+radius=7,
+color="purple",
+fill=True,
+fill_color="purple",
+fill_opacity=0.9,
+tooltip=f"Plume CH4: {plume['emission']} kg/h"
+).add_to(m)
     # Marker du site principal
     site_name = "Hassi R'mel"
     folium.Marker([latitude, longitude],
