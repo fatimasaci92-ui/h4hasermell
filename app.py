@@ -126,29 +126,6 @@ def get_ch4_plumes_carbonmapper(lat, lon):
     except Exception as e:
         st.error(f"Erreur Carbon Mapper : {e}")
         return []
-data = response.json()
-
-plumes = []
-
-for item in data.get("features", []):
-    coords = item["geometry"]["coordinates"]
-    props = item["properties"]
-
-    plume_lat = coords[1]
-    plume_lon = coords[0]
-    emission = props.get("emission_rate", 0)
-
-    plumes.append({
-        "lat": plume_lat,
-        "lon": plume_lon,
-        "emission": emission
-    })
-
-return plumes
-
-except Exception as e:
-st.error(f"Erreur Carbon Mapper : {e}")
-return []
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
