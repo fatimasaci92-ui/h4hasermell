@@ -379,16 +379,15 @@ if "folium_map" not in st.session_state:
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
 for plume in plumes:
-
-folium.CircleMarker(
-location=[plume["lat"], plume["lon"]],
-radius=7,
-color="purple",
-fill=True,
-fill_color="purple",
-fill_opacity=0.9,
-tooltip=f"Plume CH4: {plume['emission']} kg/h"
-).add_to(m)
+    folium.CircleMarker(
+        location=[plume["lat"], plume["lon"]],
+        radius=7,
+        color="purple",
+        fill=True,
+        fill_color="purple",
+        fill_opacity=0.9,
+        tooltip=f"Plume CH4: {plume['emission']} kg/h"
+    ).add_to(m)
     # Marker du site principal
     site_name = "Hassi R'mel"
     folium.Marker([latitude, longitude],
