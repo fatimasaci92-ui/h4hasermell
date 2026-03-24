@@ -16,7 +16,7 @@ import json
 import tempfile
 import folium
 from streamlit_folium import st_folium
-
+import requests
 # ================= INITIALISATION GOOGLE EARTH ENGINE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
