@@ -30,9 +30,7 @@ except Exception as e:
     st.error(f"Erreur GEE : {e}")
     st.stop()
 # ================= CARBON MEPPER API =================
-
-CARBON_API_TOKEN= st.secrets["CARBON_API_TOKEN"] 
-
+CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
 # ================= CONFIG STREAMLIT =================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
@@ -220,10 +218,16 @@ if st.button("Analyser CH₄ du jour"):
 
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
-if len(plumes) > 0:
-    st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-else:
-    st.success("✅ Aucune fuite détectée par Carbon Mapper")
+try:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+    else:
+        st.success("✅ Aucune fuite détectée par Carbon Mapper")
+except Exception as e:
+    st.warning("⚠️ Carbon Mapper indisponible ou token invalide")
+    st.info("L’analyse continue avec GEE et données locales")
+    plumes = []
 # ================= SECTION F : PDF Professionnel =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
