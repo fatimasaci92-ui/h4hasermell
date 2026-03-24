@@ -398,7 +398,32 @@ for plume in plumes:
     st.session_state.folium_map = m
 
 # Récupérer la carte
-m_to_show = st.session_state.folium_map
+# Récupérer ou créer la carte
+m_to_show = st.session_state.get("folium_map", None)
+
+if m_to_show is None:
+    latitude, longitude = 32.93, 3.30
+    m_to_show = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
+
+    # Ajouter tous les sites Oil & Gas
+    for _, r in st.session_state.df_all_sites.iterrows():
+        try:
+            folium.CircleMarker(
+                location=[r["Latitude"], r["Longitude"]],
+                radius=5,
+                color="darkred",
+                fill=True,
+                fill_opacity=0.8,
+                tooltip=r.get("Site", "Site Oil & Gas")
+            ).add_to(m_to_show)
+        except:
+            pass
+
+    # Ajouter polygones zones
+    for z_name, coords in zones.items():
+        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m_to_show)
+
+    st.session_state.folium_map = m_to_show
 
 # Recentrer selon la zone sélectionnée
 if zone_select != "Toutes":
