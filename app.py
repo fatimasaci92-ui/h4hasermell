@@ -188,32 +188,61 @@ if st.button("Analyser année sélectionnée"):
 
 # ================= SECTION E : Analyse CH₄ du jour =================
 st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
     ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+
     if ch4 is None:
         st.error("⚠️ Aucune image satellite disponible sur la période analysée.")
         st.stop()
+
+    # Vérifier passage satellite
     if no_pass_today:
         st.error("☁️ Pas de passage satellite valide aujourd’hui (nuages ou orbite)")
         st.warning(f"➡️ Dernière image disponible sur GEE : **{date_img}**")
+
     st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
+
+    # Définir niveau de risque HSE
     if ch4 >= 1900:
+        risk = "Critique"
+        action = "Arrêt + alerte HSE"
         st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
-        action = "Alerter, sécuriser la zone et stopper opérations"
+    elif ch4 >= 1850:
+        risk = "Élevé"
+        action = "Inspection urgente"
+        st.warning("⚠️ Niveau CH₄ élevé")
     else:
-        st.success("CH₄ normal")
+        risk = "Normal"
         action = "Surveillance continue"
+        st.success("CH₄ normal")
+
+    # Affichage tableau résumé
     df_day = pd.DataFrame([{
         "Date image": date_img,
         "Site": site_name,
         "Latitude": latitude,
         "Longitude": longitude,
         "CH₄ (ppb)": round(ch4, 2),
-        "Anomalie": "Oui" if ch4 >= 1900 else "Non",
+        "Risque": risk,
         "Action HSE": action
     }])
     st.table(df_day)
+
+    # =================== Vérification fuite automatique ===================
+    st.markdown("### 🔎 Vérification fuite Carbon Mapper automatique")
+
+    if ch4 >= 1850:  # seuil à partir duquel on vérifie les plumes
+        plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+        if len(plumes) > 0:
+            st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+            for plume in plumes:
+                st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+        else:
+            st.success("✅ Aucune fuite détectée par Carbon Mapper")
+    else:
+        st.info("Niveau CH₄ normal → pas de vérification Carbon Mapper nécessaire")
 # ================= ANALYSE CARBON MAPPER =================
 
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
