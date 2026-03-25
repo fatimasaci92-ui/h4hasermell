@@ -31,6 +31,8 @@ except Exception as e:
     st.stop()
 # ================= CARBON MEPPER API =================
 CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
+if not CARBON_API_TOKEN:
+    st.error("❌ Token Carbon Mapper manquant dans secrets.toml")
 # ================= CONFIG STREAMLIT =================
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
@@ -77,53 +79,7 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         no_pass_today = date_img != today
         return ch4_ppb, date_img, no_pass_today
     return None, None, True
-# ================= FONCTION CARBON MAPPER =================
-def get_ch4_plumes_carbonmapper(lat, lon):
-    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-    headers = {
-        "Authorization": f"Bearer {CARBON_API_TOKEN}"
-    }
-
-    params = {
-        "gas": "CH4",
-        "limit": 20
-    }
-
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=20
-        )
-
-        if response.status_code != 200:
-            st.warning("Carbon Mapper API indisponible")
-            return []
-
-        data = response.json()
-        plumes = []
-
-        for item in data.get("features", []):
-            coords = item["geometry"]["coordinates"]
-            props = item["properties"]
-
-            plume_lat = coords[1]
-            plume_lon = coords[0]
-            emission = props.get("emission_rate", 0)
-
-            plumes.append({
-                "lat": plume_lat,
-                "lon": plume_lon,
-                "emission": emission
-            })
-
-        return plumes
-
-    except Exception as e:
-        st.error(f"Erreur Carbon Mapper : {e}")
-        return []
 # ================= SECTION A : Contenu des dossiers =================
 st.markdown("## 📁 Section A — Contenu des données")
 if st.button("Afficher les dossiers de données"):
@@ -236,15 +192,31 @@ if st.button("Analyser CH₄ du jour"):
     # =================== Vérification fuite automatique ===================
     st.markdown("### 🔎 Vérification fuite Carbon Mapper automatique")
 
-    if ch4 >= 1850:  # seuil à partir duquel on vérifie les plumes
-        if len(plumes) > 0:
-            st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-            for plume in plumes:
-                st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-        else:
-            st.success("✅ Aucune fuite détectée par Carbon Mapper")
+    if ch4 >= 1850:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
     else:
-        st.info("Niveau CH₄ normal → pas de vérification Carbon Mapper nécessaire")
+        st.success("✅ Aucune fuite détectée par Carbon Mapper")if ch4 >= 1850:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+    else:
+        st.success("✅ Aucune fuite détectée par Carbon Mapper")if ch4 >= 1850:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+    else:
+        st.success("✅ Aucune fuite détectée par Carbon Mapper")
 # ================= ANALYSE CARBON MAPPER =================
 
 def get_ch4_plumes_carbonmapper(lat, lon):
@@ -442,7 +414,10 @@ if "folium_map" not in st.session_state:
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 # ================= AJOUT PLUMES CARBON MAPPER =================
 
-plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+if "plumes" in locals():
+    pass
+else:
+    plumes = []
 
 # Ajouter plumes
 for plume in plumes:
@@ -463,13 +438,29 @@ folium.Marker(
 ).add_to(m)
     # Marker du site principal
     site_name = "Hassi R'mel"
-    folium.Marker([latitude, longitude],
-                  tooltip=f"Analyse CH₄ – {site_name}",
-                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
+    # Ajouter plumes
+for plume in plumes:
+    folium.CircleMarker(
+        location=[plume["lat"], plume["lon"]],
+        radius=7,
+        color="purple",
+        fill=True,
+        fill_opacity=0.9,
+        tooltip=f"Plume CH4: {plume['emission']} kg/h"
+    ).add_to(m)
 
-    folium.LayerControl().add_to(m)
-    st.session_state.folium_map = m
+# Marker du site UNE SEULE FOIS
+folium.Marker(
+    [latitude, longitude],
+    tooltip=f"Analyse CH₄ – {site_name}",
+    icon=folium.Icon(color="black")
+).add_to(m)
 
+# Contrôle des couches
+folium.LayerControl().add_to(m)
+
+# Sauvegarde carte
+st.session_state.folium_map = m
 # Récupérer la carte
 # Récupérer ou créer la carte
 m_to_show = st.session_state.get("folium_map", None)
