@@ -363,9 +363,11 @@ zones = {
 }
 colors = {"Centre":"red","Sud":"green","Nord":"blue"}
 
-# Créer la carte qu'une seule fois
+# Créer ou récupérer la carte
 if "folium_map" not in st.session_state:
     latitude, longitude = 32.93, 3.30
+    site_name = "Hassi R'mel"
+    
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
     # Ajouter tous les sites Oil & Gas
@@ -384,9 +386,7 @@ if "folium_map" not in st.session_state:
 
     # Ajouter polygones zones
     for z_name, coords in zones.items():
-        folium.Polygon(
-            coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}"
-        ).add_to(m)
+        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 
     # Ajouter plumes CH4 si elles existent
     if "plumes" in locals() and len(plumes) > 0:
@@ -401,7 +401,6 @@ if "folium_map" not in st.session_state:
             ).add_to(m)
 
     # Marker du site principal
-    site_name = "Hassi R'mel"
     folium.Marker(
         [latitude, longitude],
         tooltip=f"Analyse CH₄ – {site_name}",
@@ -411,7 +410,6 @@ if "folium_map" not in st.session_state:
     # Contrôle des couches
     folium.LayerControl().add_to(m)
 
-    # Sauvegarder dans session_state
     st.session_state.folium_map = m
 
 # Récupérer la carte
@@ -425,95 +423,7 @@ if zone_select != "Toutes":
     m_to_show.location = [lat_center, lon_center]
     m_to_show.zoom_start = 10
 
-# Afficher la carte stable
-st_folium(m_to_show, width=900, height=550)
-# ================= AJOUT PLUMES CARBON MAPPER =================
-
-if "plumes" in locals():
-    pass
-else:
-    plumes = []
-
-# Ajouter plumes
-for plume in plumes:
-    folium.CircleMarker(
-        location=[plume["lat"], plume["lon"]],
-        radius=7,
-        color="purple",
-        fill=True,
-        fill_opacity=0.9,
-        tooltip=f"Plume CH4: {plume['emission']} kg/h"
-    ).add_to(m)
-
-# Marker du site UNE SEULE FOIS
-folium.Marker(
-    [latitude, longitude],
-    tooltip=f"Analyse CH₄ – {site_name}",
-    icon=folium.Icon(color="black")
-).add_to(m)
-
-# Marker du site principal
-site_name = "Hassi R'mel"
-    # Ajouter plumes
-for plume in plumes:
-    folium.CircleMarker(
-        location=[plume["lat"], plume["lon"]],
-        radius=7,
-        color="purple",
-        fill=True,
-        fill_opacity=0.9,
-        tooltip=f"Plume CH4: {plume['emission']} kg/h"
-    ).add_to(m)
-
-# Marker du site UNE SEULE FOIS
-folium.Marker(
-    [latitude, longitude],
-    tooltip=f"Analyse CH₄ – {site_name}",
-    icon=folium.Icon(color="black")
-).add_to(m)
-
-# Contrôle des couches
-folium.LayerControl().add_to(m)
-
-# Sauvegarde carte
-st.session_state.folium_map = m
-# Récupérer la carte
-# Récupérer ou créer la carte
-m_to_show = st.session_state.get("folium_map", None)
-
-if m_to_show is None:
-    latitude, longitude = 32.93, 3.30
-    m_to_show = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-
-    # Ajouter tous les sites Oil & Gas
-    for _, r in st.session_state.df_all_sites.iterrows():
-        try:
-            folium.CircleMarker(
-                location=[r["Latitude"], r["Longitude"]],
-                radius=5,
-                color="darkred",
-                fill=True,
-                fill_opacity=0.8,
-                tooltip=r.get("Site", "Site Oil & Gas")
-            ).add_to(m_to_show)
-        except:
-            pass
-
-    # Ajouter polygones zones
-    for z_name, coords in zones.items():
-        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m_to_show)
-
-    st.session_state.folium_map = m_to_show
-
-# Recentrer selon la zone sélectionnée
-if zone_select != "Toutes":
-    z_coords = zones[zone_select]
-    lat_center = np.mean([c[0] for c in z_coords])
-    lon_center = np.mean([c[1] for c in z_coords])
-    m_to_show.location = [lat_center, lon_center]
-    m_to_show.zoom_start = 10
-
-# Afficher carte **une seule fois**, stable
+# Afficher la carte
 st_folium(m_to_show, width=900, height=550)
 
 # ================= SECTION I : Agent IA =================
