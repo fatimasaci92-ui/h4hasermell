@@ -365,17 +365,49 @@ import os
 def get_ch4_plumes_carbonmapper(lat, lon, radius_km=50):
     url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
     headers = {
         "Authorization": f"Bearer {CARBON_API_TOKEN}"
     }
 
-# Sélection zone
-zone_select = st.selectbox("Sélectionner une zone", ["Toutes", "Centre", "Nord", "Sud"])
     params = {
         "gas": "CH4",
         "limit": 50
     }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=20)
+
+        if response.status_code != 200:
+            st.warning("Carbon Mapper API indisponible")
+            return []
+
+        data = response.json()
+        plumes = []
+
+        for item in data.get("features", []):
+            coords = item["geometry"]["coordinates"]
+            props = item["properties"]
+
+            plume_lat = coords[1]
+            plume_lon = coords[0]
+            emission = props.get("emission_rate", 0)
+
+            # distance en km
+            dist = np.sqrt((plume_lat - lat)**2 + (plume_lon - lon)**2) * 111
+
+            if dist <= radius_km:
+                plumes.append({
+                    "lat": plume_lat,
+                    "lon": plume_lon,
+                    "emission": emission,
+                    "distance": round(dist, 2)
+                })
+
+        return plumes
+
+    except Exception as e:
+        st.error(f"Erreur Carbon Mapper : {e}")
+        return []
 
 # Charger CSV historique une seule fois
 if "df_all_sites" not in st.session_state:
