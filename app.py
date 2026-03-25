@@ -237,7 +237,6 @@ if st.button("Analyser CH₄ du jour"):
     st.markdown("### 🔎 Vérification fuite Carbon Mapper automatique")
 
     if ch4 >= 1850:  # seuil à partir duquel on vérifie les plumes
-        plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
         if len(plumes) > 0:
             st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
             for plume in plumes:
@@ -248,18 +247,49 @@ if st.button("Analyser CH₄ du jour"):
         st.info("Niveau CH₄ normal → pas de vérification Carbon Mapper nécessaire")
 # ================= ANALYSE CARBON MAPPER =================
 
-plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+def get_ch4_plumes_carbonmapper(lat, lon):
+    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-try:
-    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-    if len(plumes) > 0:
-        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-    else:
-        st.success("✅ Aucune fuite détectée par Carbon Mapper")
-except Exception as e:
-    st.warning("⚠️ Carbon Mapper indisponible ou token invalide")
-    st.info("L’analyse continue avec GEE et données locales")
-    plumes = []
+    headers = {
+        "Authorization": f"Bearer {CARBON_API_TOKEN}"
+    }
+
+    # 🔥 Ajout du filtre géographique (bbox ±0.5° autour du site)
+    params = {
+        "gas": "CH4",
+        "limit": 20,
+        "bbox": f"{lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=20)
+
+        if response.status_code == 401:
+            st.error("❌ Token Carbon Mapper invalide")
+            return []
+
+        if response.status_code != 200:
+            st.warning(f"⚠️ API erreur: {response.status_code}")
+            return []
+
+        data = response.json()
+        plumes = []
+
+        for item in data.get("features", []):
+            coords = item["geometry"]["coordinates"]
+            props = item["properties"]
+
+            plumes.append({
+                "lat": coords[1],
+                "lon": coords[0],
+                "emission": props.get("emission_rate", 0)
+            })
+
+        return plumes
+
+    except Exception as e:
+        st.error(f"Erreur Carbon Mapper : {e}")
+        return []
 # ================= SECTION F : PDF Professionnel =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
@@ -414,16 +444,23 @@ if "folium_map" not in st.session_state:
 
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
+# Ajouter plumes
 for plume in plumes:
     folium.CircleMarker(
         location=[plume["lat"], plume["lon"]],
         radius=7,
         color="purple",
         fill=True,
-        fill_color="purple",
         fill_opacity=0.9,
         tooltip=f"Plume CH4: {plume['emission']} kg/h"
     ).add_to(m)
+
+# Marker du site UNE SEULE FOIS
+folium.Marker(
+    [latitude, longitude],
+    tooltip=f"Analyse CH₄ – {site_name}",
+    icon=folium.Icon(color="black")
+).add_to(m)
     # Marker du site principal
     site_name = "Hassi R'mel"
     folium.Marker([latitude, longitude],
