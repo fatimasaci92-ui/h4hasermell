@@ -339,13 +339,6 @@ if st.button("Afficher graphiques CH₄"):
         st.warning("CSV mensuel introuvable")
 
 # ================= SECTION H : Carte interactive stable =================
-import streamlit as st
-import folium
-from streamlit_folium import st_folium
-import numpy as np
-import pandas as pd
-import os
-
 st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
 # Sélection zone
@@ -391,7 +384,9 @@ if "folium_map" not in st.session_state:
 
     # Ajouter polygones zones
     for z_name, coords in zones.items():
-        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
+        folium.Polygon(
+            coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}"
+        ).add_to(m)
 
     # Ajouter plumes CH4 si elles existent
     if "plumes" in locals() and len(plumes) > 0:
@@ -416,9 +411,10 @@ if "folium_map" not in st.session_state:
     # Contrôle des couches
     folium.LayerControl().add_to(m)
 
+    # Sauvegarder dans session_state
     st.session_state.folium_map = m
 
-# Récupérer la carte existante
+# Récupérer la carte
 m_to_show = st.session_state.folium_map
 
 # Recentrer selon la zone sélectionnée
