@@ -362,52 +362,11 @@ from streamlit_folium import st_folium
 import numpy as np
 import pandas as pd
 import os
-def get_ch4_plumes_carbonmapper(lat, lon, radius_km=50):
-    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-    headers = {
-        "Authorization": f"Bearer {CARBON_API_TOKEN}"
-    }
+st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
 
-    params = {
-        "gas": "CH4",
-        "limit": 50
-    }
-
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=20)
-
-        if response.status_code != 200:
-            st.warning("Carbon Mapper API indisponible")
-            return []
-
-        data = response.json()
-        plumes = []
-
-        for item in data.get("features", []):
-            coords = item["geometry"]["coordinates"]
-            props = item["properties"]
-
-            plume_lat = coords[1]
-            plume_lon = coords[0]
-            emission = props.get("emission_rate", 0)
-
-            # distance en km
-            dist = np.sqrt((plume_lat - lat)**2 + (plume_lon - lon)**2) * 111
-
-            if dist <= radius_km:
-                plumes.append({
-                    "lat": plume_lat,
-                    "lon": plume_lon,
-                    "emission": emission,
-                    "distance": round(dist, 2)
-                })
-
-        return plumes
-
-    except Exception as e:
-        st.error(f"Erreur Carbon Mapper : {e}")
-        return []
+# Sélection zone
+zone_select = st.selectbox("Sélectionner une zone", ["Toutes", "Centre", "Nord", "Sud"])
 
 # Charger CSV historique une seule fois
 if "df_all_sites" not in st.session_state:
@@ -447,29 +406,13 @@ if "folium_map" not in st.session_state:
             ).add_to(m)
         except:
             pass
-    try:
-    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
-    if len(plumes) > 0:
-        st.error(f"{len(plumes)} plume(s) détectée(s)")
-    else:
-        st.success("Aucune plume détectée")
-
-except Exception as e:
-    st.warning("Erreur Carbon Mapper")
-    plumes = []
-
-# ✅ MAINTENANT la boucle est OK
-for z_name, coords in zones.items():
-    folium.Polygon(coords).add_to(m)
+    # Ajouter polygones zones
+    for z_name, coords in zones.items():
+        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
 # ================= AJOUT PLUMES CARBON MAPPER =================
-        if response.status_code != 200:
-            st.warning("Carbon Mapper API indisponible")
-            return []
 
 plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-        data = response.json()
-        plumes = []
 
 for plume in plumes:
     folium.CircleMarker(
@@ -511,20 +454,12 @@ if m_to_show is None:
             ).add_to(m_to_show)
         except:
             pass
-        for item in data.get("features", []):
-            coords = item["geometry"]["coordinates"]
-            props = item["properties"]
 
     # Ajouter polygones zones
     for z_name, coords in zones.items():
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m_to_show)
-            plume_lat = coords[1]
-            plume_lon = coords[0]
-            emission = props.get("emission_rate", 0)
 
     st.session_state.folium_map = m_to_show
-            # distance simple (approximation)
-            dist = np.sqrt((plume_lat - lat)**2 + (plume_lon - lon)**2) * 111
 
 # Recentrer selon la zone sélectionnée
 if zone_select != "Toutes":
@@ -533,21 +468,10 @@ if zone_select != "Toutes":
     lon_center = np.mean([c[1] for c in z_coords])
     m_to_show.location = [lat_center, lon_center]
     m_to_show.zoom_start = 10
-            if dist <= radius_km:
-                plumes.append({
-                    "lat": plume_lat,
-                    "lon": plume_lon,
-                    "emission": emission,
-                    "distance": round(dist, 2)
-                })
 
 # Afficher carte **une seule fois**, stable
 st_folium(m_to_show, width=900, height=550)
-        return plumes
 
-    except Exception as e:
-        st.error(f"Erreur Carbon Mapper : {e}")
-        return []
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
