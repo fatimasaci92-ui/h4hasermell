@@ -163,15 +163,13 @@ if st.button("Analyser CH₄ du jour"):
     # Définir niveau de risque HSE
     if ch4 >= 1900:
         risk = "Critique"
-        action = "Arrêt + alerte HSE"
-        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
         action = "Alerter, sécuriser la zone et stopper opérations"
+        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
     elif ch4 >= 1850:
         risk = "Élevé"
         action = "Inspection urgente"
         st.warning("⚠️ Niveau CH₄ élevé")
     else:
-        st.success("CH₄ normal")
         risk = "Normal"
         action = "Surveillance continue"
         st.success("CH₄ normal")
@@ -191,32 +189,15 @@ if st.button("Analyser CH₄ du jour"):
 
     # =================== Vérification fuite automatique ===================
     st.markdown("### 🔎 Vérification fuite Carbon Mapper automatique")
-
     if ch4 >= 1850:
-    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+        plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
-    if len(plumes) > 0:
-        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-        for plume in plumes:
-            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-    else:
-        st.success("✅ Aucune fuite détectée par Carbon Mapper")if ch4 >= 1850:
-    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-
-    if len(plumes) > 0:
-        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-        for plume in plumes:
-            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-    else:
-        st.success("✅ Aucune fuite détectée par Carbon Mapper")if ch4 >= 1850:
-    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-
-    if len(plumes) > 0:
-        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-        for plume in plumes:
-            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-    else:
-        st.success("✅ Aucune fuite détectée par Carbon Mapper")
+        if len(plumes) > 0:
+            st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+            for plume in plumes:
+                st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+        else:
+            st.success("✅ Aucune fuite détectée par Carbon Mapper")
 # ================= ANALYSE CARBON MAPPER =================
 
 def get_ch4_plumes_carbonmapper(lat, lon):
