@@ -355,123 +355,52 @@ if st.button("Afficher graphiques CH₄"):
     else:
         st.warning("CSV mensuel introuvable")
 
-# ================= SECTION H : Carte interactive stable =================
-import streamlit as st
-import folium
-from streamlit_folium import st_folium
-import numpy as np
-import pandas as pd
-import os
+def get_ch4_plumes_carbonmapper(lat, lon, radius_km=50):
+    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
-st.markdown("## 🗺️ Carte interactive stable – Tous les sites Oil & Gas")
+    headers = {
+        "Authorization": f"Bearer {CARBON_API_TOKEN}"
+    }
 
-# Sélection zone
-zone_select = st.selectbox("Sélectionner une zone", ["Toutes", "Centre", "Nord", "Sud"])
+    params = {
+        "gas": "CH4",
+        "limit": 50
+    }
 
-# Charger CSV historique une seule fois
-if "df_all_sites" not in st.session_state:
-    csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
-    if os.path.exists(csv_hist):
-        st.session_state.df_all_sites = pd.read_csv(csv_hist)
-    else:
-        st.session_state.df_all_sites = pd.DataFrame(columns=["Latitude","Longitude","Site"])
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=20)
 
-# Définir polygones zones (global)
-zones = {
-    "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
-               [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
-    "Sud": [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],
-            [32.88378899,2.88561768],[32.45093128,2.88567251]],
-    "Nord": [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],
-             [33.01358819,3.81077745],[33.01358581,3.18513508]]
-}
-colors = {"Centre":"red","Sud":"green","Nord":"blue"}
+        if response.status_code != 200:
+            st.warning("Carbon Mapper API indisponible")
+            return []
 
-# Créer la carte qu'une seule fois
-if "folium_map" not in st.session_state:
-    # Carte de base
-    latitude, longitude = 32.93, 3.30
-    m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
+        data = response.json()
+        plumes = []
 
-    # Ajouter tous les sites Oil & Gas
-    for _, r in st.session_state.df_all_sites.iterrows():
-        try:
-            folium.CircleMarker(
-                location=[r["Latitude"], r["Longitude"]],
-                radius=5,
-                color="darkred",
-                fill=True,
-                fill_opacity=0.8,
-                tooltip=r.get("Site","Site Oil & Gas")
-            ).add_to(m)
-        except:
-            pass
+        for item in data.get("features", []):
+            coords = item["geometry"]["coordinates"]
+            props = item["properties"]
 
-    # Ajouter polygones zones
-    for z_name, coords in zones.items():
-        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
-# ================= AJOUT PLUMES CARBON MAPPER =================
+            plume_lat = coords[1]
+            plume_lon = coords[0]
+            emission = props.get("emission_rate", 0)
 
-plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+            # distance simple (approximation)
+            dist = np.sqrt((plume_lat - lat)**2 + (plume_lon - lon)**2) * 111
 
-for plume in plumes:
-    folium.CircleMarker(
-        location=[plume["lat"], plume["lon"]],
-        radius=7,
-        color="purple",
-        fill=True,
-        fill_color="purple",
-        fill_opacity=0.9,
-        tooltip=f"Plume CH4: {plume['emission']} kg/h"
-    ).add_to(m)
-    # Marker du site principal
-    site_name = "Hassi R'mel"
-    folium.Marker([latitude, longitude],
-                  tooltip=f"Analyse CH₄ – {site_name}",
-                  icon=folium.Icon(color="black", icon="info-sign")).add_to(m)
+            if dist <= radius_km:
+                plumes.append({
+                    "lat": plume_lat,
+                    "lon": plume_lon,
+                    "emission": emission,
+                    "distance": round(dist, 2)
+                })
 
-    folium.LayerControl().add_to(m)
-    st.session_state.folium_map = m
+        return plumes
 
-# Récupérer la carte
-# Récupérer ou créer la carte
-m_to_show = st.session_state.get("folium_map", None)
-
-if m_to_show is None:
-    latitude, longitude = 32.93, 3.30
-    m_to_show = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
-
-    # Ajouter tous les sites Oil & Gas
-    for _, r in st.session_state.df_all_sites.iterrows():
-        try:
-            folium.CircleMarker(
-                location=[r["Latitude"], r["Longitude"]],
-                radius=5,
-                color="darkred",
-                fill=True,
-                fill_opacity=0.8,
-                tooltip=r.get("Site", "Site Oil & Gas")
-            ).add_to(m_to_show)
-        except:
-            pass
-
-    # Ajouter polygones zones
-    for z_name, coords in zones.items():
-        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m_to_show)
-
-    st.session_state.folium_map = m_to_show
-
-# Recentrer selon la zone sélectionnée
-if zone_select != "Toutes":
-    z_coords = zones[zone_select]
-    lat_center = np.mean([c[0] for c in z_coords])
-    lon_center = np.mean([c[1] for c in z_coords])
-    m_to_show.location = [lat_center, lon_center]
-    m_to_show.zoom_start = 10
-
-# Afficher carte **une seule fois**, stable
-st_folium(m_to_show, width=900, height=550)
-
+    except Exception as e:
+        st.error(f"Erreur Carbon Mapper : {e}")
+        return []
 # ================= SECTION I : Agent IA =================
 st.markdown("## 🤖 Agent IA – Posez vos questions")
 user_question = st.text_input("Posez votre question sur le CH₄ ou HSE")
