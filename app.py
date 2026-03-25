@@ -199,7 +199,6 @@ if st.button("Analyser CH₄ du jour"):
         else:
             st.success("✅ Aucune fuite détectée par Carbon Mapper")
 # ================= ANALYSE CARBON MAPPER =================
-
 def get_ch4_plumes_carbonmapper(lat, lon):
     url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
 
@@ -207,7 +206,7 @@ def get_ch4_plumes_carbonmapper(lat, lon):
         "Authorization": f"Bearer {CARBON_API_TOKEN}"
     }
 
-    # 🔥 Ajout du filtre géographique (bbox ±0.5° autour du site)
+    # Filtre géographique (bbox ±0.5° autour du site)
     params = {
         "gas": "CH4",
         "limit": 20,
@@ -243,6 +242,18 @@ def get_ch4_plumes_carbonmapper(lat, lon):
     except Exception as e:
         st.error(f"Erreur Carbon Mapper : {e}")
         return []
+        # =================== Vérification fuite automatique ===================
+st.markdown("### 🔎 Vérification fuite Carbon Mapper automatique")
+
+if ch4 >= 1850:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+    else:
+        st.success("✅ Aucune fuite détectée par Carbon Mapper")
 # ================= SECTION F : PDF Professionnel =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
