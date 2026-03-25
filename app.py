@@ -359,7 +359,7 @@ if "df_all_sites" not in st.session_state:
     else:
         st.session_state.df_all_sites = pd.DataFrame(columns=["Latitude","Longitude","Site"])
 
-# Définir polygones zones (global)
+# Définir polygones zones
 zones = {
     "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],
                [33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424],[32.75662617,3.37696562]],
@@ -372,7 +372,6 @@ colors = {"Centre":"red","Sud":"green","Nord":"blue"}
 
 # Créer la carte qu'une seule fois
 if "folium_map" not in st.session_state:
-    # Carte de base
     latitude, longitude = 32.93, 3.30
     m = folium.Map(location=[latitude, longitude], zoom_start=8, tiles="CartoDB Positron")
 
@@ -393,6 +392,45 @@ if "folium_map" not in st.session_state:
     # Ajouter polygones zones
     for z_name, coords in zones.items():
         folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
+
+    # Ajouter plumes CH4 si elles existent
+    if "plumes" in locals() and len(plumes) > 0:
+        for plume in plumes:
+            folium.CircleMarker(
+                location=[plume["lat"], plume["lon"]],
+                radius=7,
+                color="purple",
+                fill=True,
+                fill_opacity=0.9,
+                tooltip=f"Plume CH4: {plume['emission']} kg/h"
+            ).add_to(m)
+
+    # Marker du site principal
+    site_name = "Hassi R'mel"
+    folium.Marker(
+        [latitude, longitude],
+        tooltip=f"Analyse CH₄ – {site_name}",
+        icon=folium.Icon(color="black")
+    ).add_to(m)
+
+    # Contrôle des couches
+    folium.LayerControl().add_to(m)
+
+    st.session_state.folium_map = m
+
+# Récupérer la carte existante
+m_to_show = st.session_state.folium_map
+
+# Recentrer selon la zone sélectionnée
+if zone_select != "Toutes":
+    z_coords = zones[zone_select]
+    lat_center = np.mean([c[0] for c in z_coords])
+    lon_center = np.mean([c[1] for c in z_coords])
+    m_to_show.location = [lat_center, lon_center]
+    m_to_show.zoom_start = 10
+
+# Afficher la carte stable
+st_folium(m_to_show, width=900, height=550)
 # ================= AJOUT PLUMES CARBON MAPPER =================
 
 if "plumes" in locals():
