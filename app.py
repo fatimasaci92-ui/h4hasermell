@@ -1,3 +1,191 @@
+# ================= app.py — VERSION COMPLÈTE FINALE + CARTE STABLE =================
+import streamlit as st
+import pandas as pd
+import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+import os
+import io
+from datetime import datetime
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import ee
+import json
+import tempfile
+import folium
+from streamlit_folium import st_folium
+import requests
+# ================= INITIALISATION GOOGLE EARTH ENGINE =================
+try:
+    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+        json.dump(ee_key_json, f)
+        key_path = f.name
+    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
+    ee.Initialize(credentials)
+    os.remove(key_path)
+except Exception as e:
+    st.error(f"Erreur GEE : {e}")
+    st.stop()
+# ================= CARBON MEPPER API =================
+CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
+# ================= CONFIG STREAMLIT =================
+st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
+st.title("Surveillance du Méthane (CH₄) – HSE")
+
+# ================= INFOS SITE =================
+latitude = st.number_input("Latitude", value=32.93, format="%.6f")
+longitude = st.number_input("Longitude", value=3.30, format="%.6f")
+site_name = st.text_input("Nom du site", value="Hassi R'mel")
+
+# ================= CHEMINS DES FICHIERS =================
+DATA_DIR = "data"
+csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
+csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
+csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
+
+# ================= FONCTION GEE =================
+def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
+    point = ee.Geometry.Point([longitude, latitude])
+    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = end.advance(-days_back, "day")
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterBounds(point)
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
+    )
+    size = collection.size().getInfo()
+    if size == 0:
+        return None, None, True
+    images = collection.toList(size)
+    for i in range(size):
+        img = ee.Image(images.get(i))
+        date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
+        value = img.reduceRegion(reducer=ee.Reducer.mean(), geometry=point, scale=7000, maxPixels=1e9).get("CH4_column_volume_mixing_ratio_dry_air")
+        try:
+            v = value.getInfo()
+        except:
+            v = None
+        if v is None:
+            continue
+        ch4_ppb = float(v) * 1000
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        no_pass_today = date_img != today
+        return ch4_ppb, date_img, no_pass_today
+    return None, None, True
+# ================= FONCTION CARBON MAPPER =================
+def get_ch4_plumes_carbonmapper(lat, lon):
+    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
+
+    headers = {
+        "Authorization": f"Bearer {CARBON_API_TOKEN}"
+    }
+
+    params = {
+        "gas": "CH4",
+        "limit": 20
+    }
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=20
+        )
+
+        if response.status_code != 200:
+            st.warning("Carbon Mapper API indisponible")
+            return []
+
+        data = response.json()
+        plumes = []
+
+        for item in data.get("features", []):
+            coords = item["geometry"]["coordinates"]
+            props = item["properties"]
+
+            plume_lat = coords[1]
+            plume_lon = coords[0]
+            emission = props.get("emission_rate", 0)
+
+            plumes.append({
+                "lat": plume_lat,
+                "lon": plume_lon,
+                "emission": emission
+            })
+
+        return plumes
+
+    except Exception as e:
+        st.error(f"Erreur Carbon Mapper : {e}")
+        return []
+# ================= SECTION A : Contenu des dossiers =================
+st.markdown("## 📁 Section A — Contenu des données")
+if st.button("Afficher les dossiers de données"):
+    if os.path.exists(DATA_DIR):
+        for root, dirs, files in os.walk(DATA_DIR):
+            st.write("📂", root)
+            for f in files:
+                st.write(" └─", f)
+    else:
+        st.warning("Dossier data introuvable")
+
+# ================= SECTION B : Aperçu CSV =================
+st.markdown("## 📑 Section B — Aperçu des données historiques")
+if st.button("Afficher CSV historique"):
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
+        st.dataframe(df_hist.head(20))
+    else:
+        st.warning("CSV historique introuvable")
+
+# ================= SECTION C : Carte CH₄ moyenne =================
+st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
+year_mean = st.selectbox("Choisir l'année pour la carte", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Afficher carte CH₄ moyenne"):
+    mean_path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
+    if os.path.exists(mean_path):
+        with rasterio.open(mean_path) as src:
+            img = src.read(1)
+        img[img <= 0] = np.nan
+        fig, ax = plt.subplots(figsize=(6,5))
+        ax.imshow(img, cmap="viridis")
+        ax.set_title(f"CH₄ moyen {year_mean}")
+        ax.axis("off")
+        st.pyplot(fig)
+    else:
+        st.warning("Carte CH₄ introuvable")
+
+# ================= SECTION D : Analyse HSE annuelle =================
+st.markdown("## 🔎 Section D — Analyse HSE annuelle")
+year = st.selectbox("Choisir l'année pour analyse HSE", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Analyser année sélectionnée"):
+    if os.path.exists(csv_annual):
+        df_year = pd.read_csv(csv_annual)
+        if year in df_year["year"].values:
+            val = df_year[df_year["year"] == year]["CH4_mean"].values[0]
+            if val >= 1900:
+                risk = "Critique"
+                action = "Arrêt + alerte HSE"
+            elif val >= 1850:
+                risk = "Élevé"
+                action = "Inspection urgente"
+            else:
+                risk = "Normal"
+                action = "Surveillance continue"
+            st.success(f"CH₄ moyen {year} : {val:.1f} ppb")
+            st.write("Risque :", risk)
+            st.write("Action :", action)
+        else:
+            st.warning("Année non trouvée")
+    else:
+        st.warning("CSV annuel introuvable")
+
 # ================= SECTION E : Analyse CH₄ du jour =================
 st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 
