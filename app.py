@@ -448,11 +448,20 @@ if "folium_map" not in st.session_state:
         except:
             pass
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=20)
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
 
-    # Ajouter polygones zones
-    for z_name, coords in zones.items():
-        folium.Polygon(coords, color=colors[z_name], fill=True, fill_opacity=0.2, tooltip=f"Zone {z_name}").add_to(m)
+    if len(plumes) > 0:
+        st.error(f"{len(plumes)} plume(s) détectée(s)")
+    else:
+        st.success("Aucune plume détectée")
+
+except Exception as e:
+    st.warning("Erreur Carbon Mapper")
+    plumes = []
+
+# ✅ MAINTENANT la boucle est OK
+for z_name, coords in zones.items():
+    folium.Polygon(coords).add_to(m)
 # ================= AJOUT PLUMES CARBON MAPPER =================
         if response.status_code != 200:
             st.warning("Carbon Mapper API indisponible")
