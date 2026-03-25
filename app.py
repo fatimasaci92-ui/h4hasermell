@@ -417,8 +417,9 @@ folium.Marker(
     tooltip=f"Analyse CH₄ – {site_name}",
     icon=folium.Icon(color="black")
 ).add_to(m)
-    # Marker du site principal
-    site_name = "Hassi R'mel"
+
+# Marker du site principal
+site_name = "Hassi R'mel"
     # Ajouter plumes
 for plume in plumes:
     folium.CircleMarker(
