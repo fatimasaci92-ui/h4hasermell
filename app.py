@@ -245,7 +245,7 @@ if st.button("Analyser CH₄ du jour"):
     action = "Fuite détectée par IA – intervention urgente"
     st.error("⚠️ IA : fuite détectée !")
 
-    # ✅ Vérification automatique des plumes Carbon Mapper
+    # Vérification automatique des plumes Carbon Mapper
     plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
     st.session_state["plumes"] = plumes
 
