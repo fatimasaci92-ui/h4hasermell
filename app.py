@@ -17,7 +17,13 @@ import tempfile
 import folium
 from streamlit_folium import st_folium
 import requests
+from tensorflow.keras.models import load_model
+MODEL_PATH = "ai_model/cnn_model.h5"
 
+try:
+    cnn_model = load_model(MODEL_PATH)
+except:
+    cnn_model = None
 # ================= INITIALISATION GOOGLE EARTH ENGINE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -182,6 +188,15 @@ st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
     ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+    if cnn_model is not None:
+    # Créer une "image simple" à partir de CH4
+    image = np.full((64,64), ch4)
+    image = image / 3000.0
+    image = image.reshape(1,64,64,1)
+
+    prediction = cnn_model.predict(image)[0][0]
+else:
+    prediction = None
     if ch4 is None:
         st.error("⚠️ Aucune image satellite disponible")
         st.stop()
@@ -194,22 +209,33 @@ if st.button("Analyser CH₄ du jour"):
         st.warning(f"➡️ Dernière image disponible : **{date_img}**")
 
     st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
-
+if prediction is not None:
+    st.write(f"🧠 Score IA : {prediction:.2f}")
     # Définir niveau de risque HSE
+   if prediction is not None:
+    if prediction > 0.7:
+        risk = "Critique (IA)"
+        action = "Fuite détectée par IA – intervention urgente"
+        st.error("⚠️ IA : fuite détectée !")
+    elif prediction > 0.5:
+        risk = "Élevé (IA)"
+        action = "Inspection recommandée (IA)"
+        st.warning("⚠️ IA : suspicion de fuite")
+    else:
+        risk = "Normal (IA)"
+        action = "Pas de fuite détectée"
+        st.success("✅ IA : pas de fuite")
+else:
+    # fallback ancien système
     if ch4 >= 1900:
         risk = "Critique"
         action = "Alerter, sécuriser la zone et stopper opérations"
-        st.error("⚠️ Anomalie détectée : niveau CH₄ critique !")
     elif ch4 >= 1850:
         risk = "Élevé"
         action = "Inspection urgente"
-        st.warning("⚠️ Niveau CH₄ élevé")
     else:
         risk = "Normal"
         action = "Surveillance continue"
-        st.success("CH₄ normal")
-    st.session_state["risk"] = risk
-    st.session_state["action"] = action
 
     # Tableau résumé
     df_day = pd.DataFrame([{
