@@ -91,10 +91,11 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         if v is None:
             continue
 ch4_ppb = float(v)
-today = datetime.utcnow().strftime("%Y-%m-%d")
+
 today = datetime.utcnow().strftime("%Y-%m-%d")
 no_pass_today = date_img != today
-    return None, None, True
+
+return ch4_ppb, date_img, no_pass_today
 
 # ================= FONCTION CARBON MAPPER =================
 def get_ch4_plumes_carbonmapper(lat, lon):
