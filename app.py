@@ -254,16 +254,16 @@ if st.button("Analyser CH₄ du jour"):
             st.success("✅ IA : pas de fuite")
 
         # Vérification automatique des plumes Carbon Mapper si IA détecte un risque ≥ Élevé
-        if prediction > 0.5:
-            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-            st.session_state["plumes"] = plumes
+       if prediction > 0.5:
+    plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+    st.session_state["plumes"] = plumes
 
-            if len(plumes) > 0:
-                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-                for plume in plumes:
-                    st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
-            else:
-                st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
+    else:
+        st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
 
     else:
         # fallback ancien système si pas de modèle IA
