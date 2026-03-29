@@ -92,8 +92,8 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
             continue
 ch4_ppb = float(v)
 today = datetime.utcnow().strftime("%Y-%m-%d")
-        no_pass_today = date_img != today
-        return ch4_ppb, date_img, no_pass_today
+today = datetime.utcnow().strftime("%Y-%m-%d")
+no_pass_today = date_img != today
     return None, None, True
 
 # ================= FONCTION CARBON MAPPER =================
