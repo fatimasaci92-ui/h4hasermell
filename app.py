@@ -18,6 +18,16 @@ import folium
 from streamlit_folium import st_folium
 import requests
 from tensorflow.keras.models import load_model
+from tensorflow.keras.models import load_model
+
+MODEL_PATH = "AI_model/cnn_model.h5"
+
+try:
+    cnn_model = load_model(MODEL_PATH)
+except:
+    cnn_model = None
+
+st.write("Modèle chargé :", cnn_model is not None)
 MODEL_PATH = "AI_model/cnn_model.h5"
 
 st.write("Modèle chargé :", cnn_model is not None)
@@ -181,82 +191,71 @@ if st.button("Analyser année sélectionnée"):
         st.warning("CSV annuel introuvable")
 
 # ================= SECTION E : Analyse CH₄ du jour =================
+# ================= SECTION E : Analyse CH₄ du jour =================
 st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
-    if cnn_model is not None:
-    # Créer une "image simple" à partir de CH4
-    image = np.full((64,64), ch4)
-    image = image / 3000.0
-    image = image.reshape(1,64,64,1)
 
-    prediction = cnn_model.predict(image)[0][0]
-else:
-    prediction = None
+    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+
     if ch4 is None:
         st.error("⚠️ Aucune image satellite disponible")
         st.stop()
-    st.session_state["ch4"] = ch4
-    st.session_state["date_img"] = date_img
-    st.session_state["site_name"] = site_name
 
-    if no_pass_today:
-        st.error("☁️ Pas de passage satellite valide aujourd’hui")
-        st.warning(f"➡️ Dernière image disponible : **{date_img}**")
+    # ================= IA =================
+    if cnn_model is not None:
+        image = np.full((64,64), ch4)
+        image = image / 3000.0
+        image = image.reshape(1,64,64,1)
 
+        prediction = cnn_model.predict(image)[0][0]
+    else:
+        prediction = None
+
+    # ================= Affichage =================
     st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
-if prediction is not None:
-    st.write(f"🧠 Score IA : {prediction:.2f}")
-    # Définir niveau de risque HSE
-   if prediction is not None:
-    if prediction > 0.7:
-        risk = "Critique (IA)"
-        action = "Fuite détectée par IA – intervention urgente"
-        st.error("⚠️ IA : fuite détectée !")
-    elif prediction > 0.5:
-        risk = "Élevé (IA)"
-        action = "Inspection recommandée (IA)"
-        st.warning("⚠️ IA : suspicion de fuite")
-    else:
-        risk = "Normal (IA)"
-        action = "Pas de fuite détectée"
-        st.success("✅ IA : pas de fuite")
-else:
-    # fallback ancien système
-    if ch4 >= 1900:
-        risk = "Critique"
-        action = "Alerter, sécuriser la zone et stopper opérations"
-    elif ch4 >= 1850:
-        risk = "Élevé"
-        action = "Inspection urgente"
-    else:
-        risk = "Normal"
-        action = "Surveillance continue"
 
-    # Tableau résumé
+    if prediction is not None:
+        st.write(f"🧠 Score IA : {prediction:.2f}")
+
+    # ================= Décision =================
+    if prediction is not None:
+        if prediction > 0.7:
+            risk = "Critique (IA)"
+            action = "Fuite détectée par IA – intervention urgente"
+            st.error("⚠️ IA : fuite détectée !")
+        elif prediction > 0.5:
+            risk = "Élevé (IA)"
+            action = "Inspection recommandée (IA)"
+            st.warning("⚠️ IA : suspicion de fuite")
+        else:
+            risk = "Normal (IA)"
+            action = "Pas de fuite détectée"
+            st.success("✅ IA : pas de fuite")
+    else:
+        if ch4 >= 1900:
+            risk = "Critique"
+            action = "Arrêt + alerte HSE"
+        elif ch4 >= 1850:
+            risk = "Élevé"
+            action = "Inspection urgente"
+        else:
+            risk = "Normal"
+            action = "Surveillance continue"
+
+    # ================= Tableau =================
     df_day = pd.DataFrame([{
         "Date image": date_img,
         "Site": site_name,
         "Latitude": latitude,
         "Longitude": longitude,
         "CH₄ (ppb)": round(ch4, 2),
-        "Anomalie": "Oui" if ch4>=1900 else "Non",
         "Risque": risk,
         "Action HSE": action
     }])
-    st.table(df_day)
 
-    # Vérification fuite Carbon Mapper
-    if ch4 >= 1850:
-        plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-        st.session_state["plumes"] = plumes
-        if len(plumes) > 0:
-            st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-            for plume in plumes:
-                st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
-        else:
-            st.success("✅ Aucune fuite détectée")
+    st.table(df_day)
 
 # ================= SECTION F : PDF =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
