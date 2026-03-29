@@ -67,8 +67,10 @@ csv_monthly = "data/2020 2024/CH4_HassiRmel_monthly_2020_2024.csv"
 # ================= FONCTION GEE =================
 def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
     point = ee.Geometry.Point([longitude, latitude])
+
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
+
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterBounds(point)
@@ -76,26 +78,43 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
         .select("CH4_column_volume_mixing_ratio_dry_air")
         .sort("system:time_start", False)
     )
+
     size = collection.size().getInfo()
+
     if size == 0:
         return None, None, True
+
     images = collection.toList(size)
+
     for i in range(size):
         img = ee.Image(images.get(i))
+
         date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-        value = img.reduceRegion(reducer=ee.Reducer.mean(), geometry=point, scale=7000, maxPixels=1e9).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        value = img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
         try:
             v = value.getInfo()
         except:
             v = None
+
         if v is None:
             continue
-ch4_ppb = float(v)
 
-today = datetime.utcnow().strftime("%Y-%m-%d")
-no_pass_today = date_img != today
+        # ✅ CORRECTION ICI
+        ch4_ppb = float(v)
 
-return ch4_ppb, date_img, no_pass_today
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        no_pass_today = date_img != today
+
+        return ch4_ppb, date_img, no_pass_today
+
+    return None, None, True
 
 # ================= FONCTION CARBON MAPPER =================
 def get_ch4_plumes_carbonmapper(lat, lon):
