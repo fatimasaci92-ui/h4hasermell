@@ -237,9 +237,8 @@ if st.button("Analyser CH₄ du jour"):
 
     if prediction is not None:
         st.write(f"🧠 Score IA : {prediction:.2f}")
-
-    # ================= Décision =================
-    # ================= Décision =================
+        
+# ================= Décision =================
 if prediction is not None:
     if prediction > 0.7:
         risk = "Critique (IA)"
@@ -255,7 +254,28 @@ if prediction is not None:
                 st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
         else:
             st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
+
     elif prediction > 0.5:
+        risk = "Élevé (IA)"
+        action = "Inspection recommandée (IA)"
+        st.warning("⚠️ IA : suspicion de fuite")
+
+    else:
+        risk = "Normal (IA)"
+        action = "Pas de fuite détectée"
+        st.success("✅ IA : pas de fuite")
+
+else:
+    # fallback ancien système
+    if ch4 >= 1900:
+        risk = "Critique"
+        action = "Alerter, sécuriser la zone et stopper opérations"
+    elif ch4 >= 1850:
+        risk = "Élevé"
+        action = "Inspection urgente"
+    else:
+        risk = "Normal"
+        action = "Surveillance continue"
         risk = "Élevé (IA)"
         action = "Inspection recommandée (IA)"
         st.warning("⚠️ IA : suspicion de fuite")
