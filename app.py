@@ -18,12 +18,9 @@ import folium
 from streamlit_folium import st_folium
 import requests
 from tensorflow.keras.models import load_model
-MODEL_PATH = "ai_model/cnn_model.h5"
+MODEL_PATH = "AI_model/cnn_model.h5"
 
-try:
-    cnn_model = load_model(MODEL_PATH)
-except:
-    cnn_model = None
+st.write("Modèle chargé :", cnn_model is not None)
 # ================= INITIALISATION GOOGLE EARTH ENGINE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
