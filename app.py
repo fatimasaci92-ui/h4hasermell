@@ -239,6 +239,7 @@ if st.button("Analyser CH₄ du jour"):
         st.write(f"🧠 Score IA : {prediction:.2f}")
 
     # ================= Décision =================
+     if prediction is not None:
     if prediction > 0.7:
     risk = "Critique (IA)"
     action = "Fuite détectée par IA – intervention urgente"
