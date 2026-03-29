@@ -238,6 +238,64 @@ if st.button("Analyser CH₄ du jour"):
     if prediction is not None:
         st.write(f"🧠 Score IA : {prediction:.2f}")
 
+    # ================= Décision =================
+    if prediction is not None:
+        if prediction > 0.7:
+            risk = "Critique (IA)"
+            action = "Fuite détectée par IA – intervention urgente"
+            st.error("⚠️ IA : fuite détectée !")
+        elif prediction > 0.5:
+            risk = "Élevé (IA)"
+            action = "Inspection recommandée (IA)"
+            st.warning("⚠️ IA : suspicion de fuite")
+        else:
+            risk = "Normal (IA)"
+            action = "Pas de fuite détectée"
+            st.success("✅ IA : pas de fuite")
+
+        # Vérification automatique des plumes Carbon Mapper si IA détecte un risque ≥ Élevé
+        if prediction > 0.5:
+            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+            st.session_state["plumes"] = plumes
+
+            if len(plumes) > 0:
+                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+                for plume in plumes:
+                    st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
+            else:
+                st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
+
+    else:
+        # fallback ancien système si pas de modèle IA
+        if ch4 >= 1900:
+            risk = "Critique"
+            action = "Alerter, sécuriser la zone et stopper opérations"
+        elif ch4 >= 1850:
+            risk = "Élevé"
+            action = "Inspection urgente"
+        else:
+            risk = "Normal"
+            action = "Surveillance continue"
+
+    # ================= Tableau résumé =================
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ (ppb)": round(ch4, 2),
+        "Risque": risk,
+        "Action HSE": action
+    }])
+
+    st.table(df_day)
+
+    # ================= Affichage =================
+    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
+
+    if prediction is not None:
+        st.write(f"🧠 Score IA : {prediction:.2f}")
+
    # ================= Décision =================
 if prediction is not None:
     if prediction > 0.7:
