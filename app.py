@@ -17,7 +17,8 @@ import json
 import tempfile
 import requests
 from tensorflow.keras.models import load_model
-
+import folium
+from streamlit_folium import st_folium
 # ================= LOAD MODEL =================
 MODEL_PATH = "AI_model/cnn_model.h5"
 
