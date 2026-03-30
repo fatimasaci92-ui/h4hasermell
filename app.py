@@ -152,24 +152,41 @@ if st.button("Afficher CSV"):
     else:
         st.warning("CSV introuvable")
 
-# ================= SECTION C =================
-st.markdown("## 🗺️ Section C — Carte")
-year_mean = st.selectbox("Année", [2020,2021,2022,2023,2024,2025])
+# ================= SECTION C : Carte CH₄ moyenne =================
+st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
 
-if st.button("Afficher carte"):
-    path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
-    if os.path.exists(path):
-        with rasterio.open(path) as src:
+year_mean = st.selectbox(
+    "Choisir l'année pour la carte",
+    [2020, 2021, 2022, 2023, 2024, 2025]
+)
+
+if st.button("Afficher carte CH₄ moyenne"):
+
+    mean_path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
+
+    if os.path.exists(mean_path):
+
+        with rasterio.open(mean_path) as src:
             img = src.read(1)
-        img[img <= 0] = np.nan
-fig, ax = plt.subplots(figsize=(6,5))
-im = ax.imshow(img, cmap="viridis")
-plt.colorbar(im, ax=ax)
-ax.set_title(f"CH₄ moyen {year_mean}")
-ax.axis("off")
-st.pyplot(fig)    else:
-        st.warning("Carte introuvable")
 
+        # Nettoyage des valeurs
+        img[img <= 0] = np.nan
+
+        # ================= AFFICHAGE PRO =================
+        fig, ax = plt.subplots(figsize=(6,5))
+
+        im = ax.imshow(img, cmap="viridis")
+
+        # Barre de couleur (IMPORTANT pour PFE)
+        plt.colorbar(im, ax=ax, label="CH₄ (ppb)")
+
+        ax.set_title(f"CH₄ moyen {year_mean}")
+        ax.axis("off")
+
+        st.pyplot(fig)
+
+    else:
+        st.warning("Carte CH₄ introuvable")
 # ================= SECTION D =================
 st.markdown("## 🔎 Analyse annuelle")
 if st.button("Analyser année"):
