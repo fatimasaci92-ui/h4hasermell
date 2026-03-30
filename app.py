@@ -55,7 +55,10 @@ st.title("Surveillance du Méthane (CH₄) – HSE")
 latitude = st.number_input("Latitude", value=32.93, format="%.6f")
 longitude = st.number_input("Longitude", value=3.30, format="%.6f")
 site_name = st.text_input("Nom du site", value="Hassi R'mel")
-
+zone_choice = st.selectbox(
+    "Choisir la zone",
+    ["Centre", "Sud", "Nord"]
+)
 # ================= PATHS =================
 DATA_DIR = "data"
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
@@ -241,7 +244,24 @@ if st.button("Analyser CH₄ du jour"):
         prediction = cnn_model.predict(image)[0][0]
     else:
         prediction = None
+zone_map = {
+    "Centre": zone_centre,
+    "Sud": zone_sud,
+    "Nord": zone_nord
+}
 
+selected_zone = zone_map[zone_choice]
+
+# Vérifier si fuite dans zone
+fuite_dans_zone = False
+
+if prediction is not None and prediction > 0.5:
+    fuite_dans_zone = is_inside_zone(latitude, longitude, selected_zone)
+
+    if fuite_dans_zone:
+        st.error(f"🚨 Fuite détectée dans la zone {zone_choice}")
+    else:
+        st.warning(f"⚠️ Fuite détectée mais hors zone {zone_choice}")
     # ================= AFFICHAGE =================
     st.success(f"📅 Date satellite : {date_img}")
     st.success(f"🛰️ CH₄ (GEE) : {ch4:.1f} ppb")
@@ -334,9 +354,66 @@ def generate_pdf(site, date, ch4, action):
     doc.build(story)
     buffer.seek(0)
     return buffer
+    # ================= ZONES =================
+
+zone_centre = [
+    [32.7566, 3.3769],
+    [32.7566, 3.6115],
+    [33.0134, 3.6063],
+    [33.0240, 2.9338],
+    [32.8939, 2.9275],
+    [32.8895, 3.3769]
+]
+
+zone_sud = [
+    [32.4509, 2.8856],
+    [32.4509, 3.3796],
+    [32.8837, 3.3796],
+    [32.8837, 2.8856]
+]
+
+zone_nord = [
+    [33.0135, 3.1851],
+    [33.2829, 3.1848],
+    [33.2785, 3.8109],
+    [33.0135, 3.8107]
+]
+from shapely.geometry import Point, Polygon
+
+def is_inside_zone(lat, lon, zone_coords):
+    poly = Polygon([(lon, lat) for lat, lon in zone_coords])
+    point = Point(lon, lat)
+    return poly.contains(point)
 # ================= SECTION G : Carte interactive CH₄ =================
 st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
+# ================= ZONES =================
 
+# Zone Centre
+folium.Polygon(
+    locations=zone_centre,
+    color="red",
+    fill=True,
+    fill_opacity=0.1,
+    popup="Zone Centre"
+).add_to(m)
+
+# Zone Sud
+folium.Polygon(
+    locations=zone_sud,
+    color="green",
+    fill=True,
+    fill_opacity=0.1,
+    popup="Zone Sud"
+).add_to(m)
+
+# Zone Nord
+folium.Polygon(
+    locations=zone_nord,
+    color="blue",
+    fill=True,
+    fill_opacity=0.1,
+    popup="Zone Nord"
+).add_to(m)
 from folium.plugins import HeatMap
 
 # État affichage
