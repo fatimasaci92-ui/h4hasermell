@@ -195,70 +195,98 @@ if st.button("Analyser année"):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
 
-# ================= SECTION E =================
-st.markdown("## 🔍 Analyse CH₄ du jour")
+# ================= SECTION E : Analyse CH₄ du jour =================
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
 
-    ch4, date_img, _ = get_latest_ch4_from_gee(latitude, longitude)
+    # Récupération CH4 via GEE
+    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
 
     if ch4 is None:
-        st.error("Pas de données")
+        st.error("⚠️ Aucune image satellite disponible")
         st.stop()
 
-    # IA
+    # Calcul concentration moyenne historique (exemple)
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
+        ch4_mean = df_hist["CH4"].mean()
+    else:
+        ch4_mean = None
+
+    # ================= IA =================
+    prediction = None
     if cnn_model is not None:
-        image = np.full((64,64), ch4) / 3000.0
+        image = np.full((64,64), ch4)
+        image = image / 3000.0
         image = image.reshape(1,64,64,1)
         prediction = cnn_model.predict(image)[0][0]
-    else:
-        prediction = None
 
-    st.success(f"CH₄ : {ch4:.1f} ppb")
+    # ================= Affichage des résultats =================
+    st.success(f"CH₄ du jour (GEE) : **{ch4:.1f} ppb** (image du {date_img})")
+    if ch4_mean is not None:
+        st.info(f"Concentration moyenne historique : {ch4_mean:.1f} ppb")
 
-    # DECISION
     if prediction is not None:
-        st.write(f"Score IA : {prediction:.2f}")
+        st.write(f"🧠 Score IA : {prediction:.2f}")
 
+    # ================= Décision HSE =================
+    if prediction is not None:
+        # IA active
         if prediction > 0.7:
             risk = "Critique (IA)"
-            action = "Intervention urgente"
-            st.error("Fuite détectée")
+            action = "Fuite détectée par IA – intervention urgente"
+            st.error("⚠️ IA : fuite détectée !")
         elif prediction > 0.5:
-            risk = "Élevé"
-            action = "Inspection"
-            st.warning("Suspicion fuite")
+            risk = "Élevé (IA)"
+            action = "Inspection recommandée (IA)"
+            st.warning("⚠️ IA : suspicion de fuite")
         else:
-            risk = "Normal"
-            action = "Surveillance"
-            st.success("OK")
+            risk = "Normal (IA)"
+            action = "Pas de fuite détectée"
+            st.success("✅ IA : pas de fuite")
 
+        # Vérification Carbon Mapper si IA ≥ Élevé
         if prediction > 0.5:
             plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+            st.session_state["plumes"] = plumes
             if len(plumes) > 0:
-                st.error(f"{len(plumes)} plume(s) détectée(s)")
-
+                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+                for plume in plumes:
+                    st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
+            else:
+                st.warning("⚠️ IA détecte une fuite, mais aucune plume confirmée")
     else:
+        # Fallback sans IA
         if ch4 >= 1900:
             risk = "Critique"
-            action = "Arrêt"
+            action = "Arrêt + alerte HSE"
         elif ch4 >= 1850:
             risk = "Élevé"
-            action = "Inspection"
+            action = "Inspection urgente"
         else:
             risk = "Normal"
-            action = "Surveillance"
+            action = "Surveillance continue"
 
-    # TABLE
-    df = pd.DataFrame([{
-        "CH4": ch4,
+    # ================= Tableau résumé =================
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ du jour (ppb)": round(ch4, 2),
+        "Concentration moyenne (ppb)": round(ch4_mean,2) if ch4_mean is not None else "N/A",
         "Risque": risk,
-        "Action": action
+        "Action HSE": action
     }])
+    st.table(df_day)
 
-    st.table(df)
-
+    # ================= Stockage session pour PDF =================
+    st.session_state["ch4"] = ch4
+    st.session_state["date_img"] = date_img
+    st.session_state["action"] = action
+    st.session_state["site_name"] = site_name
 # ================= PDF =================
 def generate_pdf(site, date, ch4, action):
     buffer = io.BytesIO()
