@@ -337,19 +337,27 @@ def generate_pdf(site, date, ch4, action):
 # ================= SECTION G : Carte interactive CH₄ =================
 st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
 
-if st.button("Afficher carte interactive"):
+# Initialiser état
+if "show_map" not in st.session_state:
+    st.session_state["show_map"] = False
 
-    # Centre carte
+# Bouton
+if st.button("Afficher / Masquer la carte"):
+    st.session_state["show_map"] = not st.session_state["show_map"]
+
+# Affichage persistant
+if st.session_state["show_map"]:
+
     m = folium.Map(location=[latitude, longitude], zoom_start=8)
 
-    # 📍 Marqueur site
+    # 📍 Site
     folium.Marker(
         [latitude, longitude],
         popup=f"📍 Site : {site_name}",
         icon=folium.Icon(color="blue")
     ).add_to(m)
 
-    # 🔥 Couleur selon CH4
+    # 🔥 CH4 zone
     if "ch4" in st.session_state:
         ch4_val = st.session_state["ch4"]
 
@@ -375,10 +383,10 @@ if st.button("Afficher carte interactive"):
             folium.Marker(
                 [plume["lat"], plume["lon"]],
                 popup=f"🔥 Plume: {plume['emission']} kg/h",
-                icon=folium.Icon(color="red", icon="cloud")
+                icon=folium.Icon(color="red")
             ).add_to(m)
 
-    # 🧠 IA affichage
+    # 🧠 IA
     if "action" in st.session_state:
         folium.Marker(
             [latitude, longitude],
@@ -386,5 +394,4 @@ if st.button("Afficher carte interactive"):
             icon=folium.Icon(color="purple")
         ).add_to(m)
 
-    # Affichage Streamlit
     st_folium(m, width=700, height=500)
