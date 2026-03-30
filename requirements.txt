@@ -13,3 +13,5 @@ folium
 streamlit-folium
 plotly
 tensorflow
+folium
+streamlit-folium
