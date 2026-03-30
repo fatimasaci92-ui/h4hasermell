@@ -201,13 +201,109 @@ st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
 
-    # Récupération CH4 via GEE
+    # ================= GEE =================
     ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
 
     if ch4 is None:
         st.error("⚠️ Aucune image satellite disponible")
         st.stop()
 
+    # ================= MOYENNE HISTORIQUE (CORRIGÉ) =================
+    ch4_mean = None
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
+
+        # Debug (optionnel, tu peux supprimer après)
+        st.write("Colonnes CSV :", df_hist.columns.tolist())
+
+        if "CH4" in df_hist.columns:
+            ch4_mean = df_hist["CH4"].mean()
+        elif "CH4_mean" in df_hist.columns:
+            ch4_mean = df_hist["CH4_mean"].mean()
+        elif "CH₄" in df_hist.columns:
+            ch4_mean = df_hist["CH₄"].mean()
+        else:
+            st.warning("⚠️ Colonne CH4 non trouvée dans le CSV")
+
+    # ================= IA =================
+    prediction = None
+    if cnn_model is not None:
+        image = np.full((64,64), ch4)
+        image = image / 3000.0
+        image = image.reshape(1,64,64,1)
+
+        prediction = cnn_model.predict(image)[0][0]
+
+    # ================= AFFICHAGE =================
+    st.success(f"📅 Date satellite : **{date_img}**")
+    st.success(f"🌍 CH₄ du jour (GEE) : **{ch4:.1f} ppb**")
+
+    if ch4_mean is not None:
+        st.info(f"📊 Moyenne historique : **{ch4_mean:.1f} ppb**")
+
+    if prediction is not None:
+        st.write(f"🧠 Score IA : {prediction:.2f}")
+
+    # ================= DÉCISION =================
+    if prediction is not None:
+        if prediction > 0.7:
+            risk = "Critique (IA)"
+            action = "Fuite détectée par IA – intervention urgente"
+            st.error("⚠️ IA : fuite détectée !")
+
+        elif prediction > 0.5:
+            risk = "Élevé (IA)"
+            action = "Inspection recommandée (IA)"
+            st.warning("⚠️ IA : suspicion de fuite")
+
+        else:
+            risk = "Normal (IA)"
+            action = "Pas de fuite détectée"
+            st.success("✅ IA : pas de fuite")
+
+        # 🔥 Carbon Mapper
+        if prediction > 0.5:
+            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+            st.session_state["plumes"] = plumes
+
+            if len(plumes) > 0:
+                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+                for plume in plumes:
+                    st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
+            else:
+                st.warning("⚠️ IA détecte une fuite mais aucune plume confirmée")
+
+    else:
+        # fallback sans IA
+        if ch4 >= 1900:
+            risk = "Critique"
+            action = "Arrêt + alerte HSE"
+        elif ch4 >= 1850:
+            risk = "Élevé"
+            action = "Inspection urgente"
+        else:
+            risk = "Normal"
+            action = "Surveillance continue"
+
+    # ================= TABLEAU FINAL =================
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ du jour (ppb)": round(ch4, 2),
+        "Moyenne CH₄ (ppb)": round(ch4_mean, 2) if ch4_mean is not None else "N/A",
+        "Risque": risk,
+        "Action HSE": action
+    }])
+
+    st.table(df_day)
+
+    # ================= SAUVEGARDE =================
+    st.session_state["ch4"] = ch4
+    st.session_state["date_img"] = date_img
+    st.session_state["action"] = action
+    st.session_state["site_name"] = site_name
     # Calcul concentration moyenne historique (exemple)
     if os.path.exists(csv_hist):
         df_hist = pd.read_csv(csv_hist)
