@@ -19,6 +19,36 @@ import requests
 from tensorflow.keras.models import load_model
 import folium
 from streamlit_folium import st_folium
+# ================= ZONES =================
+zone_centre = [
+    [32.7566, 3.3769],
+    [32.7566, 3.6115],
+    [33.0134, 3.6063],
+    [33.0240, 2.9338],
+    [32.8939, 2.9275],
+    [32.8895, 3.3769]
+]
+
+zone_sud = [
+    [32.4509, 2.8856],
+    [32.4509, 3.3796],
+    [32.8837, 3.3796],
+    [32.8837, 2.8856]
+]
+
+zone_nord = [
+    [33.0135, 3.1851],
+    [33.2829, 3.1848],
+    [33.2785, 3.8109],
+    [33.0135, 3.8107]
+]
+
+from shapely.geometry import Point, Polygon
+
+def is_inside_zone(lat, lon, zone_coords):
+    poly = Polygon([(lon, lat) for lat, lon in zone_coords])
+    point = Point(lon, lat)
+    return poly.contains(point)
 # ================= LOAD MODEL =================
 MODEL_PATH = "AI_model/cnn_model.h5"
 
@@ -59,6 +89,13 @@ zone_choice = st.selectbox(
     "Choisir la zone",
     ["Centre", "Sud", "Nord"]
 )
+zone_map = {
+    "Centre": zone_centre,
+    "Sud": zone_sud,
+    "Nord": zone_nord
+}
+
+selected_zone = zone_map[zone_choice]
 # ================= PATHS =================
 DATA_DIR = "data"
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
@@ -198,331 +235,139 @@ if st.button("Analyser année"):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
 
-# ================= SECTION E : Analyse CH₄ du jour =================
-st.markdown("## 🔍 Analyse CH₄ du jour (GEE + IA + Historique)")
+# ================= SECTION E =================
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE + IA + Zone)")
 
 if st.button("Analyser CH₄ du jour"):
 
     st.info("Analyse en cours...")
 
-    # ================= GEE =================
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+    ch4, date_img, _ = get_latest_ch4_from_gee(latitude, longitude)
 
     if ch4 is None:
-        st.error("⚠️ Aucune image satellite disponible")
+        st.error("⚠️ Aucune image satellite")
         st.stop()
-
-    # ================= HISTORIQUE =================
-    ch4_mean = None
-
-    if os.path.exists(csv_hist):
-        df_hist = pd.read_csv(csv_hist)
-
-        # 🔍 Trouver automatiquement la colonne CH4
-        possible_cols = ["CH4", "ch4", "CH4_mean", "mean", "value"]
-
-        col_found = None
-        for col in possible_cols:
-            if col in df_hist.columns:
-                col_found = col
-                break
-
-        if col_found is not None:
-            ch4_mean = df_hist[col_found].mean()
-        else:
-            st.warning("⚠️ Colonne CH4 introuvable dans le CSV")
-
-    else:
-        st.warning("⚠️ Fichier historique introuvable")
 
     # ================= IA =================
     if cnn_model is not None:
-        image = np.full((64, 64), ch4)
-        image = image / 3000.0
-        image = image.reshape(1, 64, 64, 1)
-
+        image = np.full((64,64), ch4) / 3000.0
+        image = image.reshape(1,64,64,1)
         prediction = cnn_model.predict(image)[0][0]
     else:
         prediction = None
-zone_map = {
-    "Centre": zone_centre,
-    "Sud": zone_sud,
-    "Nord": zone_nord
-}
 
-selected_zone = zone_map[zone_choice]
+    # ================= HISTORIQUE =================
+    ch4_mean = None
+    if os.path.exists(csv_hist):
+        df_hist = pd.read_csv(csv_hist)
+        for col in ["CH4","ch4","mean"]:
+            if col in df_hist.columns:
+                ch4_mean = df_hist[col].mean()
+                break
 
-# Vérifier si fuite dans zone
-fuite_dans_zone = False
-
-if prediction is not None and prediction > 0.5:
-    fuite_dans_zone = is_inside_zone(latitude, longitude, selected_zone)
-
-    if fuite_dans_zone:
-        st.error(f"🚨 Fuite détectée dans la zone {zone_choice}")
-    else:
-        st.warning(f"⚠️ Fuite détectée mais hors zone {zone_choice}")
     # ================= AFFICHAGE =================
-    st.success(f"📅 Date satellite : {date_img}")
-    st.success(f"🛰️ CH₄ (GEE) : {ch4:.1f} ppb")
+    st.success(f"📅 Date : {date_img}")
+    st.success(f"🛰️ CH₄ : {ch4:.1f} ppb")
 
-    if ch4_mean is not None:
-        st.info(f"📊 Moyenne historique : {ch4_mean:.1f} ppb")
+    if ch4_mean:
+        st.info(f"📊 Moyenne : {ch4_mean:.1f} ppb")
 
     if prediction is not None:
-        st.write(f"🧠 Score IA : {prediction:.2f}")
+        st.write(f"🧠 IA score : {prediction:.2f}")
 
-    # ================= DÉCISION =================
-    if prediction is not None:
-        if prediction > 0.7:
-            risk = "Critique (IA)"
-            action = "Fuite détectée – intervention urgente"
-            st.error("⚠️ IA : fuite détectée !")
+    # ================= ZONE =================
+    fuite_zone = False
+    if prediction and prediction > 0.5:
+        fuite_zone = is_inside_zone(latitude, longitude, selected_zone)
 
-        elif prediction > 0.5:
-            risk = "Élevé (IA)"
-            action = "Inspection recommandée"
-            st.warning("⚠️ IA : suspicion de fuite")
-
+        if fuite_zone:
+            st.error(f"🚨 Fuite DANS zone {zone_choice}")
         else:
-            risk = "Normal (IA)"
-            action = "Pas de fuite"
-            st.success("✅ IA : pas de fuite")
+            st.warning(f"⚠️ Fuite HORS zone {zone_choice}")
 
-        # 🔥 Carbon Mapper
-        if prediction > 0.5:
-            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-
-            if len(plumes) > 0:
-                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) !")
-                for plume in plumes:
-                    st.write(f"- {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-            else:
-                st.warning("⚠️ Aucune plume détectée par Carbon Mapper")
-
-    else:
-        # fallback sans IA
-        if ch4 >= 1900:
+    # ================= DECISION =================
+    if prediction:
+        if prediction > 0.7:
             risk = "Critique"
-            action = "Arrêt + alerte HSE"
-        elif ch4 >= 1850:
+        elif prediction > 0.5:
             risk = "Élevé"
-            action = "Inspection urgente"
         else:
             risk = "Normal"
-            action = "Surveillance continue"
+    else:
+        if ch4 >= 1900:
+            risk = "Critique"
+        elif ch4 >= 1850:
+            risk = "Élevé"
+        else:
+            risk = "Normal"
 
-    # ================= TABLEAU FINAL =================
-    df_day = pd.DataFrame([{
-        "Date satellite": date_img,
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH₄ (GEE)": round(ch4, 2),
-        "Moyenne historique": round(ch4_mean, 2) if ch4_mean else "N/A",
-        "Risque": risk,
-        "Action HSE": action
+    # ================= CARBON =================
+    plumes = []
+    if prediction and prediction > 0.5:
+        plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+
+        if plumes:
+            st.error(f"🔥 {len(plumes)} plume(s)")
+        else:
+            st.warning("Aucune plume détectée")
+
+    # ================= TABLE =================
+    df = pd.DataFrame([{
+        "Date": date_img,
+        "CH4": ch4,
+        "Moyenne": ch4_mean,
+        "Zone": zone_choice,
+        "Risque": risk
     }])
 
-    st.table(df_day)
+    st.table(df)
 
-    # ================= SAUVEGARDE =================
+    # ================= SAVE =================
     st.session_state["ch4"] = ch4
-    st.session_state["date_img"] = date_img
-    st.session_state["action"] = action
-    st.session_state["site_name"] = site_name
-   
+    st.session_state["plumes"] = plumes
+    st.session_state["action"] = risk
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte interactive CH₄")
 
-    # ================= Stockage session pour PDF =================
-    st.session_state["ch4"] = ch4
-    st.session_state["date_img"] = date_img
-    st.session_state["action"] = action
-    st.session_state["site_name"] = site_name
-# ================= PDF =================
-def generate_pdf(site, date, ch4, action):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
+if st.button("Afficher carte"):
 
-    story = []
-    story.append(Paragraph("Rapport CH4", styles["Title"]))
-    story.append(Paragraph(f"Site: {site}", styles["Normal"]))
-    story.append(Paragraph(f"Date: {date}", styles["Normal"]))
-    story.append(Paragraph(f"CH4: {ch4}", styles["Normal"]))
-    story.append(Paragraph(f"Action: {action}", styles["Normal"]))
+    m = folium.Map(location=[latitude, longitude], zoom_start=6)
 
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-    # ================= ZONES =================
-
-zone_centre = [
-    [32.7566, 3.3769],
-    [32.7566, 3.6115],
-    [33.0134, 3.6063],
-    [33.0240, 2.9338],
-    [32.8939, 2.9275],
-    [32.8895, 3.3769]
-]
-
-zone_sud = [
-    [32.4509, 2.8856],
-    [32.4509, 3.3796],
-    [32.8837, 3.3796],
-    [32.8837, 2.8856]
-]
-
-zone_nord = [
-    [33.0135, 3.1851],
-    [33.2829, 3.1848],
-    [33.2785, 3.8109],
-    [33.0135, 3.8107]
-]
-from shapely.geometry import Point, Polygon
-
-def is_inside_zone(lat, lon, zone_coords):
-    poly = Polygon([(lon, lat) for lat, lon in zone_coords])
-    point = Point(lon, lat)
-    return poly.contains(point)
-# ================= SECTION G : Carte interactive CH₄ =================
-st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
-# ================= ZONES =================
-
-# Zone Centre
-folium.Polygon(
-    locations=zone_centre,
-    color="red",
-    fill=True,
-    fill_opacity=0.1,
-    popup="Zone Centre"
-).add_to(m)
-
-# Zone Sud
-folium.Polygon(
-    locations=zone_sud,
-    color="green",
-    fill=True,
-    fill_opacity=0.1,
-    popup="Zone Sud"
-).add_to(m)
-
-# Zone Nord
-folium.Polygon(
-    locations=zone_nord,
-    color="blue",
-    fill=True,
-    fill_opacity=0.1,
-    popup="Zone Nord"
-).add_to(m)
-from folium.plugins import HeatMap
-
-# État affichage
-if "show_map" not in st.session_state:
-    st.session_state["show_map"] = False
-
-if st.button("Afficher / Masquer la carte"):
-    st.session_state["show_map"] = not st.session_state["show_map"]
-
-# ================= AFFICHAGE =================
-if st.session_state["show_map"]:
-
-    # ================= BASE MAP (SATELLITE) =================
-    m = folium.Map(
-        location=[latitude, longitude],
-        zoom_start=6,
-        tiles=None
-    )
-
-    # 🌍 Couche satellite (ESRI)
+    # Satellite
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        name="Satellite",
-        overlay=False,
-        control=True
+        attr="Esri"
     ).add_to(m)
 
-    # 🗺️ Couche normale
-    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
+    # Zones
+    folium.Polygon(zone_centre, color="red", fill=True).add_to(m)
+    folium.Polygon(zone_sud, color="green", fill=True).add_to(m)
+    folium.Polygon(zone_nord, color="blue", fill=True).add_to(m)
 
-    # ================= MARQUEUR SITE =================
-    folium.Marker(
-        [latitude, longitude],
-        popup=f"📍 {site_name}",
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
+    # Site
+    folium.Marker([latitude, longitude]).add_to(m)
 
-    # ================= CH4 ZONE =================
-    heat_data = []
+    # CH4
+    heat = []
 
     if "ch4" in st.session_state:
-        ch4_val = st.session_state["ch4"]
+        heat.append([latitude, longitude, st.session_state["ch4"]])
 
-        if ch4_val >= 1900:
-            color = "red"
-        elif ch4_val >= 1850:
-            color = "orange"
-        else:
-            color = "green"
-
-        # cercle risque
-        folium.Circle(
-            location=[latitude, longitude],
-            radius=5000,
-            color=color,
-            fill=True,
-            fill_opacity=0.4,
-            popup=f"CH₄: {ch4_val:.1f} ppb"
-        ).add_to(m)
-
-        # pour heatmap
-        heat_data.append([latitude, longitude, ch4_val])
-
-    # ================= PLUMES =================
-    plume_coords = []
-
+    # Plumes
+    coords = []
     if "plumes" in st.session_state:
-        for plume in st.session_state["plumes"]:
+        for p in st.session_state["plumes"]:
+            coords.append([p["lat"], p["lon"]])
+            heat.append([p["lat"], p["lon"], p["emission"]])
+            folium.Marker([p["lat"], p["lon"]]).add_to(m)
 
-            lat_p = plume["lat"]
-            lon_p = plume["lon"]
-            emission = plume["emission"]
+    # Heatmap
+    if heat:
+        from folium.plugins import HeatMap
+        HeatMap(heat).add_to(m)
 
-            plume_coords.append([lat_p, lon_p])
+    # Zoom auto
+    if coords:
+        m.fit_bounds(coords)
 
-            # marker plume
-            folium.Marker(
-                [lat_p, lon_p],
-                popup=f"🔥 Plume: {emission} kg/h",
-                icon=folium.Icon(color="red", icon="cloud")
-            ).add_to(m)
-
-            # heatmap plume
-            heat_data.append([lat_p, lon_p, emission])
-
-    # ================= HEATMAP =================
-    if len(heat_data) > 0:
-        HeatMap(heat_data, radius=25).add_to(m)
-
-    # ================= ZOOM AUTO =================
-    if len(plume_coords) > 0:
-        # zoom sur plumes
-        m.fit_bounds(plume_coords)
-    else:
-        # zoom sur site
-        m.location = [latitude, longitude]
-        m.zoom_start = 8
-
-    # ================= IA =================
-    if "action" in st.session_state:
-        folium.Marker(
-            [latitude, longitude],
-            popup=f"🧠 IA: {st.session_state['action']}",
-            icon=folium.Icon(color="purple")
-        ).add_to(m)
-
-    # ================= CONTROLE =================
-    folium.LayerControl().add_to(m)
-
-    # ================= AFFICHAGE =================
-    st_folium(m, width=750, height=550)
+    st_folium(m, width=750, height=500)
