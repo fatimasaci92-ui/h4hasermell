@@ -337,22 +337,18 @@ def generate_pdf(site, date, ch4, action):
 # ================= SECTION G : Carte interactive CH₄ =================
 st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
 
-# Initialiser état
 from folium.plugins import HeatMap
 
 # État affichage
 if "show_map" not in st.session_state:
     st.session_state["show_map"] = False
 
-# Bouton
 if st.button("Afficher / Masquer la carte"):
     st.session_state["show_map"] = not st.session_state["show_map"]
 
-# Affichage persistant
 # ================= AFFICHAGE =================
 if st.session_state["show_map"]:
 
-    m = folium.Map(location=[latitude, longitude], zoom_start=8)
     # ================= BASE MAP (SATELLITE) =================
     m = folium.Map(
         location=[latitude, longitude],
@@ -372,16 +368,13 @@ if st.session_state["show_map"]:
     # 🗺️ Couche normale
     folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
-    # 📍 Site
     # ================= MARQUEUR SITE =================
     folium.Marker(
         [latitude, longitude],
-        popup=f"📍 Site : {site_name}",
         popup=f"📍 {site_name}",
         icon=folium.Icon(color="blue")
     ).add_to(m)
 
-    # 🔥 CH4 zone
     # ================= CH4 ZONE =================
     heat_data = []
 
@@ -405,7 +398,6 @@ if st.session_state["show_map"]:
             popup=f"CH₄: {ch4_val:.1f} ppb"
         ).add_to(m)
 
-    # ⚠️ Plumes Carbon Mapper
         # pour heatmap
         heat_data.append([latitude, longitude, ch4_val])
 
@@ -423,15 +415,11 @@ if st.session_state["show_map"]:
 
             # marker plume
             folium.Marker(
-                [plume["lat"], plume["lon"]],
-                popup=f"🔥 Plume: {plume['emission']} kg/h",
-                icon=folium.Icon(color="red")
                 [lat_p, lon_p],
                 popup=f"🔥 Plume: {emission} kg/h",
                 icon=folium.Icon(color="red", icon="cloud")
             ).add_to(m)
 
-    # 🧠 IA
             # heatmap plume
             heat_data.append([lat_p, lon_p, emission])
 
@@ -456,7 +444,6 @@ if st.session_state["show_map"]:
             icon=folium.Icon(color="purple")
         ).add_to(m)
 
-    st_folium(m, width=700, height=500)
     # ================= CONTROLE =================
     folium.LayerControl().add_to(m)
 
