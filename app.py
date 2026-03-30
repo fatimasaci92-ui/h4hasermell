@@ -162,8 +162,12 @@ if st.button("Afficher carte"):
         with rasterio.open(path) as src:
             img = src.read(1)
         img[img <= 0] = np.nan
-        st.image(img, caption=f"CH₄ {year_mean}")
-    else:
+fig, ax = plt.subplots(figsize=(6,5))
+im = ax.imshow(img, cmap="viridis")
+plt.colorbar(im, ax=ax)
+ax.set_title(f"CH₄ moyen {year_mean}")
+ax.axis("off")
+st.pyplot(fig)    else:
         st.warning("Carte introuvable")
 
 # ================= SECTION D =================
