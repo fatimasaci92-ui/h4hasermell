@@ -274,3 +274,57 @@ def generate_pdf(site, date, ch4, action):
     doc.build(story)
     buffer.seek(0)
     return buffer
+# ================= SECTION G : Carte interactive CH₄ =================
+st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
+
+if st.button("Afficher carte interactive"):
+
+    # Centre carte
+    m = folium.Map(location=[latitude, longitude], zoom_start=8)
+
+    # 📍 Marqueur site
+    folium.Marker(
+        [latitude, longitude],
+        popup=f"📍 Site : {site_name}",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
+
+    # 🔥 Couleur selon CH4
+    if "ch4" in st.session_state:
+        ch4_val = st.session_state["ch4"]
+
+        if ch4_val >= 1900:
+            color = "red"
+        elif ch4_val >= 1850:
+            color = "orange"
+        else:
+            color = "green"
+
+        folium.Circle(
+            location=[latitude, longitude],
+            radius=5000,
+            color=color,
+            fill=True,
+            fill_opacity=0.4,
+            popup=f"CH₄: {ch4_val:.1f} ppb"
+        ).add_to(m)
+
+    # ⚠️ Plumes Carbon Mapper
+    if "plumes" in st.session_state:
+        for plume in st.session_state["plumes"]:
+            folium.Marker(
+                [plume["lat"], plume["lon"]],
+                popup=f"🔥 Plume: {plume['emission']} kg/h",
+                icon=folium.Icon(color="red", icon="cloud")
+            ).add_to(m)
+
+    # 🧠 IA affichage
+    if "action" in st.session_state:
+        folium.Marker(
+            [latitude, longitude],
+            popup=f"🧠 IA: {st.session_state['action']}",
+            icon=folium.Icon(color="purple")
+        ).add_to(m)
+
+    # Affichage Streamlit
+    st_folium(m, width=700, height=500)
