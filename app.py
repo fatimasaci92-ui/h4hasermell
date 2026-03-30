@@ -370,22 +370,25 @@ else:
     if prediction is not None:
         st.write(f"🧠 Score IA : {prediction:.2f}")
 
-   # ================= Décision =================
+  # ================= Décision CH4 =================
 if prediction is not None:
+    # IA active
     if prediction > 0.7:
         risk = "Critique (IA)"
         action = "Fuite détectée par IA – intervention urgente"
         st.error("⚠️ IA : fuite détectée !")
+
     elif prediction > 0.5:
         risk = "Élevé (IA)"
         action = "Inspection recommandée (IA)"
         st.warning("⚠️ IA : suspicion de fuite")
+
     else:
         risk = "Normal (IA)"
         action = "Pas de fuite détectée"
         st.success("✅ IA : pas de fuite")
 
-    # Vérification automatique des plumes Carbon Mapper si IA détecte un risque élevé ou critique
+    # 🔥 Vérification Carbon Mapper
     if prediction > 0.5:
         plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
         st.session_state["plumes"] = plumes
@@ -395,13 +398,13 @@ if prediction is not None:
             for plume in plumes:
                 st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
         else:
-            st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
+            st.warning("⚠️ IA détecte une fuite, mais aucune plume confirmée")
 
 else:
-    # fallback ancien système si pas de modèle IA
+    # fallback sans IA
     if ch4 >= 1900:
         risk = "Critique"
-        action = "Alerter, sécuriser la zone et stopper opérations"
+        action = "Arrêt + alerte HSE"
     elif ch4 >= 1850:
         risk = "Élevé"
         action = "Inspection urgente"
@@ -409,7 +412,7 @@ else:
         risk = "Normal"
         action = "Surveillance continue"
 
-# ================= Tableau résumé =================
+# ================= Tableau =================
 df_day = pd.DataFrame([{
     "Date image": date_img,
     "Site": site_name,
@@ -421,26 +424,6 @@ df_day = pd.DataFrame([{
 }])
 
 st.table(df_day)
-
-    if len(plumes) > 0:
-        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
-        for plume in plumes:
-            st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
-    else:
-        st.warning("⚠️ IA détecte une fuite, mais aucune plume Carbon Mapper confirmée")
-    # ================= Tableau =================
-    df_day = pd.DataFrame([{
-        "Date image": date_img,
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH₄ (ppb)": round(ch4, 2),
-        "Risque": risk,
-        "Action HSE": action
-    }])
-
-    st.table(df_day)
-
 # ================= SECTION F : PDF =================
 def generate_professional_pdf(site_name, date_img, ch4_value, action, responsable="HSE Manager"):
     buffer = io.BytesIO()
