@@ -18,8 +18,6 @@ import folium
 from streamlit_folium import st_folium
 import requests
 from tensorflow.keras.models import load_model
-from tensorflow.keras.models import load_model
-
 MODEL_PATH = "AI_model/cnn_model.h5"
 
 try:
@@ -211,8 +209,6 @@ if st.button("Analyser année sélectionnée"):
         st.warning("CSV annuel introuvable")
 
 # ================= SECTION E : Analyse CH₄ du jour =================
-st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
-
 if st.button("Analyser CH₄ du jour"):
     st.info("Analyse en cours...")
 
@@ -227,11 +223,64 @@ if st.button("Analyser CH₄ du jour"):
         image = np.full((64,64), ch4)
         image = image / 3000.0
         image = image.reshape(1,64,64,1)
-
         prediction = cnn_model.predict(image)[0][0]
     else:
         prediction = None
 
+    # ================= Affichage =================
+    st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
+
+    if prediction is not None:
+        st.write(f"🧠 Score IA : {prediction:.2f}")
+
+    # ================= Décision =================
+    if prediction is not None:
+        if prediction > 0.7:
+            risk = "Critique (IA)"
+            action = "Fuite détectée par IA – intervention urgente"
+            st.error("⚠️ IA : fuite détectée !")
+
+        elif prediction > 0.5:
+            risk = "Élevé (IA)"
+            action = "Inspection recommandée (IA)"
+            st.warning("⚠️ IA : suspicion de fuite")
+
+        else:
+            risk = "Normal (IA)"
+            action = "Pas de fuite détectée"
+            st.success("✅ IA : pas de fuite")
+
+        # Carbon Mapper
+        if prediction > 0.5:
+            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
+            if len(plumes) > 0:
+                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s)")
+            else:
+                st.warning("⚠️ IA détecte une fuite, mais aucune plume confirmée")
+
+    else:
+        if ch4 >= 1900:
+            risk = "Critique"
+            action = "Arrêt + alerte HSE"
+        elif ch4 >= 1850:
+            risk = "Élevé"
+            action = "Inspection urgente"
+        else:
+            risk = "Normal"
+            action = "Surveillance continue"
+
+    # ================= Tableau =================
+    df_day = pd.DataFrame([{
+        "Date image": date_img,
+        "Site": site_name,
+        "Latitude": latitude,
+        "Longitude": longitude,
+        "CH₄ (ppb)": round(ch4, 2),
+        "Risque": risk,
+        "Action HSE": action
+    }])
+
+    st.table(df_day)
     # ================= Affichage =================
     st.success(f"CH₄ : **{ch4:.1f} ppb** (image du {date_img})")
 
