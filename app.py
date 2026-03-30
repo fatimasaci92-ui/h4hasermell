@@ -196,9 +196,10 @@ if st.button("Analyser année"):
         st.dataframe(df)
 
 # ================= SECTION E : Analyse CH₄ du jour =================
-st.markdown("## 🔍 Analyse CH₄ du jour (GEE)")
+st.markdown("## 🔍 Analyse CH₄ du jour (GEE + IA + Historique)")
 
 if st.button("Analyser CH₄ du jour"):
+
     st.info("Analyse en cours...")
 
     # ================= GEE =================
@@ -208,38 +209,45 @@ if st.button("Analyser CH₄ du jour"):
         st.error("⚠️ Aucune image satellite disponible")
         st.stop()
 
-    # ================= MOYENNE HISTORIQUE (CORRIGÉ) =================
+    # ================= HISTORIQUE =================
     ch4_mean = None
+
     if os.path.exists(csv_hist):
         df_hist = pd.read_csv(csv_hist)
 
-        # Debug (optionnel, tu peux supprimer après)
-        st.write("Colonnes CSV :", df_hist.columns.tolist())
+        # 🔍 Trouver automatiquement la colonne CH4
+        possible_cols = ["CH4", "ch4", "CH4_mean", "mean", "value"]
 
-        if "CH4" in df_hist.columns:
-            ch4_mean = df_hist["CH4"].mean()
-        elif "CH4_mean" in df_hist.columns:
-            ch4_mean = df_hist["CH4_mean"].mean()
-        elif "CH₄" in df_hist.columns:
-            ch4_mean = df_hist["CH₄"].mean()
+        col_found = None
+        for col in possible_cols:
+            if col in df_hist.columns:
+                col_found = col
+                break
+
+        if col_found is not None:
+            ch4_mean = df_hist[col_found].mean()
         else:
-            st.warning("⚠️ Colonne CH4 non trouvée dans le CSV")
+            st.warning("⚠️ Colonne CH4 introuvable dans le CSV")
+
+    else:
+        st.warning("⚠️ Fichier historique introuvable")
 
     # ================= IA =================
-    prediction = None
     if cnn_model is not None:
-        image = np.full((64,64), ch4)
+        image = np.full((64, 64), ch4)
         image = image / 3000.0
-        image = image.reshape(1,64,64,1)
+        image = image.reshape(1, 64, 64, 1)
 
         prediction = cnn_model.predict(image)[0][0]
+    else:
+        prediction = None
 
     # ================= AFFICHAGE =================
-    st.success(f"📅 Date satellite : **{date_img}**")
-    st.success(f"🌍 CH₄ du jour (GEE) : **{ch4:.1f} ppb**")
+    st.success(f"📅 Date satellite : {date_img}")
+    st.success(f"🛰️ CH₄ (GEE) : {ch4:.1f} ppb")
 
     if ch4_mean is not None:
-        st.info(f"📊 Moyenne historique : **{ch4_mean:.1f} ppb**")
+        st.info(f"📊 Moyenne historique : {ch4_mean:.1f} ppb")
 
     if prediction is not None:
         st.write(f"🧠 Score IA : {prediction:.2f}")
@@ -248,30 +256,29 @@ if st.button("Analyser CH₄ du jour"):
     if prediction is not None:
         if prediction > 0.7:
             risk = "Critique (IA)"
-            action = "Fuite détectée par IA – intervention urgente"
+            action = "Fuite détectée – intervention urgente"
             st.error("⚠️ IA : fuite détectée !")
 
         elif prediction > 0.5:
             risk = "Élevé (IA)"
-            action = "Inspection recommandée (IA)"
+            action = "Inspection recommandée"
             st.warning("⚠️ IA : suspicion de fuite")
 
         else:
             risk = "Normal (IA)"
-            action = "Pas de fuite détectée"
+            action = "Pas de fuite"
             st.success("✅ IA : pas de fuite")
 
         # 🔥 Carbon Mapper
         if prediction > 0.5:
             plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-            st.session_state["plumes"] = plumes
 
             if len(plumes) > 0:
-                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) !")
                 for plume in plumes:
-                    st.write(f"- Emission {plume['emission']} kg/h à ({plume['lat']:.4f},{plume['lon']:.4f})")
+                    st.write(f"- {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
             else:
-                st.warning("⚠️ IA détecte une fuite mais aucune plume confirmée")
+                st.warning("⚠️ Aucune plume détectée par Carbon Mapper")
 
     else:
         # fallback sans IA
@@ -287,12 +294,12 @@ if st.button("Analyser CH₄ du jour"):
 
     # ================= TABLEAU FINAL =================
     df_day = pd.DataFrame([{
-        "Date image": date_img,
+        "Date satellite": date_img,
         "Site": site_name,
         "Latitude": latitude,
         "Longitude": longitude,
-        "CH₄ du jour (ppb)": round(ch4, 2),
-        "Moyenne CH₄ (ppb)": round(ch4_mean, 2) if ch4_mean is not None else "N/A",
+        "CH₄ (GEE)": round(ch4, 2),
+        "Moyenne historique": round(ch4_mean, 2) if ch4_mean else "N/A",
         "Risque": risk,
         "Action HSE": action
     }])
