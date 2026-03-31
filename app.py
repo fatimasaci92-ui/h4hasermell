@@ -230,32 +230,6 @@ df["Risque"] = df["CH₄ (ppb)"].apply(
 )
 
 st.dataframe(df)
-# ================= SECTION G =================
-st.markdown("## 🌍 Carte des zones")
-
-if st.button("Afficher carte zones"):
-
-    center = zoneCentre.centroid().coordinates().getInfo()[::-1]
-
-    m = folium.Map(location=center, zoom_start=7)
-
-    def add_zone(zone, name, color):
-        coords = zone.coordinates().getInfo()[0]
-        coords = [[c[1], c[0]] for c in coords]
-
-        folium.Polygon(
-            locations=coords,
-            color=color,
-            fill=True,
-            fill_opacity=0.3,
-            popup=name
-        ).add_to(m)
-
-    add_zone(zoneCentre, "Centre", "red")
-    add_zone(zoneSud, "Sud", "green")
-    add_zone(zoneNord, "Nord", "blue")
-
-    st_folium(m, width=750, height=550)
     # ================= SECTION H =================
 st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
 
