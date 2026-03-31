@@ -215,21 +215,27 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.bar_chart(df.set_index("Zone")[["CH₄ (ppb)"]])
     st.markdown("## 🚨 Détection automatique")
 
+st.markdown("## 🚨 Détection automatique")
+
 def detect_anomaly(value):
-    if value is None:
-        return "Pas de données"
-    elif value > 1900:
-        return "🔴 Critique"
-    elif value > 1850:
-        return "🟠 Élevé"
-    else:
-        return "🟢 Normal"
+    try:
+        if value is None:
+            return "Pas de données"
+        elif float(value) > 1900:
+            return "🔴 Critique"
+        elif float(value) > 1850:
+            return "🟠 Élevé"
+        else:
+            return "🟢 Normal"
+    except:
+        return "N/A"
 
-df["Risque"] = df["CH₄ (ppb)"].apply(
-    lambda x: detect_anomaly(x) if isinstance(x, (int, float)) else "N/A"
-)
-
-st.dataframe(df)
+# Vérifier que la colonne existe et qu'il y a au moins une ligne
+if "CH₄ (ppb)" in df.columns and len(df) > 0:
+    df["Risque"] = df["CH₄ (ppb)"].apply(detect_anomaly)
+    st.dataframe(df)
+else:
+    st.warning("⚠️ Pas de données CH₄ pour détecter les anomalies")
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
 
