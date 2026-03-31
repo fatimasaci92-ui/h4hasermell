@@ -258,25 +258,52 @@ if st.session_state["map_ready"]:
             "palette": ["blue", "green", "yellow", "red"]
         }
 
-        # ================= MAP =================
-        m = folium.Map(
-            location=[site_lat, site_lon],
-            zoom_start=8,
-            max_bounds=True
-        )
+        # ================= MAP SATELLITE PRO =================
 
-        m.fit_bounds(bounds)
+m = folium.Map(
+    location=[site_lat, site_lon],
+    zoom_start=8,
+    tiles=None,
+    max_bounds=True
+)
 
-        # 🔥 Couche GEE
-        map_id = image.getMapId(vis_params)
+# 🌍 SATELLITE (IMPORTANT 🔥)
+folium.TileLayer(
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr="Esri Satellite",
+    name="Satellite",
+    overlay=False,
+    control=True
+).add_to(m)
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="GEE",
-            name="CH₄ Satellite",
-            overlay=True
-        ).add_to(m)
+# 🗺️ OPTION carte normale
+folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
+# 🔥 CH4 GEE (overlay transparent)
+map_id = image.getMapId({
+    "min": 1800,
+    "max": 2000,
+    "palette": ["blue", "green", "yellow", "red"]
+})
+
+folium.TileLayer(
+    tiles=map_id["tile_fetcher"].url_format,
+    attr="CH4",
+    name="CH₄ (Satellite)",
+    overlay=True,
+    opacity=0.6   # 🔥 transparence comme Carbon Mapper
+).add_to(m)
+#  AI
+def detect_leak(val):
+    if val is None:
+        return "Aucune donnée", "gray"
+    elif val > 1920:
+        return "🔥 Fuite détectée", "red"
+    elif val > 1880:
+        return "⚠️ Suspect", "orange"
+    else:
+        return "✅ Normal", "green"
+        
         # ================= ANALYSE ZONES =================
         zones = [
             ("Centre", zoneCentre),
@@ -323,13 +350,19 @@ if st.session_state["map_ready"]:
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
 
-            folium.Polygon(
-                locations=coords,
-                color="red" if "🔴" in risk else ("orange" if "🟠" in risk else "green"),
-                fill=True,
-                fill_opacity=0.3,
-                popup=f"{name} | {val_str} | {risk}"
-            ).add_to(m)
+           status, color = detect_leak(val)
+
+folium.Polygon(
+    locations=coords,
+    color=color,
+    fill=True,
+    fill_opacity=0.4,
+    popup=f"""
+    <b>{name}</b><br>
+    CH₄: {val_str}<br>
+    Statut: {status}
+    """
+).add_to(m)
 
         # ================= PLUMES =================
         import requests
@@ -355,13 +388,13 @@ if st.session_state["map_ready"]:
                         emission = f["properties"].get("emission_rate", 0)
 
                         folium.CircleMarker(
-                            [lat, lon],
-                            radius=7,
-                            color="red",
-                            fill=True,
-                            popup=f"🔥 Plume: {emission} kg/h"
-                        ).add_to(m)
-
+    [lat, lon],
+    radius=8,
+    color="red",
+    fill=True,
+    fill_opacity=0.8,
+    popup=f"🔥 Fuite réelle\n{emission} kg/h"
+).add_to(m)
             except:
                 st.warning("⚠️ Carbon Mapper indisponible")
 
