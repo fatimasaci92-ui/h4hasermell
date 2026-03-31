@@ -152,12 +152,12 @@ if st.button("Lancer analyse CH₄"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION F =================
-st.markdown("## 📡 Analyse CH₄ récente par zone (avec date réelle)")
+st.markdown("## 📡 Analyse CH₄ récente par zone (version fiable)")
 
 if st.button("Analyser CH₄ (derniers jours)"):
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
+    start = today.advance(-7, "day")   # 🔥 7 jours au lieu de 1
 
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
@@ -171,7 +171,7 @@ if st.button("Analyser CH₄ (derniers jours)"):
         size = collection.size().getInfo()
 
         if size == 0:
-            return {"Zone": name, "CH₄": "Pas de données", "Date": "-"}
+            return {"Zone": name, "CH₄ (ppb)": "Pas de données"}
 
         images = collection.toList(size)
 
@@ -186,22 +186,15 @@ if st.button("Analyser CH₄ (derniers jours)"):
                 maxPixels=1e9
             ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-            date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd")
-
             try:
                 val = value.getInfo()
-                date_val = date_img.getInfo()
             except:
                 val = None
 
             if val is not None:
-                return {
-                    "Zone": name,
-                    "CH₄ (ppb)": round(val, 2),
-                    "Date image": date_val
-                }
+                return {"Zone": name, "CH₄ (ppb)": round(val, 2)}
 
-        return {"Zone": name, "CH₄": "Aucune donnée", "Date": "-"}
+        return {"Zone": name, "CH₄ (ppb)": "Aucune valeur valide"}
 
     results = [
         compute(zoneCentre, "Centre"),
@@ -212,9 +205,7 @@ if st.button("Analyser CH₄ (derniers jours)"):
     df = pd.DataFrame(results)
 
     st.dataframe(df)
-    st.bar_chart(df.set_index("Zone")[["CH₄ (ppb)"]])
-    st.markdown("## 🚨 Détection automatique")
-
+    st.bar_chart(df.set_index("Zone"))
 def detect_anomaly(value):
     if value is None:
         return "Pas de données"
