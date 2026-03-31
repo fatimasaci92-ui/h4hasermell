@@ -216,23 +216,26 @@ if st.button("Analyser CH₄ (derniers jours)"):
 # ================= SECTION G PRO =================
 st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA + Plumes)")
 
+# 🔥 Etat persistant
 if "map_ready" not in st.session_state:
     st.session_state["map_ready"] = False
 
 if st.button("Afficher carte PRO"):
     st.session_state["map_ready"] = True
 
+# ================= AFFICHAGE =================
 if st.session_state["map_ready"]:
 
     st.info("🛰️ Chargement des données satellites...")
 
-    # ================= SITE FIXE =================
+    # ✅ Coordonnées fixes (TON SITE)
     site_lat = 32.90
     site_lon = 3.30
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
+    # ================= IMAGE GEE =================
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -256,9 +259,12 @@ if st.session_state["map_ready"]:
         # 🌍 Satellite (comme Carbon Mapper)
         folium.TileLayer(
             tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri Satellite",
+            attr="Esri",
             name="Satellite"
         ).add_to(m)
+
+        # 🗺️ Carte normale
+        folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
         # 🔥 Couche CH4 GEE
         map_id = image.getMapId({
@@ -319,24 +325,30 @@ if st.session_state["map_ready"]:
                 "Statut": status
             })
 
-            # 🔥 POLYGONE FIXE
+            # 🔥 Corriger coordonnées (lat, lon)
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
 
+            # 🔥 Dessin POLYGONE (IMPORTANT)
             folium.Polygon(
                 locations=coords,
                 color=color,
                 fill=True,
                 fill_opacity=0.4,
-                popup=f"{name}\nCH₄: {val_str}\n{status}"
+                popup=f"""
+                <b>{name}</b><br>
+                CH₄: {val_str}<br>
+                Statut: {status}
+                """
             ).add_to(m)
 
-        # ================= CARBON MAPPER =================
-        import requests
+        # ================= PLUMES (Carbon Mapper) =================
         token = st.secrets.get("CARBON_API_TOKEN", "")
 
         if token:
             try:
+                import requests
+
                 r = requests.get(
                     "https://api.carbonmapper.org/api/v1/catalog/plumes",
                     headers={"Authorization": f"Bearer {token}"},
@@ -360,7 +372,7 @@ if st.session_state["map_ready"]:
                             color="red",
                             fill=True,
                             fill_opacity=0.8,
-                            popup=f"🔥 Fuite réelle\n{emission} kg/h"
+                            popup=f"🔥 Plume réelle<br>{emission} kg/h"
                         ).add_to(m)
 
             except:
@@ -375,8 +387,8 @@ if st.session_state["map_ready"]:
 
         folium.LayerControl().add_to(m)
 
-        # 🔥 AFFICHAGE STABLE (clé unique)
-        st_folium(m, width=750, height=550, key="map_pro")
+        # 🔥 AFFICHAGE STABLE (clé UNIQUE)
+        st_folium(m, width=750, height=550, key="map_fixed")
 
         # ================= TABLEAU =================
         st.markdown("## 📊 Résultats Analyse")
