@@ -247,151 +247,150 @@ if st.session_state["map_ready"]:
 
     if image is None:
         st.error("❌ Aucune image satellite disponible")
-    else:
+   else:
+    # ================= MAP =================
+    m = folium.Map(
+        location=[site_lat, site_lon],
+        zoom_start=8,
+        tiles=None
+    )
 
-        # ================= MAP =================
-        m = folium.Map(
-            location=[site_lat, site_lon],
-            zoom_start=8,
-            tiles=None
-        )
-
-        # 🌍 Satellite (comme Carbon Mapper)
-        folium.TileLayer(
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri",
-            name="Satellite"
-        ).add_to(m)
-
-        # 🗺️ Carte normale
-        folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
-
-        # 🔥 Couche CH4 GEE
-        map_id = image.getMapId({
-            "min": 1800,
-            "max": 2000,
-            "palette": ["blue", "green", "yellow", "red"]
-        })
-
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="CH4",
-            name="CH₄",
-            overlay=True,
-            opacity=0.6
-        ).add_to(m)
-
-        # ================= IA =================
-        def detect_leak(val):
-            if val is None:
-                return "Aucune donnée", "gray"
-            elif val > 1920:
-                return "🔥 Fuite détectée", "red"
-            elif val > 1880:
-                return "⚠️ Suspect", "orange"
-            else:
-                return "✅ Normal", "green"
-
-        # ================= ZONES + POLYGONES + PLUMES =================
-zones = [
-    ("Centre", zoneCentre),
-    ("Sud", zoneSud),
-    ("Nord", zoneNord)
-]
-
-results = []
-
-for name, zone in zones:
-
-    # ================= Valeur moyenne CH₄ =================
-    value = image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=zone,
-        scale=7000,
-        maxPixels=1e9
-    ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-    try:
-        val = value.getInfo()
-    except:
-        val = None
-
-    # ================= Détection fuite / couleur =================
-    status, color = detect_leak(val)
-    val_str = f"{round(val,2)} ppb" if val else "No data"
-
-    # ================= Stockage résultats =================
-    results.append({
-        "Zone": name,
-        "CH₄": val_str,
-        "Statut": status
-    })
-
-    # ================= Coordonnées POLYGONE =================
-    coords = zone.coordinates().getInfo()[0]
-    coords = [[lat, lon] for lon, lat in coords]  # inversion nécessaire pour folium
-
-    # ================= Dessin du polygone =================
-    folium.Polygon(
-        locations=coords,
-        color=color,
-        fill=True,
-        fill_opacity=0.4,
-        popup=f"""
-        <b>{name}</b><br>
-        CH₄: {val_str}<br>
-        Statut: {status}
-        """
+    # 🌍 Satellite (comme Carbon Mapper)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Satellite"
     ).add_to(m)
 
-# ================= Plumes Carbon Mapper =================
-token = st.secrets.get("CARBON_API_TOKEN", "")
+    # 🗺️ Carte normale
+    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
-if token:
-    try:
-        import requests
+    # 🔥 Couche CH4 GEE
+    map_id = image.getMapId({
+        "min": 1800,
+        "max": 2000,
+        "palette": ["blue", "green", "yellow", "red"]
+    })
 
-        r = requests.get(
-            "https://api.carbonmapper.org/api/v1/catalog/plumes",
-            headers={"Authorization": f"Bearer {token}"},
-            params={
-                "gas": "CH4",
-                "limit": 20,
-                "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
-            }
-        )
+    folium.TileLayer(
+        tiles=map_id["tile_fetcher"].url_format,
+        attr="CH4",
+        name="CH₄",
+        overlay=True,
+        opacity=0.6
+    ).add_to(m)
 
-        if r.status_code == 200:
-            data = r.json()
-            for f in data.get("features", []):
-                lon, lat = f["geometry"]["coordinates"]
-                emission = f["properties"].get("emission_rate", 0)
+    # ================= IA =================
+    def detect_leak(val):
+        if val is None:
+            return "Aucune donnée", "gray"
+        elif val > 1920:
+            return "🔥 Fuite détectée", "red"
+        elif val > 1880:
+            return "⚠️ Suspect", "orange"
+        else:
+            return "✅ Normal", "green"
 
-                folium.CircleMarker(
-                    [lat, lon],
-                    radius=8,
-                    color="red",
-                    fill=True,
-                    fill_opacity=0.8,
-                    popup=f"🔥 Plume réelle<br>{emission} kg/h"
-                ).add_to(m)
+    # ================= ZONES + POLYGONES + PLUMES =================
+    zones = [
+        ("Centre", zoneCentre),
+        ("Sud", zoneSud),
+        ("Nord", zoneNord)
+    ]
 
-    except:
-        st.warning("⚠️ Carbon Mapper indisponible")
+    results = []
 
-        # ================= SITE =================
-        folium.Marker(
-            [site_lat, site_lon],
-            popup="📍 Hassi R'mel",
-            icon=folium.Icon(color="blue")
+    for name, zone in zones:
+
+        # ================= Valeur moyenne CH₄ =================
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = value.getInfo()
+        except:
+            val = None
+
+        # ================= Détection fuite / couleur =================
+        status, color = detect_leak(val)
+        val_str = f"{round(val,2)} ppb" if val else "No data"
+
+        # ================= Stockage résultats =================
+        results.append({
+            "Zone": name,
+            "CH₄": val_str,
+            "Statut": status
+        })
+
+        # ================= Coordonnées POLYGONE =================
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[lat, lon] for lon, lat in coords]  # inversion nécessaire pour folium
+
+        # ================= Dessin du polygone =================
+        folium.Polygon(
+            locations=coords,
+            color=color,
+            fill=True,
+            fill_opacity=0.4,
+            popup=f"""
+            <b>{name}</b><br>
+            CH₄: {val_str}<br>
+            Statut: {status}
+            """
         ).add_to(m)
 
-        folium.LayerControl().add_to(m)
+    # ================= Plumes Carbon Mapper =================
+    token = st.secrets.get("CARBON_API_TOKEN", "")
 
-        # 🔥 AFFICHAGE STABLE (clé UNIQUE)
-        st_folium(m, width=750, height=550, key="map_fixed")
+    if token:
+        try:
+            import requests
 
-        # ================= TABLEAU =================
-        st.markdown("## 📊 Résultats Analyse")
-        df = pd.DataFrame(results)
-        st.dataframe(df)
+            r = requests.get(
+                "https://api.carbonmapper.org/api/v1/catalog/plumes",
+                headers={"Authorization": f"Bearer {token}"},
+                params={
+                    "gas": "CH4",
+                    "limit": 20,
+                    "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
+                }
+            )
+
+            if r.status_code == 200:
+                data = r.json()
+                for f in data.get("features", []):
+                    lon, lat = f["geometry"]["coordinates"]
+                    emission = f["properties"].get("emission_rate", 0)
+
+                    folium.CircleMarker(
+                        [lat, lon],
+                        radius=8,
+                        color="red",
+                        fill=True,
+                        fill_opacity=0.8,
+                        popup=f"🔥 Plume réelle<br>{emission} kg/h"
+                    ).add_to(m)
+
+        except:
+            st.warning("⚠️ Carbon Mapper indisponible")
+
+    # ================= SITE =================
+    folium.Marker(
+        [site_lat, site_lon],
+        popup="📍 Hassi R'mel",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
+
+    folium.LayerControl().add_to(m)
+
+    # 🔥 AFFICHAGE STABLE (clé UNIQUE)
+    st_folium(m, width=750, height=550, key="map_fixed")
+
+    # ================= TABLEAU =================
+    st.markdown("## 📊 Résultats Analyse")
+    df = pd.DataFrame(results)
+    st.dataframe(df)
