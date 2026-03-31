@@ -214,14 +214,19 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
+st.markdown("## 🌍 Carte CH₄ dynamique – GEE + Carbon Mapper")
 
-if st.button("Afficher carte CH₄ réelle"):
+if st.button("Afficher carte CH₄ réelle avec plumes"):
 
+    # 🔹 Fixe les coordonnées exactes du site
+    site_lat = 32.89
+    site_lon = 3.38
+
+    # 🔹 Définir période pour la dernière image
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
+    start = today.advance(-7, "day")  # dernières 7 jours
 
-    # On prend la dernière image disponible
+    # 🔹 Récupérer la dernière image disponible
     image = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -233,33 +238,70 @@ if st.button("Afficher carte CH₄ réelle"):
     if image is None:
         st.warning("⚠️ Pas d'image CH₄ disponible pour cette période")
     else:
+        # 🔹 Paramètres visuels
         vis_params = {
             "min": 1800,
             "max": 2000,
             "palette": ["blue", "green", "yellow", "red"]
         }
 
-        # Fixer le centre sur le site (coordonnées que tu as déjà)
-        site_lat, site_lon = zoneCentre.centroid().coordinates().getInfo()[::-1]
+        # 🔹 Créer carte folium centrée sur le site
         m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
 
-        # Ajouter la couche GEE
+        # 🔹 Ajouter couche GEE
         map_id = image.getMapId(vis_params)
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
-            name="CH4",
+            name="CH4 (GEE)",
             overlay=True,
             control=True
         ).add_to(m)
 
-        # Ajouter marqueur site
+        # 🔹 Ajouter marqueur du site
         folium.Marker(
             [site_lat, site_lon],
             popup="📍 Site Hassi R'mel",
-            icon=folium.Icon(color="blue")
+            icon=folium.Icon(color="blue", icon="industry")
         ).add_to(m)
 
+        # 🔹 Ajouter plumes Carbon Mapper (API)
+        CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
+        if CARBON_API_TOKEN:
+            import requests
+
+            url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
+            headers = {"Authorization": f"Bearer {CARBON_API_TOKEN}"}
+            params = {
+                "gas": "CH4",
+                "limit": 50,
+                "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
+            }
+
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=20)
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get("features", []):
+                        coords = item["geometry"]["coordinates"]
+                        props = item["properties"]
+                        emission = props.get("emission_rate", 0)
+
+                        folium.CircleMarker(
+                            location=[coords[1], coords[0]],
+                            radius=7,
+                            color="red" if emission > 50 else "orange",
+                            fill=True,
+                            fill_opacity=0.6,
+                            popup=f"🔥 Plume: {emission} kg/h"
+                        ).add_to(m)
+            except:
+                st.warning("Impossible de récupérer les plumes Carbon Mapper")
+        else:
+            st.warning("Token Carbon Mapper manquant")
+
+        # 🔹 Ajouter LayerControl pour activer/désactiver couches
         folium.LayerControl().add_to(m)
 
+        # 🔹 Afficher carte
         st_folium(m, width=750, height=500)
