@@ -1,4 +1,4 @@
-# ================= app.py — VERSION FINALE PROPRE =================
+# ================= app.py — VERSION FINALE CORRIGÉE =================
 
 import streamlit as st
 import pandas as pd
@@ -6,21 +6,30 @@ import numpy as np
 import rasterio
 import matplotlib.pyplot as plt
 import os
-import io
-from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
 import ee
 import json
 import tempfile
-import requests
-from tensorflow.keras.models import load_model
 import folium
 from streamlit_folium import st_folium
-# ================= ZONES FIXES =================
 
+# ================= INIT GEE =================
+try:
+    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
+        json.dump(ee_key_json, f)
+        key_path = f.name
+    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
+    ee.Initialize(credentials)
+    os.remove(key_path)
+except Exception as e:
+    st.error(f"Erreur GEE : {e}")
+    st.stop()
+
+# ================= CONFIG =================
+st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
+st.title("Surveillance du Méthane (CH₄) – HSE")
+
+# ================= ZONES FIXES =================
 zoneCentre = ee.Geometry.Polygon([
   [3.37696562, 32.75662617],
   [3.61159117, 32.75663435],
@@ -46,120 +55,11 @@ zoneNord = ee.Geometry.Polygon([
   [3.81077745, 33.01358819],
   [3.18513508, 33.01358581]
 ])
-# ================= LOAD MODEL =================
-MODEL_PATH = "AI_model/cnn_model.h5"
-
-try:
-    cnn_model = load_model(MODEL_PATH)
-except:
-    cnn_model = None
-
-st.write("Modèle chargé :", cnn_model is not None)
-
-# ================= INIT GEE =================
-try:
-    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-        json.dump(ee_key_json, f)
-        key_path = f.name
-    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
-    ee.Initialize(credentials)
-    os.remove(key_path)
-except Exception as e:
-    st.error(f"Erreur GEE : {e}")
-    st.stop()
-
-# ================= CARBON MAPPER =================
-CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
-if not CARBON_API_TOKEN:
-    st.error("❌ Token Carbon Mapper manquant")
-
-# ================= CONFIG =================
-st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
-st.title("Surveillance du Méthane (CH₄) – HSE")
-
-# ================= INPUT =================
-# 🔥 zone autour du site (important pour analyse réelle)
-radius_km = st.slider("Rayon d’analyse (km)", 1, 50, 10)
 
 # ================= PATHS =================
 DATA_DIR = "data"
 csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
-
-# ================= GEE FUNCTION =================
-def zone = ee.Geometry.Point([longitude, latitude]).buffer(radius_km * 1000)
-    end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = end.advance(-days_back, "day")
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterBounds(point)
-        .filterDate(start, end)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
-    )
-
-    size = collection.size().getInfo()
-    if size == 0:
-        return None, None, True
-
-    images = collection.toList(size)
-
-    for i in range(size):
-        img = ee.Image(images.get(i))
-        date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd").getInfo()
-
-        value = img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-        try:
-            v = value.getInfo()
-        except:
-            v = None
-
-        if v is None:
-            continue
-
-        ch4_ppb = float(v)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        no_pass_today = date_img != today
-
-        return ch4_ppb, date_img, no_pass_today
-
-    return None, None, True
-
-# ================= CARBON FUNCTION =================
-def get_ch4_plumes_carbonmapper(lat, lon):
-    url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
-    headers = {"Authorization": f"Bearer {CARBON_API_TOKEN}"}
-    params = {"gas": "CH4", "limit": 20,
-              "bbox": f"{lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}"}
-
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=20)
-        if response.status_code != 200:
-            return []
-
-        data = response.json()
-        plumes = []
-
-        for item in data.get("features", []):
-            coords = item["geometry"]["coordinates"]
-            props = item["properties"]
-            plumes.append({
-                "lat": coords[1],
-                "lon": coords[0],
-                "emission": props.get("emission_rate", 0)
-            })
-
-        return plumes
-    except:
-        return []
 
 # ================= SECTION A =================
 st.markdown("## 📁 Section A — Données")
@@ -178,53 +78,44 @@ if st.button("Afficher CSV"):
     else:
         st.warning("CSV introuvable")
 
-# ================= SECTION C : Carte CH₄ moyenne =================
-st.markdown("## 🗺️ Section C — Carte CH₄ moyenne")
+# ================= SECTION C =================
+st.markdown("## 🗺️ Carte CH₄ moyenne")
 
-year_mean = st.selectbox(
-    "Choisir l'année pour la carte",
-    [2020, 2021, 2022, 2023, 2024, 2025]
-)
+year_mean = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
 
 if st.button("Afficher carte CH₄ moyenne"):
 
-    mean_path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
+    path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
 
-    if os.path.exists(mean_path):
-
-        with rasterio.open(mean_path) as src:
+    if os.path.exists(path):
+        with rasterio.open(path) as src:
             img = src.read(1)
 
-        # Nettoyage des valeurs
         img[img <= 0] = np.nan
 
-        # ================= AFFICHAGE PRO =================
-        fig, ax = plt.subplots(figsize=(6,5))
-
+        fig, ax = plt.subplots()
         im = ax.imshow(img, cmap="viridis")
-
-        # Barre de couleur (IMPORTANT pour PFE)
         plt.colorbar(im, ax=ax, label="CH₄ (ppb)")
-
         ax.set_title(f"CH₄ moyen {year_mean}")
         ax.axis("off")
 
         st.pyplot(fig)
-
     else:
-        st.warning("Carte CH₄ introuvable")
+        st.warning("Carte introuvable")
+
 # ================= SECTION D =================
 st.markdown("## 🔎 Analyse annuelle")
 if st.button("Analyser année"):
     if os.path.exists(csv_annual):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
-# ================= SECTION E : ANALYSE PAR ZONE =================
+
+# ================= SECTION E =================
 st.markdown("## 📊 Analyse CH₄ par Zone et Année")
 
-year = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
+year = st.selectbox("Choisir année analyse", [2020, 2021, 2022, 2023, 2024, 2025])
 
-if st.button("Lancer analyse"):
+if st.button("Lancer analyse CH₄"):
 
     start = ee.Date(f"{year}-01-01")
     end = ee.Date(f"{year}-12-31")
@@ -235,8 +126,8 @@ if st.button("Lancer analyse"):
         .select("CH4_column_volume_mixing_ratio_dry_air")
     )
 
-    def compute_mean(zone, name):
-        mean = collection.mean().reduceRegion(
+    def compute(zone, name):
+        val = collection.mean().reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=zone,
             scale=7000,
@@ -244,136 +135,46 @@ if st.button("Lancer analyse"):
         ).get("CH4_column_volume_mixing_ratio_dry_air")
 
         try:
-            val = mean.getInfo()
+            val = val.getInfo()
         except:
             val = None
 
-        return {"Zone": name, "CH4 moyen (ppb)": val}
+        return {"Zone": name, "CH₄ (ppb)": val}
 
-    results = []
-
-    results.append(compute_mean(zoneCentre, "Centre"))
-    results.append(compute_mean(zoneSud, "Sud"))
-    results.append(compute_mean(zoneNord, "Nord"))
+    results = [
+        compute(zoneCentre, "Centre"),
+        compute(zoneSud, "Sud"),
+        compute(zoneNord, "Nord")
+    ]
 
     df = pd.DataFrame(results)
 
     st.dataframe(df)
-
-    # graphique
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G : Carte interactive CH₄ =================
-st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
 
-from folium.plugins import HeatMap
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte des zones")
 
-# État affichage
-if "show_map" not in st.session_state:
-    st.session_state["show_map"] = False
+if st.button("Afficher carte zones"):
 
-if st.button("Afficher / Masquer la carte"):
-    st.session_state["show_map"] = not st.session_state["show_map"]
+    center = zoneCentre.centroid().coordinates().getInfo()[::-1]
 
-# ================= AFFICHAGE =================
-if st.session_state["show_map"]:
+    m = folium.Map(location=center, zoom_start=7)
 
-    # ================= BASE MAP (SATELLITE) =================
-    m = folium.Map(
-        location=[latitude, longitude],
-        zoom_start=6,
-        tiles=None
-    )
+    def add_zone(zone, name, color):
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[c[1], c[0]] for c in coords]
 
-    # 🌍 Couche satellite (ESRI)
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        name="Satellite",
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    # 🗺️ Couche normale
-    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
-
-    # ================= MARQUEUR SITE =================
-    folium.Marker(
-        [latitude, longitude],
-        popup=f"📍 {site_name}",
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
-
-    # ================= CH4 ZONE =================
-    heat_data = []
-
-    if "ch4" in st.session_state:
-        ch4_val = st.session_state["ch4"]
-
-        if ch4_val >= 1900:
-            color = "red"
-        elif ch4_val >= 1850:
-            color = "orange"
-        else:
-            color = "green"
-
-        # cercle risque
-        folium.Circle(
-            location=[latitude, longitude],
-            radius=5000,
+        folium.Polygon(
+            locations=coords,
             color=color,
             fill=True,
-            fill_opacity=0.4,
-            popup=f"CH₄: {ch4_val:.1f} ppb"
+            fill_opacity=0.3,
+            popup=name
         ).add_to(m)
 
-        # pour heatmap
-        heat_data.append([latitude, longitude, ch4_val])
+    add_zone(zoneCentre, "Centre", "red")
+    add_zone(zoneSud, "Sud", "green")
+    add_zone(zoneNord, "Nord", "blue")
 
-    # ================= PLUMES =================
-    plume_coords = []
-
-    if "plumes" in st.session_state:
-        for plume in st.session_state["plumes"]:
-
-            lat_p = plume["lat"]
-            lon_p = plume["lon"]
-            emission = plume["emission"]
-
-            plume_coords.append([lat_p, lon_p])
-
-            # marker plume
-            folium.Marker(
-                [lat_p, lon_p],
-                popup=f"🔥 Plume: {emission} kg/h",
-                icon=folium.Icon(color="red", icon="cloud")
-            ).add_to(m)
-
-            # heatmap plume
-            heat_data.append([lat_p, lon_p, emission])
-
-    # ================= HEATMAP =================
-    if len(heat_data) > 0:
-        HeatMap(heat_data, radius=25).add_to(m)
-
-    # ================= ZOOM AUTO =================
-    if len(plume_coords) > 0:
-        # zoom sur plumes
-        m.fit_bounds(plume_coords)
-    else:
-        # zoom sur site
-        m.location = [latitude, longitude]
-        m.zoom_start = 8
-
-    # ================= IA =================
-    if "action" in st.session_state:
-        folium.Marker(
-            [latitude, longitude],
-            popup=f"🧠 IA: {st.session_state['action']}",
-            icon=folium.Icon(color="purple")
-        ).add_to(m)
-
-    # ================= CONTROLE =================
-    folium.LayerControl().add_to(m)
-
-    # ================= AFFICHAGE =================
     st_folium(m, width=750, height=550)
