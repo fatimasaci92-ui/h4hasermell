@@ -213,34 +213,43 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ FIXE (GEE + Plumes + Zones)")
+# ================= SECTION G PRO =================
+st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA + Plumes)")
 
-if st.button("Afficher carte CH₄ stable"):
+# 🔥 État persistant (anti refresh)
+if "map_ready" not in st.session_state:
+    st.session_state["map_ready"] = False
 
-    # ✅ COORDONNÉES FIXES (TRÈS IMPORTANT)
+if st.button("Afficher carte PRO"):
+    st.session_state["map_ready"] = True
+
+# ================= AFFICHAGE =================
+if st.session_state["map_ready"]:
+
+    st.info("🛰️ Chargement des données satellites...")
+
+    # ✅ Coordonnées fixes (IMPORTANT)
     site_lat = 32.90
     site_lon = 3.30
 
-    # 🔥 Forcer zone visible (empêche la carte de partir ailleurs)
-    bounds = [
-        [32.4, 2.8],   # Sud-Ouest
-        [33.3, 3.9]    # Nord-Est
-    ]
+    # ✅ Limites fixes (empêche déplacement)
+    bounds = [[32.4, 2.8], [33.3, 3.9]]
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
-    image = (
+    # ================= IMAGE GEE =================
+    collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
         .select("CH4_column_volume_mixing_ratio_dry_air")
         .sort("system:time_start", False)
-        .first()
     )
 
+    image = collection.first()
+
     if image is None:
-        st.warning("⚠️ Pas d'image CH₄")
+        st.error("❌ Aucune image satellite disponible")
     else:
 
         vis_params = {
@@ -249,28 +258,26 @@ if st.button("Afficher carte CH₄ stable"):
             "palette": ["blue", "green", "yellow", "red"]
         }
 
-        # ✅ CARTE FIXE
+        # ================= MAP =================
         m = folium.Map(
             location=[site_lat, site_lon],
             zoom_start=8,
             max_bounds=True
         )
 
-        # 🔒 BLOQUER LA CARTE DANS LA ZONE
         m.fit_bounds(bounds)
 
-        # ================= GEE LAYER =================
+        # 🔥 Couche GEE
         map_id = image.getMapId(vis_params)
 
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="GEE",
-            name="CH4",
-            overlay=True,
-            control=True
+            name="CH₄ Satellite",
+            overlay=True
         ).add_to(m)
 
-        # ================= ZONES =================
+        # ================= ANALYSE ZONES =================
         zones = [
             ("Centre", zoneCentre),
             ("Sud", zoneSud),
@@ -279,7 +286,7 @@ if st.button("Afficher carte CH₄ stable"):
 
         def detect_risk(val):
             if val is None:
-                return "N/A"
+                return "⚪ Pas de donnée"
             elif val > 1900:
                 return "🔴 Critique"
             elif val > 1850:
@@ -287,33 +294,45 @@ if st.button("Afficher carte CH₄ stable"):
             else:
                 return "🟢 Normal"
 
+        results = []
+
         for name, zone in zones:
 
-            mean = image.reduceRegion(
+            value = image.reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=zone,
                 scale=7000,
                 maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-            risk = detect_risk(mean)
+            try:
+                val = value.getInfo()
+            except:
+                val = None
 
-            val_str = f"{round(mean,2)} ppb" if mean else "No data"
+            risk = detect_risk(val)
+            val_str = f"{round(val,2)} ppb" if val else "No data"
 
+            results.append({
+                "Zone": name,
+                "CH₄": val_str,
+                "Risque": risk
+            })
+
+            # 🔥 Dessiner zone
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
 
             folium.Polygon(
                 locations=coords,
-                color="red" if risk=="🔴 Critique" else ("orange" if risk=="🟠 Élevé" else "green"),
+                color="red" if "🔴" in risk else ("orange" if "🟠" in risk else "green"),
                 fill=True,
                 fill_opacity=0.3,
-                popup=f"{name} | CH₄: {val_str} | {risk}"
+                popup=f"{name} | {val_str} | {risk}"
             ).add_to(m)
 
         # ================= PLUMES =================
         import requests
-
         token = st.secrets.get("CARBON_API_TOKEN", "")
 
         if token:
@@ -337,14 +356,14 @@ if st.button("Afficher carte CH₄ stable"):
 
                         folium.CircleMarker(
                             [lat, lon],
-                            radius=6,
+                            radius=7,
                             color="red",
                             fill=True,
-                            popup=f"🔥 {emission} kg/h"
+                            popup=f"🔥 Plume: {emission} kg/h"
                         ).add_to(m)
 
             except:
-                st.warning("Erreur Carbon Mapper")
+                st.warning("⚠️ Carbon Mapper indisponible")
 
         # ================= SITE =================
         folium.Marker(
@@ -355,5 +374,11 @@ if st.button("Afficher carte CH₄ stable"):
 
         folium.LayerControl().add_to(m)
 
-        # ✅ AFFICHAGE STABLE
-        st_folium(m, width=750, height=550)
+        # ================= AFFICHAGE STABLE =================
+        st_folium(m, width=750, height=550, key="map_pro")
+
+        # ================= TABLEAU =================
+        st.markdown("## 📊 Résultats Analyse")
+
+        df = pd.DataFrame(results)
+        st.dataframe(df)
