@@ -213,6 +213,23 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone")[["CH₄ (ppb)"]])
+    st.markdown("## 🚨 Détection automatique")
+
+def detect_anomaly(value):
+    if value is None:
+        return "Pas de données"
+    elif value > 1900:
+        return "🔴 Critique"
+    elif value > 1850:
+        return "🟠 Élevé"
+    else:
+        return "🟢 Normal"
+
+df["Risque"] = df["CH₄ (ppb)"].apply(
+    lambda x: detect_anomaly(x) if isinstance(x, (int, float)) else "N/A"
+)
+
+st.dataframe(df)
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte des zones")
 
