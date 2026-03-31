@@ -292,93 +292,92 @@ if st.session_state["map_ready"]:
             else:
                 return "✅ Normal", "green"
 
-        # ================= ZONES =================
-        zones = [
-            ("Centre", zoneCentre),
-            ("Sud", zoneSud),
-            ("Nord", zoneNord)
-        ]
+        # ================= ZONES + POLYGONES + PLUMES =================
+zones = [
+    ("Centre", zoneCentre),
+    ("Sud", zoneSud),
+    ("Nord", zoneNord)
+]
 
-        results = []
+results = []
 
-        for name, zone in zones:
-
-            value = image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone,
-                scale=7000,
-                maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-            try:
-                val = value.getInfo()
-            except:
-                val = None
-
-            status, color = detect_leak(val)
-
-            val_str = f"{round(val,2)} ppb" if val else "No data"
-
-            results.append({
-                "Zone": name,
-                "CH₄": val_str,
-                "Statut": status
-            })
 for name, zone in zones:
+
+    # ================= Valeur moyenne CH₄ =================
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=zone,
+        scale=7000,
+        maxPixels=1e9
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    try:
+        val = value.getInfo()
+    except:
+        val = None
+
+    # ================= Détection fuite / couleur =================
+    status, color = detect_leak(val)
+    val_str = f"{round(val,2)} ppb" if val else "No data"
+
+    # ================= Stockage résultats =================
+    results.append({
+        "Zone": name,
+        "CH₄": val_str,
+        "Statut": status
+    })
+
+    # ================= Coordonnées POLYGONE =================
     coords = zone.coordinates().getInfo()[0]
-    coords = [[lat, lon] for lon, lat in coords]
-            # 🔥 Corriger coordonnées (lat, lon)
-            coords = zone.coordinates().getInfo()[0]
-            coords = [[lat, lon] for lon, lat in coords]
+    coords = [[lat, lon] for lon, lat in coords]  # inversion nécessaire pour folium
 
-            # 🔥 Dessin POLYGONE (IMPORTANT)
-            folium.Polygon(
-                locations=coords,
-                color=color,
-                fill=True,
-                fill_opacity=0.4,
-                popup=f"""
-                <b>{name}</b><br>
-                CH₄: {val_str}<br>
-                Statut: {status}
-                """
-            ).add_to(m)
+    # ================= Dessin du polygone =================
+    folium.Polygon(
+        locations=coords,
+        color=color,
+        fill=True,
+        fill_opacity=0.4,
+        popup=f"""
+        <b>{name}</b><br>
+        CH₄: {val_str}<br>
+        Statut: {status}
+        """
+    ).add_to(m)
 
-        # ================= PLUMES (Carbon Mapper) =================
-        token = st.secrets.get("CARBON_API_TOKEN", "")
+# ================= Plumes Carbon Mapper =================
+token = st.secrets.get("CARBON_API_TOKEN", "")
 
-        if token:
-            try:
-                import requests
+if token:
+    try:
+        import requests
 
-                r = requests.get(
-                    "https://api.carbonmapper.org/api/v1/catalog/plumes",
-                    headers={"Authorization": f"Bearer {token}"},
-                    params={
-                        "gas": "CH4",
-                        "limit": 20,
-                        "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
-                    }
-                )
+        r = requests.get(
+            "https://api.carbonmapper.org/api/v1/catalog/plumes",
+            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "gas": "CH4",
+                "limit": 20,
+                "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
+            }
+        )
 
-                if r.status_code == 200:
-                    data = r.json()
+        if r.status_code == 200:
+            data = r.json()
+            for f in data.get("features", []):
+                lon, lat = f["geometry"]["coordinates"]
+                emission = f["properties"].get("emission_rate", 0)
 
-                    for f in data.get("features", []):
-                        lon, lat = f["geometry"]["coordinates"]
-                        emission = f["properties"].get("emission_rate", 0)
+                folium.CircleMarker(
+                    [lat, lon],
+                    radius=8,
+                    color="red",
+                    fill=True,
+                    fill_opacity=0.8,
+                    popup=f"🔥 Plume réelle<br>{emission} kg/h"
+                ).add_to(m)
 
-                        folium.CircleMarker(
-                            [lat, lon],
-                            radius=8,
-                            color="red",
-                            fill=True,
-                            fill_opacity=0.8,
-                            popup=f"🔥 Plume réelle<br>{emission} kg/h"
-                        ).add_to(m)
-
-            except:
-                st.warning("⚠️ Carbon Mapper indisponible")
+    except:
+        st.warning("⚠️ Carbon Mapper indisponible")
 
         # ================= SITE =================
         folium.Marker(
