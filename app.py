@@ -151,7 +151,50 @@ if st.button("Lancer analyse CH₄"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
+# ================= SECTION F =================
+st.markdown("## 📡 Analyse CH₄ du jour par zone")
 
+if st.button("Analyser CH₄ aujourd’hui"):
+
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    tomorrow = today.advance(1, "day")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(today, tomorrow)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+
+    def compute_today(zone, name):
+
+        img = collection.mean()
+
+        val = img.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = val.getInfo()
+        except:
+            val = None
+
+        return {"Zone": name, "CH₄ aujourd’hui (ppb)": val}
+
+    results = [
+        compute_today(zoneCentre, "Centre"),
+        compute_today(zoneSud, "Sud"),
+        compute_today(zoneNord, "Nord")
+    ]
+
+    df = pd.DataFrame(results)
+
+    st.dataframe(df)
+
+    # graphique
+    st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte des zones")
 
