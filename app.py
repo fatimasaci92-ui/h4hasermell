@@ -19,6 +19,33 @@ import requests
 from tensorflow.keras.models import load_model
 import folium
 from streamlit_folium import st_folium
+# ================= ZONES FIXES =================
+
+zoneCentre = ee.Geometry.Polygon([
+  [3.37696562, 32.75662617],
+  [3.61159117, 32.75663435],
+  [3.60634757, 33.01349055],
+  [2.93385218, 33.02401464],
+  [2.92757292, 32.89394392],
+  [3.3769424, 32.88954646],
+  [3.37696562, 32.75662617]
+])
+
+zoneSud = ee.Geometry.Polygon([
+  [2.88567251, 32.45093128],
+  [3.37963967, 32.45092697],
+  [3.37964793, 32.88379946],
+  [2.88561768, 32.88378899],
+  [2.88567251, 32.45093128]
+])
+
+zoneNord = ee.Geometry.Polygon([
+  [3.18513508, 33.01358581],
+  [3.18482285, 33.28297225],
+  [3.81093387, 33.27857017],
+  [3.81077745, 33.01358819],
+  [3.18513508, 33.01358581]
+])
 # ================= LOAD MODEL =================
 MODEL_PATH = "AI_model/cnn_model.h5"
 
@@ -52,9 +79,6 @@ st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
 
 # ================= INPUT =================
-latitude = st.number_input("Latitude du site", value=32.93)
-longitude = st.number_input("Longitude du site", value=3.30)
-
 # 🔥 zone autour du site (important pour analyse réelle)
 radius_km = st.slider("Rayon d’analyse (km)", 1, 50, 10)
 
@@ -64,8 +88,7 @@ csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
 csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
 
 # ================= GEE FUNCTION =================
-def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
-    zone = ee.Geometry.Point([longitude, latitude]).buffer(radius_km * 1000)
+def zone = ee.Geometry.Point([longitude, latitude]).buffer(radius_km * 1000)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
 
@@ -196,146 +219,49 @@ if st.button("Analyser année"):
     if os.path.exists(csv_annual):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
+# ================= SECTION E : ANALYSE PAR ZONE =================
+st.markdown("## 📊 Analyse CH₄ par Zone et Année")
 
-# ================= SECTION E : Analyse CH₄ du jour =================
-st.markdown("## 🔍 Analyse CH₄ du jour (GEE + IA + Historique)")
+year = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
 
-if st.button("Analyser CH₄ du jour"):
+if st.button("Lancer analyse"):
 
-    st.info("Analyse en cours...")
+    start = ee.Date(f"{year}-01-01")
+    end = ee.Date(f"{year}-12-31")
 
-    # ================= GEE =================
-    ch4, date_img, no_pass_today = get_latest_ch4_from_gee(latitude, longitude)
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
 
-    if ch4 is None:
-        st.error("⚠️ Aucune image satellite disponible")
-        st.stop()
+    def compute_mean(zone, name):
+        mean = collection.mean().reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-    # ================= HISTORIQUE =================
-    ch4_mean = None
+        try:
+            val = mean.getInfo()
+        except:
+            val = None
 
-    if os.path.exists(csv_hist):
-        df_hist = pd.read_csv(csv_hist)
+        return {"Zone": name, "CH4 moyen (ppb)": val}
 
-        # 🔍 Trouver automatiquement la colonne CH4
-        possible_cols = ["CH4", "ch4", "CH4_mean", "mean", "value"]
+    results = []
 
-        col_found = None
-        for col in possible_cols:
-            if col in df_hist.columns:
-                col_found = col
-                break
+    results.append(compute_mean(zoneCentre, "Centre"))
+    results.append(compute_mean(zoneSud, "Sud"))
+    results.append(compute_mean(zoneNord, "Nord"))
 
-        if col_found is not None:
-            ch4_mean = df_hist[col_found].mean()
-        else:
-            st.warning("⚠️ Colonne CH4 introuvable dans le CSV")
+    df = pd.DataFrame(results)
 
-    else:
-        st.warning("⚠️ Fichier historique introuvable")
+    st.dataframe(df)
 
-    # ================= IA =================
-    if cnn_model is not None:
-        image = np.full((64, 64), ch4)
-        image = image / 3000.0
-        image = image.reshape(1, 64, 64, 1)
-
-        prediction = cnn_model.predict(image)[0][0]
-    else:
-        prediction = None
-
-    # ================= AFFICHAGE =================
-    st.success(f"📅 Date satellite : {date_img}")
-    st.success(f"🛰️ CH₄ (GEE) : {ch4:.1f} ppb")
-
-    if ch4_mean is not None:
-        st.info(f"📊 Moyenne historique : {ch4_mean:.1f} ppb")
-
-    if prediction is not None:
-        st.write(f"🧠 Score IA : {prediction:.2f}")
-
-    # ================= DÉCISION =================
-    if prediction is not None:
-        if prediction > 0.7:
-            risk = "Critique (IA)"
-            action = "Fuite détectée – intervention urgente"
-            st.error("⚠️ IA : fuite détectée !")
-
-        elif prediction > 0.5:
-            risk = "Élevé (IA)"
-            action = "Inspection recommandée"
-            st.warning("⚠️ IA : suspicion de fuite")
-
-        else:
-            risk = "Normal (IA)"
-            action = "Pas de fuite"
-            st.success("✅ IA : pas de fuite")
-
-        # 🔥 Carbon Mapper
-        if prediction > 0.5:
-            plumes = get_ch4_plumes_carbonmapper(latitude, longitude)
-
-            if len(plumes) > 0:
-                st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) !")
-                for plume in plumes:
-                    st.write(f"- {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
-            else:
-                st.warning("⚠️ Aucune plume détectée par Carbon Mapper")
-
-    else:
-        # fallback sans IA
-        if ch4 >= 1900:
-            risk = "Critique"
-            action = "Arrêt + alerte HSE"
-        elif ch4 >= 1850:
-            risk = "Élevé"
-            action = "Inspection urgente"
-        else:
-            risk = "Normal"
-            action = "Surveillance continue"
-
-    # ================= TABLEAU FINAL =================
-    df_day = pd.DataFrame([{
-        "Date satellite": date_img,
-        "Site": site_name,
-        "Latitude": latitude,
-        "Longitude": longitude,
-        "CH₄ (GEE)": round(ch4, 2),
-        "Moyenne historique": round(ch4_mean, 2) if ch4_mean else "N/A",
-        "Risque": risk,
-        "Action HSE": action
-    }])
-
-    st.table(df_day)
-
-    # ================= SAUVEGARDE =================
-    st.session_state["ch4"] = ch4
-    st.session_state["date_img"] = date_img
-    st.session_state["action"] = action
-    st.session_state["site_name"] = site_name
-
-
-    # ================= Stockage session pour PDF =================
-    st.session_state["ch4"] = ch4
-    st.session_state["date_img"] = date_img
-    st.session_state["action"] = action
-    st.session_state["site_name"] = site_name
-# ================= PDF =================
-def generate_pdf(site, date, ch4, action):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-
-    story = []
-    story.append(Paragraph("Rapport CH4", styles["Title"]))
-    story.append(Paragraph(f"Site: {site}", styles["Normal"]))
-    story.append(Paragraph(f"Date: {date}", styles["Normal"]))
-    story.append(Paragraph(f"CH4: {ch4}", styles["Normal"]))
-    story.append(Paragraph(f"Action: {action}", styles["Normal"]))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    # graphique
+    st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G : Carte interactive CH₄ =================
 st.markdown("## 🌍 Carte interactive – Détection CH₄ & IA")
 
