@@ -152,48 +152,59 @@ if st.button("Lancer analyse CH₄"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION F =================
-st.markdown("## 📡 Analyse CH₄ du jour par zone")
+st.markdown("## 📡 Analyse CH₄ récente par zone (version fiable)")
 
-if st.button("Analyser CH₄ aujourd’hui"):
+if st.button("Analyser CH₄ (derniers jours)"):
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    tomorrow = today.advance(1, "day")
+    start = today.advance(-7, "day")   # 🔥 7 jours au lieu de 1
 
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(today, tomorrow)
+        .filterDate(start, today)
         .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
     )
 
-    def compute_today(zone, name):
+    def compute(zone, name):
 
-        img = collection.mean()
+        size = collection.size().getInfo()
 
-        val = img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
+        if size == 0:
+            return {"Zone": name, "CH₄ (ppb)": "Pas de données"}
 
-        try:
-            val = val.getInfo()
-        except:
-            val = None
+        images = collection.toList(size)
 
-        return {"Zone": name, "CH₄ aujourd’hui (ppb)": val}
+        for i in range(size):
+
+            img = ee.Image(images.get(i))
+
+            value = img.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+            try:
+                val = value.getInfo()
+            except:
+                val = None
+
+            if val is not None:
+                return {"Zone": name, "CH₄ (ppb)": round(val, 2)}
+
+        return {"Zone": name, "CH₄ (ppb)": "Aucune valeur valide"}
 
     results = [
-        compute_today(zoneCentre, "Centre"),
-        compute_today(zoneSud, "Sud"),
-        compute_today(zoneNord, "Nord")
+        compute(zoneCentre, "Centre"),
+        compute(zoneSud, "Sud"),
+        compute(zoneNord, "Nord")
     ]
 
     df = pd.DataFrame(results)
 
     st.dataframe(df)
-
-    # graphique
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte des zones")
