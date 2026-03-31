@@ -52,9 +52,11 @@ st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
 
 # ================= INPUT =================
-latitude = st.number_input("Latitude", value=32.93, format="%.6f")
-longitude = st.number_input("Longitude", value=3.30, format="%.6f")
-site_name = st.text_input("Nom du site", value="Hassi R'mel")
+latitude = st.number_input("Latitude du site", value=32.93)
+longitude = st.number_input("Longitude du site", value=3.30)
+
+# 🔥 zone autour du site (important pour analyse réelle)
+radius_km = st.slider("Rayon d’analyse (km)", 1, 50, 10)
 
 # ================= PATHS =================
 DATA_DIR = "data"
@@ -63,7 +65,7 @@ csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
 
 # ================= GEE FUNCTION =================
 def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
-    point = ee.Geometry.Point([longitude, latitude])
+    zone = ee.Geometry.Point([longitude, latitude]).buffer(radius_km * 1000)
     end = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = end.advance(-days_back, "day")
 
@@ -87,7 +89,7 @@ def get_latest_ch4_from_gee(latitude, longitude, days_back=60):
 
         value = img.reduceRegion(
             reducer=ee.Reducer.mean(),
-            geometry=point,
+            geometry=zone,
             scale=7000,
             maxPixels=1e9
         ).get("CH4_column_volume_mixing_ratio_dry_air")
