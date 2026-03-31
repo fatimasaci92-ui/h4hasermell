@@ -231,32 +231,6 @@ df["Risque"] = df["CH₄ (ppb)"].apply(
 
 st.dataframe(df)
 # ================= SECTION G =================
-st.markdown("## 🌍 Carte des zones")
-
-if st.button("Afficher carte zones"):
-
-    center = zoneCentre.centroid().coordinates().getInfo()[::-1]
-
-    m = folium.Map(location=center, zoom_start=7)
-
-    def add_zone(zone, name, color):
-        coords = zone.coordinates().getInfo()[0]
-        coords = [[c[1], c[0]] for c in coords]
-
-        folium.Polygon(
-            locations=coords,
-            color=color,
-            fill=True,
-            fill_opacity=0.3,
-            popup=name
-        ).add_to(m)
-
-    add_zone(zoneCentre, "Centre", "red")
-    add_zone(zoneSud, "Sud", "green")
-    add_zone(zoneNord, "Nord", "blue")
-
-    st_folium(m, width=750, height=550)
-    # ================= SECTION H =================
 st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
 
 if st.button("Afficher carte CH₄ réelle"):
@@ -264,6 +238,7 @@ if st.button("Afficher carte CH₄ réelle"):
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
+    # On prend la dernière image disponible
     image = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -272,26 +247,36 @@ if st.button("Afficher carte CH₄ réelle"):
         .first()
     )
 
-    vis_params = {
-        "min": 1800,
-        "max": 2000,
-        "palette": ["blue", "green", "yellow", "red"]
-    }
+    if image is None:
+        st.warning("⚠️ Pas d'image CH₄ disponible pour cette période")
+    else:
+        vis_params = {
+            "min": 1800,
+            "max": 2000,
+            "palette": ["blue", "green", "yellow", "red"]
+        }
 
-    map_center = zoneCentre.centroid().coordinates().getInfo()[::-1]
+        # Fixer le centre sur le site (coordonnées que tu as déjà)
+        site_lat, site_lon = zoneCentre.centroid().coordinates().getInfo()[::-1]
+        m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
 
-    m = folium.Map(location=map_center, zoom_start=6)
+        # Ajouter la couche GEE
+        map_id = image.getMapId(vis_params)
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="Google Earth Engine",
+            name="CH4",
+            overlay=True,
+            control=True
+        ).add_to(m)
 
-    map_id = ee.Image(image).getMapId(vis_params)
+        # Ajouter marqueur site
+        folium.Marker(
+            [site_lat, site_lon],
+            popup="📍 Site Hassi R'mel",
+            icon=folium.Icon(color="blue")
+        ).add_to(m)
 
-    folium.TileLayer(
-        tiles=map_id["tile_fetcher"].url_format,
-        attr="Google Earth Engine",
-        name="CH4",
-        overlay=True,
-        control=True
-    ).add_to(m)
+        folium.LayerControl().add_to(m)
 
-    folium.LayerControl().add_to(m)
-
-    st_folium(m, width=750, height=500)
+        st_folium(m, width=750, height=500)
