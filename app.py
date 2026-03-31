@@ -110,179 +110,125 @@ if st.button("Analyser année"):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
 
-# ================= SECTION E =================
-st.markdown("## 📊 Analyse CH₄ par Zone et Année")
+# ================= SECTION E : ANALYSE DU JOUR + CARTE DYNAMIQUE =================
+st.markdown("## 🔍 Analyse CH₄ du jour – Zone fixe Hassi R’Mel")
 
-year = st.selectbox("Choisir année analyse", [2020, 2021, 2022, 2023, 2024, 2025])
+# Rayon de la zone autour du site
+radius_km = 10  # tu peux ajuster
+zone_site = ee.Geometry.Point([3.30, 32.93]).buffer(radius_km * 1000)
 
-if st.button("Lancer analyse CH₄"):
+if st.button("Analyser CH₄ du jour"):
 
-    start = ee.Date(f"{year}-01-01")
-    end = ee.Date(f"{year}-12-31")
+    st.info("Analyse en cours... ⏳")
+
+    # ================= GEE : dernière image =================
+    end = ee.Date(datetime.utcnow())
+    start = end.advance(-60, "day")  # 60 derniers jours pour trouver image récente
 
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterBounds(zone_site)
         .filterDate(start, end)
         .select("CH4_column_volume_mixing_ratio_dry_air")
-    )
-
-    def compute(zone, name):
-        val = collection.mean().reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-        try:
-            val = val.getInfo()
-        except:
-            val = None
-
-        return {"Zone": name, "CH₄ (ppb)": val}
-
-    results = [
-        compute(zoneCentre, "Centre"),
-        compute(zoneSud, "Sud"),
-        compute(zoneNord, "Nord")
-    ]
-
-    df = pd.DataFrame(results)
-
-    st.dataframe(df)
-    st.bar_chart(df.set_index("Zone"))
-# ================= SECTION F =================
-st.markdown("## 📡 Analyse CH₄ récente par zone (avec date réelle)")
-
-if st.button("Analyser CH₄ (derniers jours)"):
-
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
         .sort("system:time_start", False)
     )
 
-    def compute(zone, name):
+    if collection.size().getInfo() == 0:
+        st.error("⚠️ Aucune image satellite récente disponible")
+        st.stop()
 
-        size = collection.size().getInfo()
+    latest_image = collection.first()
 
-        if size == 0:
-            return {"Zone": name, "CH₄": "Pas de données", "Date": "-"}
+    # Récupérer la date réelle de l'image
+    date_img = ee.Date(latest_image.get("system:time_start")).format("YYYY-MM-dd").getInfo()
 
-        images = collection.toList(size)
+    # Moyenne CH₄ sur la zone
+    ch4_val = latest_image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=zone_site,
+        scale=1000,  # résolution plus fine pour correspondre à GEE
+        maxPixels=1e9
+    ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
 
-        for i in range(size):
+    st.success(f"📅 Date image satellite : {date_img}")
+    st.success(f"🛰️ CH₄ (GEE) : {ch4_val:.1f} ppb")
 
-            img = ee.Image(images.get(i))
-
-            value = img.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone,
-                scale=7000,
-                maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-            date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd")
-
-            try:
-                val = value.getInfo()
-                date_val = date_img.getInfo()
-            except:
-                val = None
-
-            if val is not None:
-                return {
-                    "Zone": name,
-                    "CH₄ (ppb)": round(val, 2),
-                    "Date image": date_val
-                }
-
-        return {"Zone": name, "CH₄": "Aucune donnée", "Date": "-"}
-
-    results = [
-        compute(zoneCentre, "Centre"),
-        compute(zoneSud, "Sud"),
-        compute(zoneNord, "Nord")
-    ]
-
-    df = pd.DataFrame(results)
-
-    st.dataframe(df)
-    st.bar_chart(df.set_index("Zone")[["CH₄ (ppb)"]])
-    st.markdown("## 🚨 Détection automatique")
-
-st.markdown("## 🚨 Détection automatique")
-
-def detect_anomaly(value):
-    try:
-        if value is None:
-            return "Pas de données"
-        elif float(value) > 1900:
-            return "🔴 Critique"
-        elif float(value) > 1850:
-            return "🟠 Élevé"
-        else:
-            return "🟢 Normal"
-    except:
-        return "N/A"
-
-# Vérifier que la colonne existe et qu'il y a au moins une ligne
-if "CH₄ (ppb)" in df.columns and len(df) > 0:
-    df["Risque"] = df["CH₄ (ppb)"].apply(detect_anomaly)
-    st.dataframe(df)
-else:
-    st.warning("⚠️ Pas de données CH₄ pour détecter les anomalies")
-# ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
-
-if st.button("Afficher carte CH₄ réelle"):
-
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-
-    # On prend la dernière image disponible
-    image = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
-        .first()
-    )
-
-    if image is None:
-        st.warning("⚠️ Pas d'image CH₄ disponible pour cette période")
+    # ================= ANOMALIE =================
+    # Seuils simples
+    if ch4_val >= 1900:
+        risk = "Critique"
+        action = "Intervention HSE urgente"
+        st.error(f"⚠️ Niveau CH₄ critique : {ch4_val:.1f} ppb !")
+    elif ch4_val >= 1850:
+        risk = "Élevé"
+        action = "Inspection recommandée"
+        st.warning(f"⚠️ Niveau CH₄ élevé : {ch4_val:.1f} ppb")
     else:
-        vis_params = {
-            "min": 1800,
-            "max": 2000,
-            "palette": ["blue", "green", "yellow", "red"]
-        }
+        risk = "Normal"
+        action = "Surveillance continue"
+        st.success(f"✅ Niveau CH₄ normal : {ch4_val:.1f} ppb")
 
-        # Fixer le centre sur le site (coordonnées que tu as déjà)
-        site_lat, site_lon = zoneCentre.centroid().coordinates().getInfo()[::-1]
-        m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
+    # ================= CARBON MAPPER =================
+    plumes = get_ch4_plumes_carbonmapper(32.93, 3.30)
+    if len(plumes) > 0:
+        st.error(f"⚠️ {len(plumes)} plume(s) détectée(s) par Carbon Mapper !")
+        for plume in plumes:
+            st.write(f"- {plume['emission']} kg/h à ({plume['lat']:.4f}, {plume['lon']:.4f})")
+    else:
+        st.info("Aucune plume détectée par Carbon Mapper")
 
-        # Ajouter la couche GEE
-        map_id = image.getMapId(vis_params)
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name="CH4",
-            overlay=True,
-            control=True
-        ).add_to(m)
+    # ================= TABLEAU =================
+    df_day = pd.DataFrame([{
+        "Date satellite": date_img,
+        "Site": "Hassi R'mel",
+        "Latitude": 32.93,
+        "Longitude": 3.30,
+        "CH₄ (ppb)": round(ch4_val, 2),
+        "Risque": risk,
+        "Action HSE": action
+    }])
+    st.table(df_day)
 
-        # Ajouter marqueur site
+    # ================= CARTE DYNAMIQUE =================
+    from folium.plugins import HeatMap
+
+    m = folium.Map(location=[32.93, 3.30], zoom_start=8, tiles=None)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
+
+    # Cercle site + couleur selon risque
+    if ch4_val >= 1900:
+        color = "red"
+    elif ch4_val >= 1850:
+        color = "orange"
+    else:
+        color = "green"
+
+    folium.Circle(
+        location=[32.93, 3.30],
+        radius=radius_km*1000,
+        color=color,
+        fill=True,
+        fill_opacity=0.4,
+        popup=f"CH₄: {ch4_val:.1f} ppb"
+    ).add_to(m)
+
+    # Heatmap plumes
+    heat_data = [[32.93, 3.30, ch4_val]]
+    for plume in plumes:
+        heat_data.append([plume["lat"], plume["lon"], plume["emission"]])
         folium.Marker(
-            [site_lat, site_lon],
-            popup="📍 Site Hassi R'mel",
-            icon=folium.Icon(color="blue")
+            [plume["lat"], plume["lon"]],
+            popup=f"🔥 Plume: {plume['emission']} kg/h",
+            icon=folium.Icon(color="red", icon="cloud")
         ).add_to(m)
 
-        folium.LayerControl().add_to(m)
-
-        st_folium(m, width=750, height=500)
+    HeatMap(heat_data, radius=25).add_to(m)
+    folium.LayerControl().add_to(m)
+    st_folium(m, width=750, height=550)
