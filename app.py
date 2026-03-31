@@ -213,20 +213,15 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ dynamique – GEE + Carbon Mapper + Zones")
+# ================= SECTION G : Carte CH₄ dynamique =================
+st.markdown("## 🌍 Carte CH₄ dynamique (GEE) avec plumes et IA")
 
-if st.button("Afficher carte CH₄ réelle avec zones et plumes"):
+if st.button("Afficher carte CH₄ réelle"):
 
-    # 🔹 Coordonnées fixes du site
-    site_lat = 32.89
-    site_lon = 3.38
-
-    # 🔹 Période : dernières 7 jours
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
+    start = today.advance(-7, "day")  # dernières 7 jours
 
-    # 🔹 Dernière image CH4 disponible
+    # Image la plus récente
     image = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -244,36 +239,28 @@ if st.button("Afficher carte CH₄ réelle avec zones et plumes"):
             "palette": ["blue", "green", "yellow", "red"]
         }
 
-        # 🔹 Carte centrée sur le site
+        # 🔥 Centre fixe sur le site (centre de zoneCentre)
+        site_lat, site_lon = zoneCentre.centroid().coordinates().getInfo()[::-1]
+
+        # Base map
         m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
 
-        # 🔹 Ajouter couche GEE
+        # Ajouter la couche GEE
         map_id = image.getMapId(vis_params)
-        folium.raster_layers.TileLayer(
+        folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
-            name="CH4 (GEE)",
+            name="CH4",
             overlay=True,
             control=True
         ).add_to(m)
 
-        # 🔹 Marqueur site
-        folium.Marker(
-            [site_lat, site_lon],
-            popup="📍 Site Hassi R'mel",
-            icon=folium.Icon(color="blue", icon="industry")
-        ).add_to(m)
-
-        # 🔹 Ajouter zones Centre, Sud, Nord
-        zones = {
-            "Centre": zoneCentre,
-            "Sud": zoneSud,
-            "Nord": zoneNord
-        }
+        # ================= CH₄ par zone =================
+        zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
         def detect_risk(val):
             if val is None:
-                return "N/A"
+                return "Pas de donnée"
             elif val > 1900:
                 return "🔴 Critique"
             elif val > 1850:
@@ -281,63 +268,63 @@ if st.button("Afficher carte CH₄ réelle avec zones et plumes"):
             else:
                 return "🟢 Normal"
 
-        for name, geom in zones.items():
+        for name, zone in zones:
             mean = image.reduceRegion(
                 reducer=ee.Reducer.mean(),
-                geometry=geom,
+                geometry=zone,
                 scale=7000,
                 maxPixels=1e9
             ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
 
             risk = detect_risk(mean)
-            # Convertir polygon GEE en coordonnées lat-lon
-            coords = geom.coordinates().getInfo()[0]
-            coords_latlon = [[lat, lon] for lon, lat in coords]
 
-            folium.Polygon(
-                locations=coords_latlon,
-                color="red" if risk=="🔴 Critique" else ("orange" if risk=="🟠 Élevé" else "green"),
+            val_str = f"{round(mean,2)} ppb" if mean is not None else "Pas de donnée"
+
+            # Ajouter un cercle sur la carte
+            folium.Circle(
+                location=[site_lat, site_lon],  # ici tu peux adapter si tu veux le centre exact de la zone
+                radius=5000,
+                color="red" if risk == "🔴 Critique" else ("orange" if risk == "🟠 Élevé" else "green"),
                 fill=True,
-                fill_opacity=0.3,
-                popup=f"{name}\nCH₄ moyen: {round(mean,2)} ppb\nRisque: {risk}"
+                fill_opacity=0.4,
+                popup=f"{name}\nCH₄ moyen: {val_str}\nRisque: {risk}"
             ).add_to(m)
 
-        # 🔹 Ajouter plumes Carbon Mapper
+        # ================= Plumes Carbon Mapper =================
+        # ⚠️ Assurez-vous que CARBON_API_TOKEN est défini dans secrets
+        import requests
+
         CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
         if CARBON_API_TOKEN:
-            import requests
-            url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
             headers = {"Authorization": f"Bearer {CARBON_API_TOKEN}"}
             params = {
                 "gas": "CH4",
-                "limit": 50,
+                "limit": 20,
                 "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
             }
-
             try:
-                response = requests.get(url, headers=headers, params=params, timeout=20)
+                response = requests.get("https://api.carbonmapper.org/api/v1/catalog/plumes", headers=headers, params=params, timeout=20)
                 if response.status_code == 200:
                     data = response.json()
-                    for item in data.get("features", []):
-                        coords = item["geometry"]["coordinates"]
-                        props = item["properties"]
-                        emission = props.get("emission_rate", 0)
-
-                        folium.CircleMarker(
-                            location=[coords[1], coords[0]],
-                            radius=7,
-                            color="red" if emission > 50 else "orange",
-                            fill=True,
-                            fill_opacity=0.6,
-                            popup=f"🔥 Plume: {emission} kg/h"
+                    for feat in data.get("features", []):
+                        lon_p, lat_p = feat["geometry"]["coordinates"]
+                        emission = feat["properties"].get("emission_rate", 0)
+                        folium.Marker(
+                            [lat_p, lon_p],
+                            popup=f"🔥 Plume CH₄: {emission} kg/h",
+                            icon=folium.Icon(color="red", icon="cloud")
                         ).add_to(m)
             except:
-                st.warning("Impossible de récupérer les plumes Carbon Mapper")
-        else:
-            st.warning("Token Carbon Mapper manquant")
+                st.warning("Erreur récupération plumes Carbon Mapper")
 
-        # 🔹 Contrôle des couches
+        # ================= Marqueur site =================
+        folium.Marker(
+            [site_lat, site_lon],
+            popup="📍 Site Hassi R'mel",
+            icon=folium.Icon(color="blue")
+        ).add_to(m)
+
         folium.LayerControl().add_to(m)
 
-        # 🔹 Affichage
-        st_folium(m, width=750, height=550)
+        # Affichage
+        st_folium(m, width=750, height=500)
