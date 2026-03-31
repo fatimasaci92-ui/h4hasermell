@@ -302,15 +302,7 @@ if st.session_state["map_ready"]:
         results = []
 
         for name, zone in zones:
-all_coords = []
 
-for name, zone in zones:
-    coords = zone.coordinates().getInfo()[0]
-    coords = [[lat, lon] for lon, lat in coords]
-    all_coords.extend(coords)
-
-if all_coords:
-    m.fit_bounds(all_coords)
             value = image.reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=zone,
@@ -332,7 +324,15 @@ if all_coords:
                 "CH₄": val_str,
                 "Statut": status
             })
+all_coords = []
 
+for name, zone in zones:
+    coords = zone.coordinates().getInfo()[0]
+    coords = [[lat, lon] for lon, lat in coords]
+    all_coords.extend(coords)
+
+if all_coords:
+    m.fit_bounds(all_coords)
             # 🔥 Corriger coordonnées (lat, lon)
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
