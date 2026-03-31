@@ -216,29 +216,23 @@ if st.button("Analyser CH₄ (derniers jours)"):
 # ================= SECTION G PRO =================
 st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA + Plumes)")
 
-# 🔥 État persistant (anti refresh)
 if "map_ready" not in st.session_state:
     st.session_state["map_ready"] = False
 
 if st.button("Afficher carte PRO"):
     st.session_state["map_ready"] = True
 
-# ================= AFFICHAGE =================
 if st.session_state["map_ready"]:
 
     st.info("🛰️ Chargement des données satellites...")
 
-    # ✅ Coordonnées fixes (IMPORTANT)
+    # ================= SITE FIXE =================
     site_lat = 32.90
     site_lon = 3.30
-
-    # ✅ Limites fixes (empêche déplacement)
-    bounds = [[32.4, 2.8], [33.3, 3.9]]
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
-    # ================= IMAGE GEE =================
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -252,74 +246,52 @@ if st.session_state["map_ready"]:
         st.error("❌ Aucune image satellite disponible")
     else:
 
-        vis_params = {
+        # ================= MAP =================
+        m = folium.Map(
+            location=[site_lat, site_lon],
+            zoom_start=8,
+            tiles=None
+        )
+
+        # 🌍 Satellite (comme Carbon Mapper)
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri Satellite",
+            name="Satellite"
+        ).add_to(m)
+
+        # 🔥 Couche CH4 GEE
+        map_id = image.getMapId({
             "min": 1800,
             "max": 2000,
             "palette": ["blue", "green", "yellow", "red"]
-        }
+        })
 
-        # ================= MAP SATELLITE PRO =================
+        folium.TileLayer(
+            tiles=map_id["tile_fetcher"].url_format,
+            attr="CH4",
+            name="CH₄",
+            overlay=True,
+            opacity=0.6
+        ).add_to(m)
 
-m = folium.Map(
-    location=[site_lat, site_lon],
-    zoom_start=8,
-    tiles=None,
-    max_bounds=True
-)
+        # ================= IA =================
+        def detect_leak(val):
+            if val is None:
+                return "Aucune donnée", "gray"
+            elif val > 1920:
+                return "🔥 Fuite détectée", "red"
+            elif val > 1880:
+                return "⚠️ Suspect", "orange"
+            else:
+                return "✅ Normal", "green"
 
-# 🌍 SATELLITE (IMPORTANT 🔥)
-folium.TileLayer(
-    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attr="Esri Satellite",
-    name="Satellite",
-    overlay=False,
-    control=True
-).add_to(m)
-
-# 🗺️ OPTION carte normale
-folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
-
-# 🔥 CH4 GEE (overlay transparent)
-map_id = image.getMapId({
-    "min": 1800,
-    "max": 2000,
-    "palette": ["blue", "green", "yellow", "red"]
-})
-
-folium.TileLayer(
-    tiles=map_id["tile_fetcher"].url_format,
-    attr="CH4",
-    name="CH₄ (Satellite)",
-    overlay=True,
-    opacity=0.6   # 🔥 transparence comme Carbon Mapper
-).add_to(m)
-#  AI
-def detect_leak(val):
-    if val is None:
-        return "Aucune donnée", "gray"
-    elif val > 1920:
-        return "🔥 Fuite détectée", "red"
-    elif val > 1880:
-        return "⚠️ Suspect", "orange"
-    else:
-        return "✅ Normal", "green"
-        
-        # ================= ANALYSE ZONES =================
+        # ================= ZONES =================
         zones = [
             ("Centre", zoneCentre),
             ("Sud", zoneSud),
             ("Nord", zoneNord)
         ]
-
-        def detect_risk(val):
-            if val is None:
-                return "⚪ Pas de donnée"
-            elif val > 1900:
-                return "🔴 Critique"
-            elif val > 1850:
-                return "🟠 Élevé"
-            else:
-                return "🟢 Normal"
 
         results = []
 
@@ -337,34 +309,29 @@ def detect_leak(val):
             except:
                 val = None
 
-            risk = detect_risk(val)
+            status, color = detect_leak(val)
+
             val_str = f"{round(val,2)} ppb" if val else "No data"
 
             results.append({
                 "Zone": name,
                 "CH₄": val_str,
-                "Risque": risk
+                "Statut": status
             })
 
-            # 🔥 Dessiner zone
+            # 🔥 POLYGONE FIXE
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
 
-           status, color = detect_leak(val)
+            folium.Polygon(
+                locations=coords,
+                color=color,
+                fill=True,
+                fill_opacity=0.4,
+                popup=f"{name}\nCH₄: {val_str}\n{status}"
+            ).add_to(m)
 
-folium.Polygon(
-    locations=coords,
-    color=color,
-    fill=True,
-    fill_opacity=0.4,
-    popup=f"""
-    <b>{name}</b><br>
-    CH₄: {val_str}<br>
-    Statut: {status}
-    """
-).add_to(m)
-
-        # ================= PLUMES =================
+        # ================= CARBON MAPPER =================
         import requests
         token = st.secrets.get("CARBON_API_TOKEN", "")
 
@@ -388,13 +355,14 @@ folium.Polygon(
                         emission = f["properties"].get("emission_rate", 0)
 
                         folium.CircleMarker(
-    [lat, lon],
-    radius=8,
-    color="red",
-    fill=True,
-    fill_opacity=0.8,
-    popup=f"🔥 Fuite réelle\n{emission} kg/h"
-).add_to(m)
+                            [lat, lon],
+                            radius=8,
+                            color="red",
+                            fill=True,
+                            fill_opacity=0.8,
+                            popup=f"🔥 Fuite réelle\n{emission} kg/h"
+                        ).add_to(m)
+
             except:
                 st.warning("⚠️ Carbon Mapper indisponible")
 
@@ -407,11 +375,10 @@ folium.Polygon(
 
         folium.LayerControl().add_to(m)
 
-        # ================= AFFICHAGE STABLE =================
+        # 🔥 AFFICHAGE STABLE (clé unique)
         st_folium(m, width=750, height=550, key="map_pro")
 
         # ================= TABLEAU =================
         st.markdown("## 📊 Résultats Analyse")
-
         df = pd.DataFrame(results)
         st.dataframe(df)
