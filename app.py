@@ -214,19 +214,19 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ dynamique – GEE + Carbon Mapper")
+st.markdown("## 🌍 Carte CH₄ dynamique – GEE + Carbon Mapper + Zones")
 
-if st.button("Afficher carte CH₄ réelle avec plumes"):
+if st.button("Afficher carte CH₄ réelle avec zones et plumes"):
 
-    # 🔹 Fixe les coordonnées exactes du site
+    # 🔹 Coordonnées fixes du site
     site_lat = 32.89
     site_lon = 3.38
 
-    # 🔹 Définir période pour la dernière image
+    # 🔹 Période : dernières 7 jours
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")  # dernières 7 jours
+    start = today.advance(-7, "day")
 
-    # 🔹 Récupérer la dernière image disponible
+    # 🔹 Dernière image CH4 disponible
     image = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -238,19 +238,18 @@ if st.button("Afficher carte CH₄ réelle avec plumes"):
     if image is None:
         st.warning("⚠️ Pas d'image CH₄ disponible pour cette période")
     else:
-        # 🔹 Paramètres visuels
         vis_params = {
             "min": 1800,
             "max": 2000,
             "palette": ["blue", "green", "yellow", "red"]
         }
 
-        # 🔹 Créer carte folium centrée sur le site
+        # 🔹 Carte centrée sur le site
         m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
 
         # 🔹 Ajouter couche GEE
         map_id = image.getMapId(vis_params)
-        folium.TileLayer(
+        folium.raster_layers.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
             name="CH4 (GEE)",
@@ -258,18 +257,55 @@ if st.button("Afficher carte CH₄ réelle avec plumes"):
             control=True
         ).add_to(m)
 
-        # 🔹 Ajouter marqueur du site
+        # 🔹 Marqueur site
         folium.Marker(
             [site_lat, site_lon],
             popup="📍 Site Hassi R'mel",
             icon=folium.Icon(color="blue", icon="industry")
         ).add_to(m)
 
-        # 🔹 Ajouter plumes Carbon Mapper (API)
+        # 🔹 Ajouter zones Centre, Sud, Nord
+        zones = {
+            "Centre": zoneCentre,
+            "Sud": zoneSud,
+            "Nord": zoneNord
+        }
+
+        def detect_risk(val):
+            if val is None:
+                return "N/A"
+            elif val > 1900:
+                return "🔴 Critique"
+            elif val > 1850:
+                return "🟠 Élevé"
+            else:
+                return "🟢 Normal"
+
+        for name, geom in zones.items():
+            mean = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geom,
+                scale=7000,
+                maxPixels=1e9
+            ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+
+            risk = detect_risk(mean)
+            # Convertir polygon GEE en coordonnées lat-lon
+            coords = geom.coordinates().getInfo()[0]
+            coords_latlon = [[lat, lon] for lon, lat in coords]
+
+            folium.Polygon(
+                locations=coords_latlon,
+                color="red" if risk=="🔴 Critique" else ("orange" if risk=="🟠 Élevé" else "green"),
+                fill=True,
+                fill_opacity=0.3,
+                popup=f"{name}\nCH₄ moyen: {round(mean,2)} ppb\nRisque: {risk}"
+            ).add_to(m)
+
+        # 🔹 Ajouter plumes Carbon Mapper
         CARBON_API_TOKEN = st.secrets.get("CARBON_API_TOKEN", "")
         if CARBON_API_TOKEN:
             import requests
-
             url = "https://api.carbonmapper.org/api/v1/catalog/plumes"
             headers = {"Authorization": f"Bearer {CARBON_API_TOKEN}"}
             params = {
@@ -300,8 +336,8 @@ if st.button("Afficher carte CH₄ réelle avec plumes"):
         else:
             st.warning("Token Carbon Mapper manquant")
 
-        # 🔹 Ajouter LayerControl pour activer/désactiver couches
+        # 🔹 Contrôle des couches
         folium.LayerControl().add_to(m)
 
-        # 🔹 Afficher carte
-        st_folium(m, width=750, height=500)
+        # 🔹 Affichage
+        st_folium(m, width=750, height=550)
