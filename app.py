@@ -110,7 +110,153 @@ if st.button("Analyser année"):
         df = pd.read_csv(csv_annual)
         st.dataframe(df)
 
-# ================= SECTION H =================
+# ================= SECTION E =================
+st.markdown("## 📊 Analyse CH₄ par Zone et Année")
+
+year = st.selectbox("Choisir année analyse", [2020, 2021, 2022, 2023, 2024, 2025])
+
+if st.button("Lancer analyse CH₄"):
+
+    start = ee.Date(f"{year}-01-01")
+    end = ee.Date(f"{year}-12-31")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+
+    def compute(zone, name):
+        val = collection.mean().reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = val.getInfo()
+        except:
+            val = None
+
+        return {"Zone": name, "CH₄ (ppb)": val}
+
+    results = [
+        compute(zoneCentre, "Centre"),
+        compute(zoneSud, "Sud"),
+        compute(zoneNord, "Nord")
+    ]
+
+    df = pd.DataFrame(results)
+
+    st.dataframe(df)
+    st.bar_chart(df.set_index("Zone"))
+# ================= SECTION F =================
+st.markdown("## 📡 Analyse CH₄ récente par zone (avec date réelle)")
+
+if st.button("Analyser CH₄ (derniers jours)"):
+
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
+    )
+
+    def compute(zone, name):
+
+        size = collection.size().getInfo()
+
+        if size == 0:
+            return {"Zone": name, "CH₄": "Pas de données", "Date": "-"}
+
+        images = collection.toList(size)
+
+        for i in range(size):
+
+            img = ee.Image(images.get(i))
+
+            value = img.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+            date_img = ee.Date(img.get("system:time_start")).format("YYYY-MM-dd")
+
+            try:
+                val = value.getInfo()
+                date_val = date_img.getInfo()
+            except:
+                val = None
+
+            if val is not None:
+                return {
+                    "Zone": name,
+                    "CH₄ (ppb)": round(val, 2),
+                    "Date image": date_val
+                }
+
+        return {"Zone": name, "CH₄": "Aucune donnée", "Date": "-"}
+
+    results = [
+        compute(zoneCentre, "Centre"),
+        compute(zoneSud, "Sud"),
+        compute(zoneNord, "Nord")
+    ]
+
+    df = pd.DataFrame(results)
+
+    st.dataframe(df)
+    st.bar_chart(df.set_index("Zone")[["CH₄ (ppb)"]])
+    st.markdown("## 🚨 Détection automatique")
+
+def detect_anomaly(value):
+    if value is None:
+        return "Pas de données"
+    elif value > 1900:
+        return "🔴 Critique"
+    elif value > 1850:
+        return "🟠 Élevé"
+    else:
+        return "🟢 Normal"
+
+df["Risque"] = df["CH₄ (ppb)"].apply(
+    lambda x: detect_anomaly(x) if isinstance(x, (int, float)) else "N/A"
+)
+
+st.dataframe(df)
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte des zones")
+
+if st.button("Afficher carte zones"):
+
+    center = zoneCentre.centroid().coordinates().getInfo()[::-1]
+
+    m = folium.Map(location=center, zoom_start=7)
+
+    def add_zone(zone, name, color):
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[c[1], c[0]] for c in coords]
+
+        folium.Polygon(
+            locations=coords,
+            color=color,
+            fill=True,
+            fill_opacity=0.3,
+            popup=name
+        ).add_to(m)
+
+    add_zone(zoneCentre, "Centre", "red")
+    add_zone(zoneSud, "Sud", "green")
+    add_zone(zoneNord, "Nord", "blue")
+
+    st_folium(m, width=750, height=550)
+    # ================= SECTION H =================
 st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
 
 if st.button("Afficher carte CH₄ réelle"):
@@ -149,74 +295,3 @@ if st.button("Afficher carte CH₄ réelle"):
     folium.LayerControl().add_to(m)
 
     st_folium(m, width=750, height=500)
-    st.markdown("## 🚨 Détection automatique")
-
-def detect_anomaly(value):
-    try:
-        if value is None:
-            return "Pas de données"
-        elif float(value) > 1900:
-            return "🔴 Critique"
-        elif float(value) > 1850:
-            return "🟠 Élevé"
-        else:
-            return "🟢 Normal"
-    except:
-        return "N/A"
-
-# Vérifier que la colonne existe et qu'il y a au moins une ligne
-if "CH₄ (ppb)" in df.columns and len(df) > 0:
-    df["Risque"] = df["CH₄ (ppb)"].apply(detect_anomaly)
-    st.dataframe(df)
-else:
-    st.warning("⚠️ Pas de données CH₄ pour détecter les anomalies")
-    # ================= SECTION H =================
-st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
-
-if st.button("Afficher carte CH₄ réelle"):
-
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-
-    # On prend la dernière image disponible
-    image = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
-        .first()
-    )
-
-    if image is None:
-        st.warning("⚠️ Pas d'image CH₄ disponible pour cette période")
-    else:
-        vis_params = {
-            "min": 1800,
-            "max": 2000,
-            "palette": ["blue", "green", "yellow", "red"]
-        }
-
-        # Fixer le centre sur le site (coordonnées que tu as déjà)
-        site_lat, site_lon = zoneCentre.centroid().coordinates().getInfo()[::-1]
-        m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
-
-        # Ajouter la couche GEE
-        map_id = image.getMapId(vis_params)
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="Google Earth Engine",
-            name="CH4",
-            overlay=True,
-            control=True
-        ).add_to(m)
-
-        # Ajouter marqueur site
-        folium.Marker(
-            [site_lat, site_lon],
-            popup="📍 Site Hassi R'mel",
-            icon=folium.Icon(color="blue")
-        ).add_to(m)
-
-        folium.LayerControl().add_to(m)
-
-        st_folium(m, width=750, height=500)
