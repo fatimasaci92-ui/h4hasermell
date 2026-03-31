@@ -206,57 +206,29 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-def detect_anomaly(value):
-    if value is None:
-        return "Pas de données"
-    elif value > 1900:
-        return "🔴 Critique"
-    elif value > 1850:
-        return "🟠 Élevé"
-    else:
-        return "🟢 Normal"
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte des zones")
 
-df["Risque"] = df["CH₄ (ppb)"].apply(
-    lambda x: detect_anomaly(x) if isinstance(x, (int, float)) else "N/A"
-)
+if st.button("Afficher carte zones"):
 
-st.dataframe(df)
-    # ================= SECTION H =================
-st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
+    center = zoneCentre.centroid().coordinates().getInfo()[::-1]
 
-if st.button("Afficher carte CH₄ réelle"):
+    m = folium.Map(location=center, zoom_start=7)
 
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
+    def add_zone(zone, name, color):
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[c[1], c[0]] for c in coords]
 
-    image = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
-        .first()
-    )
+        folium.Polygon(
+            locations=coords,
+            color=color,
+            fill=True,
+            fill_opacity=0.3,
+            popup=name
+        ).add_to(m)
 
-    vis_params = {
-        "min": 1800,
-        "max": 2000,
-        "palette": ["blue", "green", "yellow", "red"]
-    }
+    add_zone(zoneCentre, "Centre", "red")
+    add_zone(zoneSud, "Sud", "green")
+    add_zone(zoneNord, "Nord", "blue")
 
-    map_center = zoneCentre.centroid().coordinates().getInfo()[::-1]
-
-    m = folium.Map(location=map_center, zoom_start=6)
-
-    map_id = ee.Image(image).getMapId(vis_params)
-
-    folium.TileLayer(
-        tiles=map_id["tile_fetcher"].url_format,
-        attr="Google Earth Engine",
-        name="CH4",
-        overlay=True,
-        control=True
-    ).add_to(m)
-
-    folium.LayerControl().add_to(m)
-
-    st_folium(m, width=750, height=500)
+    st_folium(m, width=750, height=550)
