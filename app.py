@@ -155,9 +155,8 @@ if st.button("Lancer analyse CH₄"):
 st.markdown("## 📡 Analyse CH₄ récente par zone (version fiable)")
 
 if st.button("Analyser CH₄ (derniers jours)"):
-
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")   # 🔥 7 jours au lieu de 1
+    start = today.advance(-7, "day")   # 7 derniers jours
 
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
@@ -167,18 +166,13 @@ if st.button("Analyser CH₄ (derniers jours)"):
     )
 
     def compute(zone, name):
-
         size = collection.size().getInfo()
-
         if size == 0:
-            return {"Zone": name, "CH₄ (ppb)": "Pas de données"}
+            return {"Zone": name, "CH₄ (ppb)": None}
 
         images = collection.toList(size)
-
         for i in range(size):
-
             img = ee.Image(images.get(i))
-
             value = img.reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=zone,
@@ -194,7 +188,7 @@ if st.button("Analyser CH₄ (derniers jours)"):
             if val is not None:
                 return {"Zone": name, "CH₄ (ppb)": round(val, 2)}
 
-        return {"Zone": name, "CH₄ (ppb)": "Aucune valeur valide"}
+        return {"Zone": name, "CH₄ (ppb)": None}
 
     results = [
         compute(zoneCentre, "Centre"),
@@ -204,25 +198,21 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     df = pd.DataFrame(results)
 
+    # 🔥 Détection automatique des anomalies
+    def detect_anomaly(value):
+        if value is None:
+            return "Pas de données"
+        elif value > 1900:
+            return "🔴 Critique"
+        elif value > 1850:
+            return "🟠 Élevé"
+        else:
+            return "🟢 Normal"
+
+    df["Risque"] = df["CH₄ (ppb)"].apply(detect_anomaly)
+
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-    st.markdown("## 🚨 Détection automatique")
-
-def detect_anomaly(value):
-    if value is None:
-        return "Pas de données"
-    elif value > 1900:
-        return "🔴 Critique"
-    elif value > 1850:
-        return "🟠 Élevé"
-    else:
-        return "🟢 Normal"
-
-df["Risque"] = df["CH₄ (ppb)"].apply(
-    lambda x: detect_anomaly(x) if isinstance(x, (int, float)) else "N/A"
-)
-
-st.dataframe(df)
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
 
