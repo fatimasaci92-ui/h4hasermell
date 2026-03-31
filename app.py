@@ -324,13 +324,9 @@ if st.session_state["map_ready"]:
                 "CH₄": val_str,
                 "Statut": status
             })
-# Correct
-all_coords = []
-
 for name, zone in zones:
     coords = zone.coordinates().getInfo()[0]
     coords = [[lat, lon] for lon, lat in coords]
-    all_coords.extend(coords)
             # 🔥 Corriger coordonnées (lat, lon)
             coords = zone.coordinates().getInfo()[0]
             coords = [[lat, lon] for lon, lat in coords]
