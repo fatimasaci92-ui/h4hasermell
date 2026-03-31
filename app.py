@@ -239,3 +239,42 @@ if st.button("Afficher carte zones"):
     add_zone(zoneNord, "Nord", "blue")
 
     st_folium(m, width=750, height=550)
+    # ================= SECTION H =================
+st.markdown("## 🌍 Carte CH₄ dynamique (GEE)")
+
+if st.button("Afficher carte CH₄ réelle"):
+
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+
+    image = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+        .sort("system:time_start", False)
+        .first()
+    )
+
+    vis_params = {
+        "min": 1800,
+        "max": 2000,
+        "palette": ["blue", "green", "yellow", "red"]
+    }
+
+    map_center = zoneCentre.centroid().coordinates().getInfo()[::-1]
+
+    m = folium.Map(location=map_center, zoom_start=6)
+
+    map_id = ee.Image(image).getMapId(vis_params)
+
+    folium.TileLayer(
+        tiles=map_id["tile_fetcher"].url_format,
+        attr="Google Earth Engine",
+        name="CH4",
+        overlay=True,
+        control=True
+    ).add_to(m)
+
+    folium.LayerControl().add_to(m)
+
+    st_folium(m, width=750, height=500)
