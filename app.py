@@ -229,19 +229,38 @@ if st.button("Afficher carte PRO"):
         st.error("❌ Pas d'image")
         st.stop()
 
-    m = folium.Map(location=[site_lat, site_lon], zoom_start=7)
+    m = folium.Map(location=[32.90, 3.30], zoom_start=10, control_scale=True)
 
-    map_id = image.getMapId({
-        "min": 1800,
-        "max": 2000,
-        "palette": ["blue", "green", "yellow", "red"]
-    })
+for name, zone in zones:
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=zone,
+        scale=7000,
+        maxPixels=1e9,
+        bestEffort=True
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-    folium.TileLayer(
-        tiles=map_id["tile_fetcher"].url_format,
-        attr="CH4",
-        overlay=True
+    try:
+        val = value.getInfo()
+    except:
+        val = None
+
+    status, color = detect(val)
+    val_str = f"{round(val,2)} ppb" if val else "No data"
+    results.append({"Zone": name, "CH₄": val_str, "Statut": status})
+
+    coords = zone.coordinates().getInfo()[0]
+    coords = [[lat, lon] for lon, lat in coords]  # lat/lon pour folium
+
+    folium.Polygon(
+        locations=coords,
+        color=color,
+        fill=True,
+        fill_opacity=0.4
     ).add_to(m)
+
+st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
+st.dataframe(pd.DataFrame(results))
 
     def detect(val):
         if val is None:
