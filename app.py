@@ -207,16 +207,15 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G + H : Carte satellite + AI stable =================
+# Carte satellite + AI stable (pas de HeatMap dynamique)
 st.markdown("## 🌍 Carte Satellite CH₄ + Détection AI")
 
-# ==== Carte satellite avec GEE ====
 site_lat = 32.90
 site_lon = 3.30
 
 today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
 start = today.advance(-7, "day")
 
-# Image CH₄ moyenne sur les derniers 7 jours
 collection = (
     ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
     .filterDate(start, today)
@@ -224,7 +223,7 @@ collection = (
 )
 image = collection.mean()
 
-# Récupérer le Map ID pour la carte satellite
+# Map ID pour satellite
 map_id = image.getMapId({
     "min": 1800,
     "max": 2000,
@@ -233,7 +232,6 @@ map_id = image.getMapId({
 
 m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
 
-# Ajouter couche satellite CH₄
 folium.TileLayer(
     tiles=map_id["tile_fetcher"].url_format,
     attr="CH₄ COPERNICUS/S5P",
@@ -241,7 +239,7 @@ folium.TileLayer(
     name="CH₄ Satellite"
 ).add_to(m)
 
-# ==== Détection AI / Polygones ====
+# Détection AI / polygones
 def detect(val):
     if val is None:
         return "❌ No data", "gray"
@@ -252,6 +250,73 @@ def detect(val):
     else:
         return "✅ Normal", "green"
 
+zones_coords = {
+    "Centre": [[32.75662617,3.37696562],[32.75663435,3.61159117],[33.01349055,3.60634757],[33.02401464,2.93385218],[32.89394392,2.92757292],[32.88954646,3.3769424]],
+    "Sud": [[32.45093128,2.88567251],[32.45092697,3.37963967],[32.88379946,3.37964793],[32.88378899,2.88561768]],
+    "Nord": [[33.01358581,3.18513508],[33.28297225,3.18482285],[33.27857017,3.81093387],[33.01358819,3.81077745]]
+}
+
+results = []
+
+for name, coords in zones_coords.items():
+    try:
+        zone_geom = ee.Geometry.Polygon([[lon, lat] for lat, lon in coords])
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone_geom,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+    except:
+        value = None
+
+    status, color = detect(value)
+    val_str = f"{round(value,2)} ppb" if value else "No data"
+    results.append({"Zone": name, "CH₄": val_str, "Statut": status})
+
+    folium.Polygon(
+        locations=coords,
+        color=color,
+        fill=True,
+        fill_opacity=0.4,
+        popup=f"{name}: {val_str} ({status})"
+    ).add_to(m)
+
+# Affichage carte sécurisé
+try:
+    st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
+except Exception as e:
+    st.error(f"Erreur affichage carte: {e}")
+
+st.dataframe(pd.DataFrame(results))
+
+# Détection locale stable
+st.markdown("## 🎯 Détection locale")
+lat_point = st.number_input("Latitude", value=32.90, format="%.6f")
+lon_point = st.number_input("Longitude", value=3.30, format="%.6f")
+
+if st.button("Analyser point"):
+    point = ee.Geometry.Point([lon_point, lat_point])
+    try:
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+    except:
+        value = None
+
+    if value is None:
+        st.warning("❌ Pas de donnée disponible pour ce point")
+    elif value > 1920:
+        st.error(f"🔥 Fuite détectée: {round(value,2)} ppb")
+    elif value > 1880:
+        st.warning(f"⚠️ Niveau suspect: {round(value,2)} ppb")
+    else:
+        st.success(f"✅ Normal: {round(value,2)} ppb")
 # Coordonnées des zones [lat, lon]
 zones_coords = {
     "Centre": [
