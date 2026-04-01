@@ -229,9 +229,10 @@ if st.button("Afficher carte PRO"):
         st.error("❌ Pas d'image")
         st.stop()
 
+    # Création carte Folium centrée sur le site
     m = folium.Map(location=[site_lat, site_lon], zoom_start=10, control_scale=True)
 
-    # 👇 Fonction detect correctement indentée
+    # Fonction pour détecter le statut CH₄
     def detect(val):
         if val is None:
             return "❌ No data", "gray"
@@ -274,17 +275,20 @@ if st.button("Afficher carte PRO"):
         })
 
         coords = zone.coordinates().getInfo()[0]
-        coords = [[lat, lon] for lon, lat in coords]
+        coords = [[lat, lon] for lon, lat in coords]  # format lat/lon pour folium
 
         folium.Polygon(
             locations=coords,
             color=color,
             fill=True,
-            fill_opacity=0.4
+            fill_opacity=0.4,
+            popup=f"{name}: {val_str}"
         ).add_to(m)
 
     st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
     st.dataframe(pd.DataFrame(results))
+
+
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 
@@ -322,4 +326,5 @@ if st.button("Analyser point"):
     if val:
         st.success(f"CH₄ : {round(val,2)} ppb")
     else:
+        st.error("❌ Pas de donnée"):
         st.error("❌ Pas de donnée")
