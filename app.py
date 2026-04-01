@@ -248,7 +248,8 @@ if st.button("Lancer scan intelligent"):
 
     st.info("🔍 Scan en cours...")
 
-    points_detected = []
+    # ✅ CRÉER LA CARTE AVANT
+    m = folium.Map(location=[site_lat, site_lon], zoom_start=7)
 
     image_mean = collection.mean()
 
@@ -284,7 +285,6 @@ if st.button("Lancer scan intelligent"):
             else:
                 continue
 
-            # 👉 AJOUT SUR CARTE
             folium.CircleMarker(
                 [lat, lon],
                 radius=8,
@@ -293,6 +293,9 @@ if st.button("Lancer scan intelligent"):
                 fill_opacity=0.9,
                 popup=f"{status} - {round(val,2)} ppb"
             ).add_to(m)
+
+    # ✅ AFFICHAGE
+    st_folium(m, width=750, height=550)
     # ================= VERIFICATION =================
     if image is None:
         st.error("❌ Aucune image satellite disponible")
