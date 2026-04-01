@@ -194,35 +194,65 @@ if st.button("Afficher carte PRO"):
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    # Récupérer toutes les coordonnées pour calculer le centre et les limites
+    # Récupérer toutes les coordonnées pour calculer centre et bounds
     all_lats, all_lons = [], []
     for name, zone in zones:
         coords = zone.coordinates().getInfo()[0]
         for lon, lat in coords:
             all_lats.append(lat)
             all_lons.append(lon)
-
-    # Centre de la carte
     center_lat = (max(all_lats) + min(all_lats)) / 2
     center_lon = (max(all_lons) + min(all_lons)) / 2
+    sw = [min(all_lats), min(all_lons)]
+    ne = [max(all_lats), max(all_lons)]
 
     # Créer la carte centrée
     m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
+    m.fit_bounds([sw, ne])
 
-    # Définir les limites de visualisation (bounds)
-    sw = [min(all_lats), min(all_lons)]  # coin sud-ouest
-    ne = [max(all_lats), max(all_lons)]  # coin nord-est
-    m.fit_bounds([sw, ne])  # Force Folium à afficher toutes les zones
+    # Charger les images CH₄ des 7 derniers jours
+    today = datetime.utcnow()
+    start = datetime(today.year, today.month, today.day - 7)
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    
+    count = collection.size().getInfo()
+    if count == 0:
+        st.warning("⚠️ Aucune image CH₄ disponible pour cette période")
+        st.stop()
 
-    # Ajouter l'image CH4
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4").filterDate(start, today)
     image = collection.mean()
-    map_id = image.getMapId({"min": 1800, "max": 2000, "palette": ["blue", "green", "yellow", "red"]})
-    folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="CH4", overlay=True).add_to(m)
 
-    # Ajouter les zones avec couleur selon IA
+    # Vérifier qu'il y a des données sur la zone principale
+    mean_val = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=zoneCentre,
+        scale=7000,
+        maxPixels=1e9,
+        bestEffort=True
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    try:
+        val_check = mean_val.getInfo()
+        if val_check is None:
+            st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
+            st.stop()
+    except Exception as e:
+        st.error(f"Erreur Earth Engine: {e}")
+        st.stop()
+
+    # Générer la carte avec min/max dynamiques
+    min_val = val_check * 0.95
+    max_val = val_check * 1.05
+    map_id = image.getMapId({"min": min_val, "max": max_val, "palette": ["blue", "green", "yellow", "red"]})
+    folium.TileLayer(
+        tiles=map_id["tile_fetcher"].url_format,
+        attr="CH4",
+        overlay=True
+    ).add_to(m)
+
+    # Ajouter les zones avec statut IA
     results = []
     for name, zone in zones:
         value = image.reduceRegion(
@@ -245,10 +275,17 @@ if st.button("Afficher carte PRO"):
             color = "orange"
 
         coords = [[lat, lon] for lon, lat in zone.coordinates().getInfo()[0]]
-        folium.Polygon(locations=coords, color=color, fill=True, fill_opacity=0.4,
-                       tooltip=f"{name}: {status_ia} ({round(score,2)})").add_to(m)
+        folium.Polygon(
+            locations=coords,
+            color=color,
+            fill=True,
+            fill_opacity=0.4,
+            tooltip=f"{name}: {status_ia} ({round(score,2)})"
+        ).add_to(m)
+
         results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
 
+    # Afficher carte et tableau
     st_folium(m, width=700, height=500)
     st.dataframe(pd.DataFrame(results))
 # ================= SECTION H =================
