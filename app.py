@@ -206,7 +206,6 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-2)} ppb")
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ PRO")
 
