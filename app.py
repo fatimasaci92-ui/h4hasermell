@@ -127,15 +127,58 @@ if st.button("Lancer analyse CH₄"):
     )
 
     def compute(zone, name):
-       val = collection.mean().reduceRegion(
-    reducer=ee.Reducer.mean(),
-    geometry=zone,
-    scale=7000,
-    maxPixels=1e9,
-    bestEffort=True
-).get("CH4_column_volume_mixing_ratio_dry_air")
+        value = collection.mean().reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
         try:
-            val = val.getInfo()
+            val = value.getInfo()
+        except:
+            val = None
+
+        return {"Zone": name, "CH₄ (ppb)": val}
+
+    results = [
+        compute(zoneCentre, "Centre"),
+        compute(zoneSud, "Sud"),
+        compute(zoneNord, "Nord")
+    ]
+
+    df = pd.DataFrame(results)
+    st.dataframe(df)
+    st.bar_chart(df.set_index("Zone"))
+# ================= SECTION F =================
+st.markdown("## 📡 Analyse CH₄ récente par zone")
+
+if st.button("Analyser CH₄ (derniers jours)"):
+
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+
+    image = collection.mean()
+
+    def compute(zone, name):
+
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = value.getInfo()
         except:
             val = None
 
@@ -149,60 +192,9 @@ if st.button("Lancer analyse CH₄"):
 
     df = pd.DataFrame(results)
 
-    st.dataframe(df)
-    st.bar_chart(df.set_index("Zone"))
-# ================= SECTION F =================
-st.markdown("## 📡 Analyse CH₄ récente par zone (version fiable)")
-
-if st.button("Analyser CH₄ (derniers jours)"):
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")   # 7 derniers jours
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
-    )
-
-    def compute(zone, name):
-        size = collection.size().getInfo()
-        if size == 0:
-            return {"Zone": name, "CH₄ (ppb)": None}
-
-        image = collection.mean()
-        for i in range(size):
-            img = ee.Image(images.get(i))
-           value = img.reduceRegion(
-    reducer=ee.Reducer.mean(),
-    geometry=zone,
-    scale=7000,
-    maxPixels=1e9,
-    bestEffort=True
-).get("CH4_column_volume_mixing_ratio_dry_air")
-
-            try:
-                val = value.getInfo()
-            except:
-                val = None
-
-            if val is not None:
-                return {"Zone": name, "CH₄ (ppb)": round(val, 2)}
-
-        return {"Zone": name, "CH₄ (ppb)": None}
-
-    results = [
-        compute(zoneCentre, "Centre"),
-        compute(zoneSud, "Sud"),
-        compute(zoneNord, "Nord")
-    ]
-
-    df = pd.DataFrame(results)
-
-    # 🔥 Détection automatique des anomalies
     def detect_anomaly(value):
         if value is None:
-            return "Pas de données"
+            return "❌ Pas de données"
         elif value > 1900:
             return "🔴 Critique"
         elif value > 1850:
@@ -214,20 +206,10 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G PRO =================
-st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes)")
-
-# 🔥 Etat persistant
-if "map_ready" not in st.session_state:
-    st.session_state["map_ready"] = False
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte CH₄ PRO")
 
 if st.button("Afficher carte PRO"):
-    st.session_state["map_ready"] = True
-
-# ================= AFFICHAGE =================
-if st.session_state["map_ready"]:
-
-    st.info("🛰️ Chargement des données satellites...")
 
     site_lat = 32.90
     site_lon = 3.30
@@ -235,32 +217,20 @@ if st.session_state["map_ready"]:
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
-    # ================= IMAGE GEE =================
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
         .select("CH4_column_volume_mixing_ratio_dry_air")
-        .sort("system:time_start", False)
     )
 
-image = collection.mean()
-    # ❌ Sécurité
+    image = collection.mean()
+
     if image is None:
-        st.error("❌ Aucune image satellite disponible")
+        st.error("❌ Pas d'image")
         st.stop()
 
-    # ================= MAP =================
-    m = folium.Map(location=[site_lat, site_lon], zoom_start=7, tiles=None)
+    m = folium.Map(location=[site_lat, site_lon], zoom_start=7)
 
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        name="Satellite"
-    ).add_to(m)
-
-    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
-
-    # ================= COUCHE CH4 =================
     map_id = image.getMapId({
         "min": 1800,
         "max": 2000,
@@ -270,13 +240,10 @@ image = collection.mean()
     folium.TileLayer(
         tiles=map_id["tile_fetcher"].url_format,
         attr="CH4",
-        name="CH₄",
-        overlay=True,
-        opacity=0.6
+        overlay=True
     ).add_to(m)
 
-    # ================= IA SIMPLE =================
-    def detect_leak(val):
+    def detect(val):
         if val is None:
             return "❌ No data", "gray"
         elif val > 1920:
@@ -286,7 +253,6 @@ image = collection.mean()
         else:
             return "✅ Normal", "green"
 
-    # ================= ZONES =================
     zones = [
         ("Centre", zoneCentre),
         ("Sud", zoneSud),
@@ -294,24 +260,23 @@ image = collection.mean()
     ]
 
     results = []
-    all_coords = []
 
     for name, zone in zones:
 
         value = image.reduceRegion(
-    reducer=ee.Reducer.mean(),
-    geometry=zone,
-    scale=7000,
-    maxPixels=1e9,
-    bestEffort=True
-).get("CH4_column_volume_mixing_ratio_dry_air")
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
 
         try:
             val = value.getInfo()
         except:
             val = None
 
-        status, color = detect_leak(val)
+        status, color = detect(val)
         val_str = f"{round(val,2)} ppb" if val else "No data"
 
         results.append({
@@ -320,134 +285,26 @@ image = collection.mean()
             "Statut": status
         })
 
-        # 🔥 coordonnées corrigées
-       coords = zone.coordinates().getInfo()[0]
-       coords = [[lat, lon] for lon, lat in coords]
-        all_coords.extend(coords)
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[lat, lon] for lon, lat in coords]
 
         folium.Polygon(
             locations=coords,
             color=color,
             fill=True,
-            fill_opacity=0.4,
-            popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
+            fill_opacity=0.4
         ).add_to(m)
 
-    # ================= SCAN AUTOMATIQUE =================
-    st.markdown("### 🔍 Scan automatique")
+    st_folium(m, width=700, height=500)
 
-    if st.button("Lancer scan intelligent"):
-
-        image_mean = collection.mean()
-
-        lat_range = np.linspace(32.5, 33.2, 8)
-        lon_range = np.linspace(2.8, 3.8, 8)
-
-        for lat in lat_range:
-            for lon in lon_range:
-
-                point = ee.Geometry.Point([lon, lat])
-
-               value = image_mean.reduceRegion(
-    reducer=ee.Reducer.mean(),
-    geometry=point,
-    scale=10000,
-    maxPixels=1e9,
-    bestEffort=True
-).get("CH4_column_volume_mixing_ratio_dry_air")
-
-                try:
-                    val = value.getInfo()
-                except:
-                    val = None
-
-                if val is None:
-                    continue
-
-                if val > 1920:
-                    color = "red"
-                    status = "🔥 Critique"
-                elif val > 1880:
-                    color = "orange"
-                    status = "⚠️ Suspect"
-                else:
-                    continue
-
-                folium.CircleMarker(
-                    [lat, lon],
-                    radius=8,
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.9,
-                    popup=f"{status} - {round(val,2)} ppb"
-                ).add_to(m)
-
-                all_coords.append([lat, lon])
-
-    # ================= PLUMES =================
-    token = st.secrets.get("CARBON_API_TOKEN", "")
-
-    if token:
-        try:
-            import requests
-
-            r = requests.get(
-                "https://api.carbonmapper.org/api/v1/catalog/plumes",
-                headers={"Authorization": f"Bearer {token}"},
-                params={
-                    "gas": "CH4",
-                    "limit": 20,
-                    "bbox": f"{site_lon-1},{site_lat-1},{site_lon+1},{site_lat+1}"
-                }
-            )
-
-            if r.status_code == 200:
-                data = r.json()
-
-                for f in data.get("features", []):
-                    lon, lat = f["geometry"]["coordinates"]
-                    emission = f["properties"].get("emission_rate", 0)
-
-                    folium.CircleMarker(
-                        [lat, lon],
-                        radius=8,
-                        color="red",
-                        fill=True,
-                        fill_opacity=0.8,
-                        popup=f"🔥 Plume<br>{emission} kg/h"
-                    ).add_to(m)
-
-                    all_coords.append([lat, lon])
-
-        except:
-            st.warning("⚠️ Carbon Mapper indisponible")
-
-    # ================= SITE =================
-    folium.Marker(
-        [site_lat, site_lon],
-        popup="📍 Hassi R'mel",
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
-
-    # ================= ZOOM AUTO =================
-    if len(all_coords) > 0:
-        m.fit_bounds(all_coords)
-
-    folium.LayerControl().add_to(m)
-
-    # ================= AFFICHAGE =================
-    st_folium(m, width=750, height=550)
-
-    # ================= TABLE =================
-    st.markdown("## 📊 Résultats Analyse")
     st.dataframe(pd.DataFrame(results))
 # ================= SECTION H =================
-st.markdown("## 🎯 Détection locale (point précis)")
+st.markdown("## 🎯 Détection locale")
 
-lat_point = st.number_input("Latitude point", value=32.90)
-lon_point = st.number_input("Longitude point", value=3.30)
+lat_point = st.number_input("Latitude", value=32.90)
+lon_point = st.number_input("Longitude", value=3.30)
 
-if st.button("Analyser ce point"):
+if st.button("Analyser point"):
 
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
@@ -475,23 +332,7 @@ if st.button("Analyser ce point"):
     except:
         val = None
 
-    def detect(val):
-        if val is None or val == 0:
-            return "❌ Pas de donnée", "gray"
-        elif val > 1920:
-            return "🔥 Fuite critique", "red"
-        elif val > 1880:
-            return "⚠️ Suspicion", "orange"
-        else:
-            return "✅ Normal", "green"
-
-    status, color = detect(val)
-
     if val:
         st.success(f"CH₄ : {round(val,2)} ppb")
     else:
-        st.error("Pas de valeur")
-
-    st.write(f"Statut : {status}")
-
-    st.write(f"Statut : {status}")
+        st.error("❌ Pas de donnée")
