@@ -127,13 +127,13 @@ if st.button("Lancer analyse CH₄"):
     )
 
     def compute(zone, name):
-        val = collection.mean().reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
-
+       val = collection.mean().reduceRegion(
+    reducer=ee.Reducer.mean(),
+    geometry=zone,
+    scale=7000,
+    maxPixels=1e9,
+    bestEffort=True
+).get("CH4_column_volume_mixing_ratio_dry_air")
         try:
             val = val.getInfo()
         except:
@@ -170,15 +170,16 @@ if st.button("Analyser CH₄ (derniers jours)"):
         if size == 0:
             return {"Zone": name, "CH₄ (ppb)": None}
 
-        images = collection.toList(size)
+        image = collection.mean()
         for i in range(size):
             img = ee.Image(images.get(i))
-            value = img.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone,
-                scale=7000,
-                maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
+           value = img.reduceRegion(
+    reducer=ee.Reducer.mean(),
+    geometry=zone,
+    scale=7000,
+    maxPixels=1e9,
+    bestEffort=True
+).get("CH4_column_volume_mixing_ratio_dry_air")
 
             try:
                 val = value.getInfo()
@@ -242,8 +243,7 @@ if st.session_state["map_ready"]:
         .sort("system:time_start", False)
     )
 
-    image = collection.first()
-
+image = collection.mean()
     # ❌ Sécurité
     if image is None:
         st.error("❌ Aucune image satellite disponible")
@@ -299,11 +299,12 @@ if st.session_state["map_ready"]:
     for name, zone in zones:
 
         value = image.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
+    reducer=ee.Reducer.mean(),
+    geometry=zone,
+    scale=7000,
+    maxPixels=1e9,
+    bestEffort=True
+).get("CH4_column_volume_mixing_ratio_dry_air")
 
         try:
             val = value.getInfo()
@@ -320,9 +321,8 @@ if st.session_state["map_ready"]:
         })
 
         # 🔥 coordonnées corrigées
-        coords = zone.coordinates().getInfo()[0]
-        coords = [[lat, lon] for lon, lat in coords]
-
+       coords = zone.coordinates().getInfo()[0]
+       coords = [[lat, lon] for lon, lat in coords]
         all_coords.extend(coords)
 
         folium.Polygon(
@@ -348,12 +348,13 @@ if st.session_state["map_ready"]:
 
                 point = ee.Geometry.Point([lon, lat])
 
-                value = image_mean.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=point,
-                    scale=10000,
-                    maxPixels=1e9
-                ).get("CH4_column_volume_mixing_ratio_dry_air")
+               value = image_mean.reduceRegion(
+    reducer=ee.Reducer.mean(),
+    geometry=point,
+    scale=10000,
+    maxPixels=1e9,
+    bestEffort=True
+).get("CH4_column_volume_mixing_ratio_dry_air")
 
                 try:
                     val = value.getInfo()
@@ -396,7 +397,7 @@ if st.session_state["map_ready"]:
                 params={
                     "gas": "CH4",
                     "limit": 20,
-                    "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
+                    "bbox": f"{site_lon-1},{site_lat-1},{site_lon+1},{site_lat+1}"
                 }
             )
 
@@ -448,13 +449,25 @@ lon_point = st.number_input("Longitude point", value=3.30)
 
 if st.button("Analyser ce point"):
 
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+
+    image = collection.mean()
+
     point = ee.Geometry.Point([lon_point, lat_point])
 
     value = image.reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=point,
         scale=7000,
-        maxPixels=1e9
+        maxPixels=1e9,
+        bestEffort=True
     ).get("CH4_column_volume_mixing_ratio_dry_air")
 
     try:
@@ -462,9 +475,8 @@ if st.button("Analyser ce point"):
     except:
         val = None
 
-    # 🧠 IA simple
     def detect(val):
-        if val is None:
+        if val is None or val == 0:
             return "❌ Pas de donnée", "gray"
         elif val > 1920:
             return "🔥 Fuite critique", "red"
@@ -482,13 +494,4 @@ if st.button("Analyser ce point"):
 
     st.write(f"Statut : {status}")
 
-    # 📍 Ajout sur carte
-    if "map_fixed" in st.session_state:
-        folium.CircleMarker(
-            [lat_point, lon_point],
-            radius=10,
-            color=color,
-            fill=True,
-            fill_opacity=0.9,
-            popup=f"{status} - {val} ppb"
-        ).add_to(m)
+    st.write(f"Statut : {status}")
