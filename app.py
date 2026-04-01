@@ -194,32 +194,35 @@ if st.button("Afficher carte PRO"):
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    # Calculer les limites (bounds) combinées de toutes les zones
-    all_coords = []
+    # Récupérer toutes les coordonnées pour calculer le centre et les limites
+    all_lats, all_lons = [], []
     for name, zone in zones:
         coords = zone.coordinates().getInfo()[0]
-        all_coords.extend([[lat, lon] for lon, lat in coords])
-    
-    lats = [c[0] for c in all_coords]
-    lons = [c[1] for c in all_coords]
-    bounds = [[min(lats), min(lons)], [max(lats), max(lons)]]  # [[lat_min, lon_min], [lat_max, lon_max]]
+        for lon, lat in coords:
+            all_lats.append(lat)
+            all_lons.append(lon)
 
-    # Créer la carte centrée sur le centre des bounds
-    center_lat = (bounds[0][0] + bounds[1][0]) / 2
-    center_lon = (bounds[0][1] + bounds[1][1]) / 2
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)  # zoom_start peut être ajusté
+    # Centre de la carte
+    center_lat = (max(all_lats) + min(all_lats)) / 2
+    center_lon = (max(all_lons) + min(all_lons)) / 2
 
+    # Créer la carte centrée
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
+
+    # Définir les limites de visualisation (bounds)
+    sw = [min(all_lats), min(all_lons)]  # coin sud-ouest
+    ne = [max(all_lats), max(all_lons)]  # coin nord-est
+    m.fit_bounds([sw, ne])  # Force Folium à afficher toutes les zones
+
+    # Ajouter l'image CH4
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-    )
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4").filterDate(start, today)
     image = collection.mean()
     map_id = image.getMapId({"min": 1800, "max": 2000, "palette": ["blue", "green", "yellow", "red"]})
     folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="CH4", overlay=True).add_to(m)
 
+    # Ajouter les zones avec couleur selon IA
     results = []
     for name, zone in zones:
         value = image.reduceRegion(
@@ -241,14 +244,10 @@ if st.button("Afficher carte PRO"):
         elif status_ia == "⚠️ Suspect":
             color = "orange"
 
-        coords = zone.coordinates().getInfo()[0]
-        coords = [[lat, lon] for lon, lat in coords]
+        coords = [[lat, lon] for lon, lat in zone.coordinates().getInfo()[0]]
         folium.Polygon(locations=coords, color=color, fill=True, fill_opacity=0.4,
                        tooltip=f"{name}: {status_ia} ({round(score,2)})").add_to(m)
         results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
-
-    # Adapter automatiquement la vue pour voir toutes les zones
-    m.fit_bounds(bounds)
 
     st_folium(m, width=700, height=500)
     st.dataframe(pd.DataFrame(results))
