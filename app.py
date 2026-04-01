@@ -243,7 +243,56 @@ if st.session_state["map_ready"]:
     )
 
     image = collection.first()
+# ================= SCAN AUTOMATIQUE =================
+if st.button("Lancer scan intelligent"):
 
+    st.info("🔍 Scan en cours...")
+
+    points_detected = []
+
+    image_mean = collection.mean()
+
+    lat_range = np.linspace(32.5, 33.2, 8)
+    lon_range = np.linspace(2.8, 3.8, 8)
+
+    for lat in lat_range:
+        for lon in lon_range:
+
+            point = ee.Geometry.Point([lon, lat])
+
+            value = image_mean.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=point,
+                scale=10000,
+                maxPixels=1e9
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+            try:
+                val = value.getInfo()
+            except:
+                val = None
+
+            if val is None:
+                continue
+
+            if val > 1920:
+                color = "red"
+                status = "🔥 Critique"
+            elif val > 1880:
+                color = "orange"
+                status = "⚠️ Suspect"
+            else:
+                continue
+
+            # 👉 AJOUT SUR CARTE
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                color=color,
+                fill=True,
+                fill_opacity=0.9,
+                popup=f"{status} - {round(val,2)} ppb"
+            ).add_to(m)
     # ================= VERIFICATION =================
     if image is None:
         st.error("❌ Aucune image satellite disponible")
