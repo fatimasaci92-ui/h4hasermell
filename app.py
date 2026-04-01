@@ -206,33 +206,17 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G =================
-st.markdown("## 🌍 Carte CH₄ PRO")
+# ================= SECTION G STABLE =================
+st.markdown("## 🌍 Carte CH₄ PRO (Stable)")
 
-if st.button("Afficher carte PRO"):
+if st.button("Afficher carte PRO stable"):
 
+    # Carte centrée
     site_lat = 32.90
     site_lon = 3.30
-
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-    )
-
-    image = collection.mean()
-
-    if image is None:
-        st.error("❌ Pas d'image")
-        st.stop()
-
-    # Création carte Folium centrée sur le site
     m = folium.Map(location=[site_lat, site_lon], zoom_start=10, control_scale=True)
 
-    # Fonction pour détecter le statut CH₄
+    # Statut CH₄ basé sur la valeur
     def detect(val):
         if val is None:
             return "❌ No data", "gray"
@@ -243,30 +227,60 @@ if st.button("Afficher carte PRO"):
         else:
             return "✅ Normal", "green"
 
-    zones = [
-        ("Centre", zoneCentre),
-        ("Sud", zoneSud),
-        ("Nord", zoneNord)
-    ]
+    # Zones avec coordonnées statiques (lat, lon)
+    zones_coords = {
+        "Centre": [
+            [32.75662617, 3.37696562],
+            [32.75663435, 3.61159117],
+            [33.01349055, 3.60634757],
+            [33.02401464, 2.93385218],
+            [32.89394392, 2.92757292],
+            [32.88954646, 3.3769424],
+        ],
+        "Sud": [
+            [32.45093128, 2.88567251],
+            [32.45092697, 3.37963967],
+            [32.88379946, 3.37964793],
+            [32.88378899, 2.88561768],
+        ],
+        "Nord": [
+            [33.01358581, 3.18513508],
+            [33.28297225, 3.18482285],
+            [33.27857017, 3.81093387],
+            [33.01358819, 3.81077745],
+        ]
+    }
 
     results = []
 
-    for name, zone in zones:
-        value = image.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9,
-            bestEffort=True
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
+    # Récupérer les valeurs CH₄ via GEE
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+    image = collection.mean()
 
+    for name, coords in zones_coords.items():
+        # Créer polygon GEE
+        zone_geom = ee.Geometry.Polygon([[lon, lat] for lat, lon in coords])
+
+        # Récupérer valeur CH₄
         try:
-            val = value.getInfo()
+            value = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone_geom,
+                scale=7000,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
         except:
-            val = None
+            value = None
 
-        status, color = detect(val)
-        val_str = f"{round(val,2)} ppb" if val else "No data"
+        status, color = detect(value)
+        val_str = f"{round(value,2)} ppb" if value else "No data"
 
         results.append({
             "Zone": name,
@@ -274,24 +288,16 @@ if st.button("Afficher carte PRO"):
             "Statut": status
         })
 
-        # Vérification des coordonnées avant d’ajouter le polygone
-        try:
-            coords = zone.coordinates().getInfo()[0]
-            if coords and len(coords) > 2:  # au moins 3 points pour polygone
-                coords = [[lat, lon] for lon, lat in coords]
-                folium.Polygon(
-                    locations=coords,
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.4,
-                    popup=f"{name}: {val_str}"
-                ).add_to(m)
-            else:
-                print(f"⚠️ Zone {name} vide ou invalide")
-        except Exception as e:
-            print(f"⚠️ Erreur coordonnées zone {name}: {e}")
+        # Ajouter polygone sur Folium
+        folium.Polygon(
+            locations=coords,  # déjà en [lat, lon]
+            color=color,
+            fill=True,
+            fill_opacity=0.4,
+            popup=f"{name}: {val_str} ({status})"
+        ).add_to(m)
 
-    st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
+    st_folium(m, width=800, height=500)
     st.dataframe(pd.DataFrame(results))
 
 
