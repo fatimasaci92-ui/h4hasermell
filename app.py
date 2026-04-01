@@ -214,7 +214,7 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G PRO =================
-st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes)")
+st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes + Scan)")
 
 # 🔥 Etat persistant
 if "map_ready" not in st.session_state:
@@ -243,209 +243,204 @@ if st.session_state["map_ready"]:
     )
 
     image = collection.first()
-# ================= SCAN AUTOMATIQUE =================
-if st.button("Lancer scan intelligent"):
 
-    st.info("🔍 Scan en cours...")
-
-    # ✅ CRÉER LA CARTE AVANT
-    m = folium.Map(location=[site_lat, site_lon], zoom_start=7)
-
-    image_mean = collection.mean()
-
-    lat_range = np.linspace(32.5, 33.2, 8)
-    lon_range = np.linspace(2.8, 3.8, 8)
-
-    for lat in lat_range:
-        for lon in lon_range:
-
-            point = ee.Geometry.Point([lon, lat])
-
-            value = image_mean.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=point,
-                scale=10000,
-                maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-            try:
-                val = value.getInfo()
-            except:
-                val = None
-
-            if val is None:
-                continue
-
-            if val > 1920:
-                color = "red"
-                status = "🔥 Critique"
-            elif val > 1880:
-                color = "orange"
-                status = "⚠️ Suspect"
-            else:
-                continue
-
-            folium.CircleMarker(
-                [lat, lon],
-                radius=8,
-                color=color,
-                fill=True,
-                fill_opacity=0.9,
-                popup=f"{status} - {round(val,2)} ppb"
-            ).add_to(m)
-
-    # ✅ AFFICHAGE
-    st_folium(m, width=750, height=550)
-    # ================= VERIFICATION =================
     if image is None:
         st.error("❌ Aucune image satellite disponible")
+        st.stop()
 
-    else:
-        # ================= MAP =================
-        m = folium.Map(location=[site_lat, site_lon], zoom_start=7, tiles=None)
+    # ================= MAP =================
+    m = folium.Map(location=[site_lat, site_lon], zoom_start=7, tiles=None)
 
-        # 🌍 Satellite
-        folium.TileLayer(
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri",
-            name="Satellite"
-        ).add_to(m)
+    # 🌍 Satellite
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Satellite"
+    ).add_to(m)
 
-        # 🗺️ Carte classique
-        folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
+    # 🗺️ Carte
+    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
-        # ================= COUCHE CH4 =================
-        map_id = image.getMapId({
-            "min": 1800,
-            "max": 2000,
-            "palette": ["blue", "green", "yellow", "red"]
+    # ================= COUCHE CH4 =================
+    map_id = image.getMapId({
+        "min": 1800,
+        "max": 2000,
+        "palette": ["blue", "green", "yellow", "red"]
+    })
+
+    folium.TileLayer(
+        tiles=map_id["tile_fetcher"].url_format,
+        attr="CH4",
+        name="CH₄",
+        overlay=True,
+        opacity=0.6
+    ).add_to(m)
+
+    # ================= IA =================
+    def detect_leak(val):
+        if val is None:
+            return "No data", "gray"
+        elif val > 1920:
+            return "🔥 Fuite", "red"
+        elif val > 1880:
+            return "⚠️ Suspect", "orange"
+        else:
+            return "✅ Normal", "green"
+
+    # ================= ZONES =================
+    zones = [
+        ("Centre", zoneCentre),
+        ("Sud", zoneSud),
+        ("Nord", zoneNord)
+    ]
+
+    results = []
+    all_coords = []
+
+    for name, zone in zones:
+
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = value.getInfo()
+        except:
+            val = None
+
+        status, color = detect_leak(val)
+        val_str = f"{round(val,2)} ppb" if val else "No data"
+
+        results.append({
+            "Zone": name,
+            "CH₄": val_str,
+            "Statut": status
         })
 
-        folium.TileLayer(
-            tiles=map_id["tile_fetcher"].url_format,
-            attr="CH4",
-            name="CH₄",
-            overlay=True,
-            opacity=0.6
+        # 🔥 Coordonnées corrigées
+        coords = zone.coordinates().getInfo()[0]
+        coords = [[lat, lon] for lon, lat in coords]
+
+        all_coords.extend(coords)
+
+        folium.Polygon(
+            locations=coords,
+            color=color,
+            fill=True,
+            fill_opacity=0.4,
+            popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
         ).add_to(m)
 
-        # ================= IA SIMPLE =================
-        def detect_leak(val):
-            if val is None:
-                return "No data", "gray"
-            elif val > 1920:
-                return "🔥 Fuite", "red"
-            elif val > 1880:
-                return "⚠️ Suspect", "orange"
-            else:
-                return "✅ Normal", "green"
+    # ================= SCAN INTELLIGENT =================
+    if st.button("🔍 Lancer scan intelligent"):
 
-        # ================= ZONES =================
-        zones = [
-            ("Centre", zoneCentre),
-            ("Sud", zoneSud),
-            ("Nord", zoneNord)
-        ]
+        st.info("Scan en cours...")
 
-        results = []
-        all_coords = []
+        image_mean = collection.mean()
 
-        for name, zone in zones:
+        lat_range = np.linspace(32.5, 33.2, 8)
+        lon_range = np.linspace(2.8, 3.8, 8)
 
-            # 🔹 CH4 moyen
-            value = image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone,
-                scale=7000,
-                maxPixels=1e9
-            ).get("CH4_column_volume_mixing_ratio_dry_air")
+        for lat in lat_range:
+            for lon in lon_range:
 
-            try:
-                val = value.getInfo()
-            except:
-                val = None
+                point = ee.Geometry.Point([lon, lat])
 
-            status, color = detect_leak(val)
-            val_str = f"{round(val,2)} ppb" if val else "No data"
+                value = image_mean.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=point,
+                    scale=10000,
+                    maxPixels=1e9
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-            results.append({
-                "Zone": name,
-                "CH₄": val_str,
-                "Statut": status
-            })
+                try:
+                    val = value.getInfo()
+                except:
+                    val = None
 
-            # 🔹 Coordonnées (corrigées)
-            coords = zone.coordinates().getInfo()[0]
-            coords = [[lat, lon] for lon, lat in coords]
+                if val is None:
+                    continue
 
-            all_coords.extend(coords)
+                if val > 1920:
+                    color = "red"
+                    status = "🔥 Critique"
+                elif val > 1880:
+                    color = "orange"
+                    status = "⚠️ Suspect"
+                else:
+                    continue
 
-            # 🔹 Polygon
-            folium.Polygon(
-                locations=coords,
-                color=color,
-                fill=True,
-                fill_opacity=0.4,
-                popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
-            ).add_to(m)
+                folium.CircleMarker(
+                    [lat, lon],
+                    radius=8,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.9,
+                    popup=f"{status} - {round(val,2)} ppb"
+                ).add_to(m)
 
-        # ================= PLUMES (Carbon Mapper) =================
-        token = st.secrets.get("CARBON_API_TOKEN", "")
+                all_coords.append([lat, lon])
 
-        if token:
-            try:
-                import requests
+    # ================= PLUMES =================
+    token = st.secrets.get("CARBON_API_TOKEN", "")
 
-                r = requests.get(
-                    "https://api.carbonmapper.org/api/v1/catalog/plumes",
-                    headers={"Authorization": f"Bearer {token}"},
-                    params={
-                        "gas": "CH4",
-                        "limit": 20,
-                        "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
-                    }
-                )
+    if token:
+        try:
+            import requests
 
-                if r.status_code == 200:
-                    data = r.json()
+            r = requests.get(
+                "https://api.carbonmapper.org/api/v1/catalog/plumes",
+                headers={"Authorization": f"Bearer {token}"},
+                params={
+                    "gas": "CH4",
+                    "limit": 20,
+                    "bbox": f"{site_lon-0.5},{site_lat-0.5},{site_lon+0.5},{site_lat+0.5}"
+                }
+            )
 
-                    for f in data.get("features", []):
-                        lon, lat = f["geometry"]["coordinates"]
-                        emission = f["properties"].get("emission_rate", 0)
+            if r.status_code == 200:
+                data = r.json()
 
-                        folium.CircleMarker(
-                            [lat, lon],
-                            radius=8,
-                            color="red",
-                            fill=True,
-                            fill_opacity=0.8,
-                            popup=f"🔥 Plume<br>{emission} kg/h"
-                        ).add_to(m)
+                for f in data.get("features", []):
+                    lon, lat = f["geometry"]["coordinates"]
+                    emission = f["properties"].get("emission_rate", 0)
 
-                        all_coords.append([lat, lon])
+                    folium.CircleMarker(
+                        [lat, lon],
+                        radius=8,
+                        color="red",
+                        fill=True,
+                        fill_opacity=0.8,
+                        popup=f"🔥 Plume<br>{emission} kg/h"
+                    ).add_to(m)
 
-            except:
-                st.warning("⚠️ Carbon Mapper indisponible")
+                    all_coords.append([lat, lon])
 
-        # ================= SITE =================
-        folium.Marker(
-            [site_lat, site_lon],
-            popup="📍 Hassi R'mel",
-            icon=folium.Icon(color="blue")
-        ).add_to(m)
+        except:
+            st.warning("⚠️ Carbon Mapper indisponible")
 
-        # ================= ZOOM AUTO =================
-        if len(all_coords) > 0:
-            m.fit_bounds(all_coords)
+    # ================= SITE =================
+    folium.Marker(
+        [site_lat, site_lon],
+        popup="📍 Hassi R'mel",
+        icon=folium.Icon(color="blue")
+    ).add_to(m)
 
-        folium.LayerControl().add_to(m)
+    # ================= ZOOM AUTO =================
+    if len(all_coords) > 0:
+        m.fit_bounds(all_coords)
 
-        # ================= AFFICHAGE =================
-        st_folium(m, width=750, height=550, key="map_fixed")
+    folium.LayerControl().add_to(m)
 
-        # ================= TABLE =================
-        st.markdown("## 📊 Résultats Analyse")
-        st.dataframe(pd.DataFrame(results))
+    # ================= AFFICHAGE =================
+    st_folium(m, width=750, height=550, key="map_fixed")
+
+    # ================= TABLE =================
+    st.markdown("## 📊 Résultats Analyse")
+    st.dataframe(pd.DataFrame(results))
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale (point précis)")
 
