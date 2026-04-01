@@ -326,5 +326,4 @@ if st.button("Analyser point"):
     if val:
         st.success(f"CH₄ : {round(val,2)} ppb")
     else:
-        st.error("❌ Pas de donnée"):
         st.error("❌ Pas de donnée")
