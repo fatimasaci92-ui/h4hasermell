@@ -274,16 +274,22 @@ if st.button("Afficher carte PRO"):
             "Statut": status
         })
 
-        coords = zone.coordinates().getInfo()[0]
-        coords = [[lat, lon] for lon, lat in coords]  # format lat/lon pour folium
-
-        folium.Polygon(
-            locations=coords,
-            color=color,
-            fill=True,
-            fill_opacity=0.4,
-            popup=f"{name}: {val_str}"
-        ).add_to(m)
+        # Vérification des coordonnées avant d’ajouter le polygone
+        try:
+            coords = zone.coordinates().getInfo()[0]
+            if coords and len(coords) > 2:  # au moins 3 points pour polygone
+                coords = [[lat, lon] for lon, lat in coords]
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.4,
+                    popup=f"{name}: {val_str}"
+                ).add_to(m)
+            else:
+                print(f"⚠️ Zone {name} vide ou invalide")
+        except Exception as e:
+            print(f"⚠️ Erreur coordonnées zone {name}: {e}")
 
     st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
     st.dataframe(pd.DataFrame(results))
