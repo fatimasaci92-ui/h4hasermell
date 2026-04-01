@@ -214,16 +214,14 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G PRO =================
-st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes + Scan)")
+st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA Anomalie + Scan + Plumes)")
 
-# 🔥 Etat persistant
 if "map_ready" not in st.session_state:
     st.session_state["map_ready"] = False
 
 if st.button("Afficher carte PRO"):
     st.session_state["map_ready"] = True
 
-# ================= AFFICHAGE =================
 if st.session_state["map_ready"]:
 
     st.info("🛰️ Chargement des données satellites...")
@@ -234,7 +232,7 @@ if st.session_state["map_ready"]:
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
-    # ================= IMAGE GEE =================
+    # ================= IMAGE =================
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -251,14 +249,12 @@ if st.session_state["map_ready"]:
     # ================= MAP =================
     m = folium.Map(location=[site_lat, site_lon], zoom_start=7, tiles=None)
 
-    # 🌍 Satellite
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
         name="Satellite"
     ).add_to(m)
 
-    # 🗺️ Carte
     folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
     # ================= COUCHE CH4 =================
@@ -276,14 +272,17 @@ if st.session_state["map_ready"]:
         opacity=0.6
     ).add_to(m)
 
-    # ================= IA =================
-    def detect_leak(val):
-        if val is None:
+    # ================= IA ANOMALIE =================
+    def detect_leak(val, baseline):
+        if val is None or baseline is None:
             return "No data", "gray"
-        elif val > 1920:
-            return "🔥 Fuite", "red"
-        elif val > 1880:
-            return "⚠️ Suspect", "orange"
+
+        diff = val - baseline
+
+        if diff > 50:
+            return "🔥 Fuite réelle", "red"
+        elif diff > 20:
+            return "⚠️ Anomalie", "orange"
         else:
             return "✅ Normal", "green"
 
@@ -297,8 +296,11 @@ if st.session_state["map_ready"]:
     results = []
     all_coords = []
 
+    image_mean = collection.mean()
+
     for name, zone in zones:
 
+        # 🔹 valeur actuelle
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=zone,
@@ -311,35 +313,59 @@ if st.session_state["map_ready"]:
         except:
             val = None
 
-        status, color = detect_leak(val)
+        # 🔹 baseline (IMPORTANT 🔥)
+        baseline = image_mean.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            baseline = baseline.getInfo()
+        except:
+            baseline = None
+
+        status, color = detect_leak(val, baseline)
+
         val_str = f"{round(val,2)} ppb" if val else "No data"
+        base_str = f"{round(baseline,2)} ppb" if baseline else "No data"
+
+        anomaly = round(val - baseline, 2) if val and baseline else "N/A"
 
         results.append({
             "Zone": name,
             "CH₄": val_str,
+            "Baseline": base_str,
+            "Anomalie": anomaly,
             "Statut": status
         })
 
-        # 🔥 Coordonnées corrigées
+        # 🔹 coordonnées
         coords = zone.coordinates().getInfo()[0]
         coords = [[lat, lon] for lon, lat in coords]
 
         all_coords.extend(coords)
 
+        # 🔹 polygon
         folium.Polygon(
             locations=coords,
             color=color,
             fill=True,
             fill_opacity=0.4,
-            popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
+            popup=f"""
+            <b>{name}</b><br>
+            CH₄: {val_str}<br>
+            Baseline: {base_str}<br>
+            Δ: {anomaly}<br>
+            {status}
+            """
         ).add_to(m)
 
-    # ================= SCAN INTELLIGENT =================
-    if st.button("🔍 Lancer scan intelligent"):
+    # ================= SCAN =================
+    if st.button("🔍 Scan intelligent"):
 
         st.info("Scan en cours...")
-
-        image_mean = collection.mean()
 
         lat_range = np.linspace(32.5, 33.2, 8)
         lon_range = np.linspace(2.8, 3.8, 8)
@@ -366,10 +392,8 @@ if st.session_state["map_ready"]:
 
                 if val > 1920:
                     color = "red"
-                    status = "🔥 Critique"
                 elif val > 1880:
                     color = "orange"
-                    status = "⚠️ Suspect"
                 else:
                     continue
 
@@ -379,7 +403,7 @@ if st.session_state["map_ready"]:
                     color=color,
                     fill=True,
                     fill_opacity=0.9,
-                    popup=f"{status} - {round(val,2)} ppb"
+                    popup=f"{round(val,2)} ppb"
                 ).add_to(m)
 
                 all_coords.append([lat, lon])
