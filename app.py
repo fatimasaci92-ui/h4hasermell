@@ -210,7 +210,7 @@ if st.button("Afficher carte PRO"):
     m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
     m.fit_bounds([sw, ne])
 
-    # Charger les images CH₄ des 7 derniers jours avec timedelta
+    # Charger les images CH₄ des 7 derniers jours
     from datetime import timedelta
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -254,7 +254,11 @@ if st.button("Afficher carte PRO"):
         overlay=True
     ).add_to(m)
 
-    # Ajouter les zones avec statut IA
+    # Dernière date satellite
+    last_image = collection.sort('system:time_start', False).first()
+    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+    # Ajouter les zones avec statut IA et dernière date
     results = []
     for name, zone in zones:
         value = image.reduceRegion(
@@ -286,7 +290,13 @@ if st.button("Afficher carte PRO"):
             tooltip=f"{name}: {status_ia} ({round(score,2)})"
         ).add_to(m)
 
-        results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
+        results.append({
+            "Zone": name,
+            "CH₄": val,
+            "Statut IA": status_ia,
+            "Score IA": round(score,2),
+            "Dernière date": last_date
+        })
 
     # Afficher la carte et le tableau des résultats
     st_folium(m, width=700, height=500)
