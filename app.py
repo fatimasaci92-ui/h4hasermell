@@ -214,7 +214,7 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G PRO =================
-st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA + Plumes)")
+st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes)")
 
 # 🔥 Etat persistant
 if "map_ready" not in st.session_state:
@@ -228,7 +228,6 @@ if st.session_state["map_ready"]:
 
     st.info("🛰️ Chargement des données satellites...")
 
-    # ✅ Coordonnées fixes (TON SITE)
     site_lat = 32.90
     site_lon = 3.30
 
@@ -245,27 +244,25 @@ if st.session_state["map_ready"]:
 
     image = collection.first()
 
+    # ================= VERIFICATION =================
     if image is None:
         st.error("❌ Aucune image satellite disponible")
+
     else:
         # ================= MAP =================
-        m = folium.Map(
-            location=[site_lat, site_lon],
-            zoom_start=8,
-            tiles=None
-        )
+        m = folium.Map(location=[site_lat, site_lon], zoom_start=7, tiles=None)
 
-        # 🌍 Satellite (comme Carbon Mapper)
+        # 🌍 Satellite
         folium.TileLayer(
             tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
             attr="Esri",
             name="Satellite"
         ).add_to(m)
 
-        # 🗺️ Carte normale
+        # 🗺️ Carte classique
         folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
 
-        # 🔥 Couche CH4 GEE
+        # ================= COUCHE CH4 =================
         map_id = image.getMapId({
             "min": 1800,
             "max": 2000,
@@ -280,18 +277,18 @@ if st.session_state["map_ready"]:
             opacity=0.6
         ).add_to(m)
 
-        # ================= IA =================
+        # ================= IA SIMPLE =================
         def detect_leak(val):
             if val is None:
-                return "Aucune donnée", "gray"
+                return "No data", "gray"
             elif val > 1920:
-                return "🔥 Fuite détectée", "red"
+                return "🔥 Fuite", "red"
             elif val > 1880:
                 return "⚠️ Suspect", "orange"
             else:
                 return "✅ Normal", "green"
 
-        # ================= ZONES + POLYGONES + PLUMES =================
+        # ================= ZONES =================
         zones = [
             ("Centre", zoneCentre),
             ("Sud", zoneSud),
@@ -299,10 +296,11 @@ if st.session_state["map_ready"]:
         ]
 
         results = []
+        all_coords = []
 
         for name, zone in zones:
 
-            # ================= Valeur moyenne CH₄ =================
+            # 🔹 CH4 moyen
             value = image.reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=zone,
@@ -315,35 +313,31 @@ if st.session_state["map_ready"]:
             except:
                 val = None
 
-            # ================= Détection fuite / couleur =================
             status, color = detect_leak(val)
             val_str = f"{round(val,2)} ppb" if val else "No data"
 
-            # ================= Stockage résultats =================
             results.append({
                 "Zone": name,
                 "CH₄": val_str,
                 "Statut": status
             })
 
-            # ================= Coordonnées POLYGONE =================
+            # 🔹 Coordonnées (corrigées)
             coords = zone.coordinates().getInfo()[0]
-            coords = [[lat, lon] for lon, lat in coords]  # inversion nécessaire pour folium
+            coords = [[lat, lon] for lon, lat in coords]
 
-            # ================= Dessin du polygone =================
+            all_coords.extend(coords)
+
+            # 🔹 Polygon
             folium.Polygon(
                 locations=coords,
                 color=color,
                 fill=True,
                 fill_opacity=0.4,
-                popup=f"""
-                <b>{name}</b><br>
-                CH₄: {val_str}<br>
-                Statut: {status}
-                """
+                popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
             ).add_to(m)
 
-        # ================= Plumes Carbon Mapper =================
+        # ================= PLUMES (Carbon Mapper) =================
         token = st.secrets.get("CARBON_API_TOKEN", "")
 
         if token:
@@ -362,6 +356,7 @@ if st.session_state["map_ready"]:
 
                 if r.status_code == 200:
                     data = r.json()
+
                     for f in data.get("features", []):
                         lon, lat = f["geometry"]["coordinates"]
                         emission = f["properties"].get("emission_rate", 0)
@@ -372,8 +367,10 @@ if st.session_state["map_ready"]:
                             color="red",
                             fill=True,
                             fill_opacity=0.8,
-                            popup=f"🔥 Plume réelle<br>{emission} kg/h"
+                            popup=f"🔥 Plume<br>{emission} kg/h"
                         ).add_to(m)
+
+                        all_coords.append([lat, lon])
 
             except:
                 st.warning("⚠️ Carbon Mapper indisponible")
@@ -385,12 +382,15 @@ if st.session_state["map_ready"]:
             icon=folium.Icon(color="blue")
         ).add_to(m)
 
+        # ================= ZOOM AUTO =================
+        if len(all_coords) > 0:
+            m.fit_bounds(all_coords)
+
         folium.LayerControl().add_to(m)
 
-        # 🔥 AFFICHAGE STABLE (clé UNIQUE)
+        # ================= AFFICHAGE =================
         st_folium(m, width=750, height=550, key="map_fixed")
 
-        # ================= TABLEAU =================
+        # ================= TABLE =================
         st.markdown("## 📊 Résultats Analyse")
-        df = pd.DataFrame(results)
-        st.dataframe(df)
+        st.dataframe(pd.DataFrame(results))
