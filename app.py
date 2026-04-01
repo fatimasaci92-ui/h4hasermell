@@ -187,10 +187,28 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 
+
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ PRO")
 if st.button("Afficher carte PRO"):
-    site_lat, site_lon = 32.90, 3.30
+
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+    # Calculer les limites (bounds) combinées de toutes les zones
+    all_coords = []
+    for name, zone in zones:
+        coords = zone.coordinates().getInfo()[0]
+        all_coords.extend([[lat, lon] for lon, lat in coords])
+    
+    lats = [c[0] for c in all_coords]
+    lons = [c[1] for c in all_coords]
+    bounds = [[min(lats), min(lons)], [max(lats), max(lons)]]  # [[lat_min, lon_min], [lat_max, lon_max]]
+
+    # Créer la carte centrée sur le centre des bounds
+    center_lat = (bounds[0][0] + bounds[1][0]) / 2
+    center_lon = (bounds[0][1] + bounds[1][1]) / 2
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8)  # zoom_start peut être ajusté
+
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
     collection = (
@@ -199,15 +217,10 @@ if st.button("Afficher carte PRO"):
         .select("CH4_column_volume_mixing_ratio_dry_air")
     )
     image = collection.mean()
-    if image is None:
-        st.error("❌ Pas d'image")
-        st.stop()
-    m = folium.Map(location=[site_lat, site_lon], zoom_start=7)
     map_id = image.getMapId({"min": 1800, "max": 2000, "palette": ["blue", "green", "yellow", "red"]})
     folium.TileLayer(tiles=map_id["tile_fetcher"].url_format, attr="CH4", overlay=True).add_to(m)
-    results = []
 
-    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+    results = []
     for name, zone in zones:
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
@@ -230,14 +243,15 @@ if st.button("Afficher carte PRO"):
 
         coords = zone.coordinates().getInfo()[0]
         coords = [[lat, lon] for lon, lat in coords]
-
         folium.Polygon(locations=coords, color=color, fill=True, fill_opacity=0.4,
                        tooltip=f"{name}: {status_ia} ({round(score,2)})").add_to(m)
         results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
 
+    # Adapter automatiquement la vue pour voir toutes les zones
+    m.fit_bounds(bounds)
+
     st_folium(m, width=700, height=500)
     st.dataframe(pd.DataFrame(results))
-
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 lat_point = st.number_input("Latitude", value=32.90)
