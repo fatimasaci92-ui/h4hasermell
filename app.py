@@ -1,4 +1,4 @@
-# ================= app.py — VERSION FINALE CORRIGÉE AVEC IA =================
+# ================= app.py — VERSION FINALE AVEC IA LÉGÈRE =================
 
 import streamlit as st
 import pandas as pd
@@ -12,11 +12,6 @@ import tempfile
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime
-
-# ================= IA =================
-import torch
-from torchvision import transforms
-from PIL import Image
 
 # ================= INIT GEE =================
 try:
@@ -35,36 +30,18 @@ except Exception as e:
 st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
 st.title("Surveillance du Méthane (CH₄) – HSE")
 
-# ================= CHARGEMENT MODÈLE IA =================
-MODEL_PATH = "models/ch4_detector.pt"  # chemin vers ton modèle PyTorch
-try:
-    model = torch.load(MODEL_PATH, map_location=torch.device('cpu'))
-    model.eval()
-    st.success("✅ Modèle IA chargé")
-except Exception as e:
-    st.warning(f"⚠️ Modèle IA non chargé: {e}")
-    model = None
-
+# ================= IA LÉGÈRE (SANS TORCH) =================
 def detect_ch4_anomaly(image_array):
-    if model is None:
-        return "❌ IA non disponible", 0.0
-    img = Image.fromarray(np.uint8((image_array / np.nanmax(image_array))*255))
-    preprocess = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5], std=[0.5])
-    ])
-    input_tensor = preprocess(img).unsqueeze(0)
-    with torch.no_grad():
-        output = model(input_tensor)
-        score = torch.sigmoid(output).item()
-    if score > 0.8:
-        status = "🔥 Fuite critique"
-    elif score > 0.5:
-        status = "⚠️ Suspect"
+    """IA simplifiée par seuils, compatible Streamlit Cloud"""
+    val = np.nanmean(image_array)
+    if np.isnan(val):
+        return "❌ Pas de données", 0.0
+    elif val > 1920:
+        return "🔥 Fuite critique", 1.0
+    elif val > 1880:
+        return "⚠️ Suspect", 0.7
     else:
-        status = "✅ Normal"
-    return status, score
+        return "✅ Normal", 0.1
 
 # ================= ZONES FIXES =================
 zoneCentre = ee.Geometry.Polygon([
@@ -197,12 +174,8 @@ if st.button("Analyser CH₄ (derniers jours)"):
             val = value.getInfo()
         except:
             val = None
-        # Détection IA
-        if val is not None:
-            img_array = np.array([[val]])
-            status_ia, score = detect_ch4_anomaly(img_array)
-        else:
-            status_ia, score = "❌ Pas de données", 0.0
+
+        status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
         results.append({
             "Zone": name,
             "CH₄": round(val,2) if val else "No data",
@@ -247,19 +220,17 @@ if st.button("Afficher carte PRO"):
             val = value.getInfo()
         except:
             val = None
-        # Détection IA
-        if val:
-            img_array = np.array([[val]])
-            status_ia, score = detect_ch4_anomaly(img_array)
-        else:
-            status_ia, score = "❌ No data", 0.0
+
+        status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
         color = "green"
         if status_ia == "🔥 Fuite critique":
             color = "red"
         elif status_ia == "⚠️ Suspect":
             color = "orange"
+
         coords = zone.coordinates().getInfo()[0]
         coords = [[lat, lon] for lon, lat in coords]
+
         folium.Polygon(locations=coords, color=color, fill=True, fill_opacity=0.4,
                        tooltip=f"{name}: {status_ia} ({round(score,2)})").add_to(m)
         results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
@@ -293,9 +264,9 @@ if st.button("Analyser point"):
         val = value.getInfo()
     except:
         val = None
+
+    status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
     if val:
-        img_array = np.array([[val]])
-        status_ia, score = detect_ch4_anomaly(img_array)
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
