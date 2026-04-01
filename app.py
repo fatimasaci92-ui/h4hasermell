@@ -194,7 +194,7 @@ if st.button("Afficher carte PRO"):
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    # Récupérer toutes les coordonnées pour calculer centre et bounds
+    # Calculer centre et limites pour la carte
     all_lats, all_lons = [], []
     for name, zone in zones:
         coords = zone.coordinates().getInfo()[0]
@@ -210,13 +210,15 @@ if st.button("Afficher carte PRO"):
     m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
     m.fit_bounds([sw, ne])
 
-    # Charger les images CH₄ des 7 derniers jours
+    # Charger les images CH₄ des 7 derniers jours avec timedelta
+    from datetime import timedelta
     today = datetime.utcnow()
-    start = datetime(today.year, today.month, today.day - 7)
+    start = today - timedelta(days=7)
+
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
         .filterDate(start, today) \
         .select("CH4_column_volume_mixing_ratio_dry_air")
-    
+
     count = collection.size().getInfo()
     if count == 0:
         st.warning("⚠️ Aucune image CH₄ disponible pour cette période")
@@ -267,6 +269,7 @@ if st.button("Afficher carte PRO"):
         except:
             val = None
 
+        # Détection IA légère
         status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
         color = "green"
         if status_ia == "🔥 Fuite critique":
@@ -285,7 +288,7 @@ if st.button("Afficher carte PRO"):
 
         results.append({"Zone": name, "CH₄": val, "Statut IA": status_ia, "Score IA": round(score,2)})
 
-    # Afficher carte et tableau
+    # Afficher la carte et le tableau des résultats
     st_folium(m, width=700, height=500)
     st.dataframe(pd.DataFrame(results))
 # ================= SECTION H =================
