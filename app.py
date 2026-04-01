@@ -394,3 +394,55 @@ if st.session_state["map_ready"]:
         # ================= TABLE =================
         st.markdown("## 📊 Résultats Analyse")
         st.dataframe(pd.DataFrame(results))
+# ================= SECTION H =================
+st.markdown("## 🎯 Détection locale (point précis)")
+
+lat_point = st.number_input("Latitude point", value=32.90)
+lon_point = st.number_input("Longitude point", value=3.30)
+
+if st.button("Analyser ce point"):
+
+    point = ee.Geometry.Point([lon_point, lat_point])
+
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=7000,
+        maxPixels=1e9
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+    try:
+        val = value.getInfo()
+    except:
+        val = None
+
+    # 🧠 IA simple
+    def detect(val):
+        if val is None:
+            return "❌ Pas de donnée", "gray"
+        elif val > 1920:
+            return "🔥 Fuite critique", "red"
+        elif val > 1880:
+            return "⚠️ Suspicion", "orange"
+        else:
+            return "✅ Normal", "green"
+
+    status, color = detect(val)
+
+    if val:
+        st.success(f"CH₄ : {round(val,2)} ppb")
+    else:
+        st.error("Pas de valeur")
+
+    st.write(f"Statut : {status}")
+
+    # 📍 Ajout sur carte
+    if "map_fixed" in st.session_state:
+        folium.CircleMarker(
+            [lat_point, lon_point],
+            radius=10,
+            color=color,
+            fill=True,
+            fill_opacity=0.9,
+            popup=f"{status} - {val} ppb"
+        ).add_to(m)
