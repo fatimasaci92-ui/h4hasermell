@@ -206,136 +206,141 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G STABLE =================
-st.markdown("## 🌍 Carte CH₄ PRO (Stable)")
+# ================= SECTION G + H STABLE =================
+st.markdown("## 🌍 Carte CH₄ PRO et Détection locale (Stable)")
 
-if st.button("Afficher carte PRO stable"):
+# ==== Section G : Carte PRO ====
+site_lat = 32.90
+site_lon = 3.30
 
-    # Carte centrée
-    site_lat = 32.90
-    site_lon = 3.30
-    m = folium.Map(location=[site_lat, site_lon], zoom_start=10, control_scale=True)
+m = folium.Map(location=[site_lat, site_lon], zoom_start=10, control_scale=True)
 
-    # Statut CH₄ basé sur la valeur
-    def detect(val):
-        if val is None:
-            return "❌ No data", "gray"
-        elif val > 1920:
-            return "🔥 Fuite", "red"
-        elif val > 1880:
-            return "⚠️ Suspect", "orange"
-        else:
-            return "✅ Normal", "green"
+# Statut CH₄ basé sur la valeur
+def detect(val):
+    if val is None:
+        return "❌ Pas de données", "gray"
+    elif val > 1920:
+        return "🔥 Fuite", "red"
+    elif val > 1880:
+        return "⚠️ Suspect", "orange"
+    else:
+        return "✅ Normal", "green"
 
-    # Zones avec coordonnées statiques (lat, lon)
-    zones_coords = {
-        "Centre": [
-            [32.75662617, 3.37696562],
-            [32.75663435, 3.61159117],
-            [33.01349055, 3.60634757],
-            [33.02401464, 2.93385218],
-            [32.89394392, 2.92757292],
-            [32.88954646, 3.3769424],
-        ],
-        "Sud": [
-            [32.45093128, 2.88567251],
-            [32.45092697, 3.37963967],
-            [32.88379946, 3.37964793],
-            [32.88378899, 2.88561768],
-        ],
-        "Nord": [
-            [33.01358581, 3.18513508],
-            [33.28297225, 3.18482285],
-            [33.27857017, 3.81093387],
-            [33.01358819, 3.81077745],
-        ]
-    }
+# Zones avec coordonnées statiques [lat, lon]
+zones_coords = {
+    "Centre": [
+        [32.75662617, 3.37696562],
+        [32.75663435, 3.61159117],
+        [33.01349055, 3.60634757],
+        [33.02401464, 2.93385218],
+        [32.89394392, 2.92757292],
+        [32.88954646, 3.3769424],
+    ],
+    "Sud": [
+        [32.45093128, 2.88567251],
+        [32.45092697, 3.37963967],
+        [32.88379946, 3.37964793],
+        [32.88378899, 2.88561768],
+    ],
+    "Nord": [
+        [33.01358581, 3.18513508],
+        [33.28297225, 3.18482285],
+        [33.27857017, 3.81093387],
+        [33.01358819, 3.81077745],
+    ]
+}
 
-    results = []
+results = []
 
-    # Récupérer les valeurs CH₄ via GEE
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-    )
-    image = collection.mean()
+# Récupérer les valeurs CH₄ via GEE (7 derniers jours)
+today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+start = today.advance(-7, "day")
+collection = (
+    ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+    .filterDate(start, today)
+    .select("CH4_column_volume_mixing_ratio_dry_air")
+)
+image = collection.mean()
 
-    for name, coords in zones_coords.items():
-        # Créer polygon GEE
+for name, coords in zones_coords.items():
+    try:
         zone_geom = ee.Geometry.Polygon([[lon, lat] for lat, lon in coords])
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone_geom,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+    except:
+        value = None
 
-        # Récupérer valeur CH₄
-        try:
-            value = image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone_geom,
-                scale=7000,
-                maxPixels=1e9,
-                bestEffort=True
-            ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
-        except:
-            value = None
+    status, color = detect(value)
+    val_str = f"{round(value,2)} ppb" if value else "No data"
 
-        status, color = detect(value)
-        val_str = f"{round(value,2)} ppb" if value else "No data"
+    results.append({
+        "Zone": name,
+        "CH₄": val_str,
+        "Statut": status
+    })
 
-        results.append({
-            "Zone": name,
-            "CH₄": val_str,
-            "Statut": status
-        })
+    # Ajouter polygone sur la carte
+    folium.Polygon(
+        locations=coords,
+        color=color,
+        fill=True,
+        fill_opacity=0.4,
+        popup=f"{name}: {val_str} ({status})"
+    ).add_to(m)
 
-        # Ajouter polygone sur Folium
-        folium.Polygon(
-            locations=coords,  # déjà en [lat, lon]
-            color=color,
-            fill=True,
-            fill_opacity=0.4,
-            popup=f"{name}: {val_str} ({status})"
-        ).add_to(m)
+# Ajouter légende visuelle
+legend_html = """
+<div style="position: fixed; 
+     bottom: 50px; left: 50px; width: 140px; height: 120px; 
+     background-color: white; border:2px solid grey; z-index:9999; font-size:14px;
+     padding: 10px;">
+     <b>Légende CH₄</b><br>
+     🔴 Fuite >1920 ppb<br>
+     🟠 Suspect >1880 ppb<br>
+     🟢 Normal ≤1880 ppb<br>
+     ⚪ Pas de données
+</div>
+"""
+m.get_root().html.add_child(folium.Element(legend_html))
 
-    st_folium(m, width=800, height=500)
-    st.dataframe(pd.DataFrame(results))
+# Afficher carte
+st_folium(m, width=800, height=500)
+
+# Afficher tableau des valeurs
+st.dataframe(pd.DataFrame(results))
 
 
-# ================= SECTION H =================
+# ==== Section H : Détection locale ====
 st.markdown("## 🎯 Détection locale")
 
-lat_point = st.number_input("Latitude", value=32.90)
-lon_point = st.number_input("Longitude", value=3.30)
+lat_point = st.number_input("Latitude", value=32.90, format="%.6f")
+lon_point = st.number_input("Longitude", value=3.30, format="%.6f")
 
 if st.button("Analyser point"):
 
-    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-    start = today.advance(-7, "day")
-
-    collection = (
-        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-        .filterDate(start, today)
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-    )
-
-    image = collection.mean()
-
     point = ee.Geometry.Point([lon_point, lat_point])
 
-    value = image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=point,
-        scale=7000,
-        maxPixels=1e9,
-        bestEffort=True
-    ).get("CH4_column_volume_mixing_ratio_dry_air")
-
     try:
-        val = value.getInfo()
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=point,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
     except:
-        val = None
+        value = None
 
-    if val:
-        st.success(f"CH₄ : {round(val,2)} ppb")
+    if value is None:
+        st.warning("❌ Pas de donnée disponible pour ce point")
+    elif value > 1920:
+        st.error(f"🔥 Fuite détectée: {round(value,2)} ppb")
+    elif value > 1880:
+        st.warning(f"⚠️ Niveau suspect: {round(value,2)} ppb")
     else:
-        st.error("❌ Pas de donnée")
+        st.success(f"✅ Normal: {round(value,2)} ppb")
