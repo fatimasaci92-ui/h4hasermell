@@ -214,14 +214,16 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 # ================= SECTION G PRO =================
-st.markdown("## 🌍 Carte CH₄ PRO (GEE + IA Anomalie + Scan + Plumes)")
+st.markdown("## 🌍 Carte CH₄ PRO (GEE + Zones + Plumes)")
 
+# 🔥 Etat persistant
 if "map_ready" not in st.session_state:
     st.session_state["map_ready"] = False
 
 if st.button("Afficher carte PRO"):
     st.session_state["map_ready"] = True
 
+# ================= AFFICHAGE =================
 if st.session_state["map_ready"]:
 
     st.info("🛰️ Chargement des données satellites...")
@@ -232,7 +234,7 @@ if st.session_state["map_ready"]:
     today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
     start = today.advance(-7, "day")
 
-    # ================= IMAGE =================
+    # ================= IMAGE GEE =================
     collection = (
         ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
         .filterDate(start, today)
@@ -242,6 +244,7 @@ if st.session_state["map_ready"]:
 
     image = collection.first()
 
+    # ❌ Sécurité
     if image is None:
         st.error("❌ Aucune image satellite disponible")
         st.stop()
@@ -272,17 +275,14 @@ if st.session_state["map_ready"]:
         opacity=0.6
     ).add_to(m)
 
-    # ================= IA ANOMALIE =================
-    def detect_leak(val, baseline):
-        if val is None or baseline is None:
-            return "No data", "gray"
-
-        diff = val - baseline
-
-        if diff > 50:
-            return "🔥 Fuite réelle", "red"
-        elif diff > 20:
-            return "⚠️ Anomalie", "orange"
+    # ================= IA SIMPLE =================
+    def detect_leak(val):
+        if val is None:
+            return "❌ No data", "gray"
+        elif val > 1920:
+            return "🔥 Fuite", "red"
+        elif val > 1880:
+            return "⚠️ Suspect", "orange"
         else:
             return "✅ Normal", "green"
 
@@ -296,11 +296,8 @@ if st.session_state["map_ready"]:
     results = []
     all_coords = []
 
-    image_mean = collection.mean()
-
     for name, zone in zones:
 
-        # 🔹 valeur actuelle
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=zone,
@@ -313,59 +310,35 @@ if st.session_state["map_ready"]:
         except:
             val = None
 
-        # 🔹 baseline (IMPORTANT 🔥)
-        baseline = image_mean.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-        try:
-            baseline = baseline.getInfo()
-        except:
-            baseline = None
-
-        status, color = detect_leak(val, baseline)
-
+        status, color = detect_leak(val)
         val_str = f"{round(val,2)} ppb" if val else "No data"
-        base_str = f"{round(baseline,2)} ppb" if baseline else "No data"
-
-        anomaly = round(val - baseline, 2) if val and baseline else "N/A"
 
         results.append({
             "Zone": name,
             "CH₄": val_str,
-            "Baseline": base_str,
-            "Anomalie": anomaly,
             "Statut": status
         })
 
-        # 🔹 coordonnées
+        # 🔥 coordonnées corrigées
         coords = zone.coordinates().getInfo()[0]
         coords = [[lat, lon] for lon, lat in coords]
 
         all_coords.extend(coords)
 
-        # 🔹 polygon
         folium.Polygon(
             locations=coords,
             color=color,
             fill=True,
             fill_opacity=0.4,
-            popup=f"""
-            <b>{name}</b><br>
-            CH₄: {val_str}<br>
-            Baseline: {base_str}<br>
-            Δ: {anomaly}<br>
-            {status}
-            """
+            popup=f"<b>{name}</b><br>CH₄: {val_str}<br>{status}"
         ).add_to(m)
 
-    # ================= SCAN =================
-    if st.button("🔍 Scan intelligent"):
+    # ================= SCAN AUTOMATIQUE =================
+    st.markdown("### 🔍 Scan automatique")
 
-        st.info("Scan en cours...")
+    if st.button("Lancer scan intelligent"):
+
+        image_mean = collection.mean()
 
         lat_range = np.linspace(32.5, 33.2, 8)
         lon_range = np.linspace(2.8, 3.8, 8)
@@ -392,8 +365,10 @@ if st.session_state["map_ready"]:
 
                 if val > 1920:
                     color = "red"
+                    status = "🔥 Critique"
                 elif val > 1880:
                     color = "orange"
+                    status = "⚠️ Suspect"
                 else:
                     continue
 
@@ -403,7 +378,7 @@ if st.session_state["map_ready"]:
                     color=color,
                     fill=True,
                     fill_opacity=0.9,
-                    popup=f"{round(val,2)} ppb"
+                    popup=f"{status} - {round(val,2)} ppb"
                 ).add_to(m)
 
                 all_coords.append([lat, lon])
@@ -460,7 +435,7 @@ if st.session_state["map_ready"]:
     folium.LayerControl().add_to(m)
 
     # ================= AFFICHAGE =================
-    st_folium(m, width=750, height=550, key="map_fixed")
+    st_folium(m, width=750, height=550)
 
     # ================= TABLE =================
     st.markdown("## 📊 Résultats Analyse")
