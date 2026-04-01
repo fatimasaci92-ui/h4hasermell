@@ -206,19 +206,45 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
-# ================= SECTION G + H STABLE =================
-st.markdown("## 🌍 Carte CH₄ PRO et Détection locale (Stable)")
+# ================= SECTION G + H : Carte satellite + AI stable =================
+st.markdown("## 🌍 Carte Satellite CH₄ + Détection AI")
 
-# ==== Section G : Carte PRO ====
+# ==== Carte satellite avec GEE ====
 site_lat = 32.90
 site_lon = 3.30
 
-m = folium.Map(location=[site_lat, site_lon], zoom_start=10, control_scale=True)
+today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+start = today.advance(-7, "day")
 
-# Statut CH₄ basé sur la valeur
+# Image CH₄ moyenne sur les derniers 7 jours
+collection = (
+    ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+    .filterDate(start, today)
+    .select("CH4_column_volume_mixing_ratio_dry_air")
+)
+image = collection.mean()
+
+# Récupérer le Map ID pour la carte satellite
+map_id = image.getMapId({
+    "min": 1800,
+    "max": 2000,
+    "palette": ["blue", "green", "yellow", "red"]
+})
+
+m = folium.Map(location=[site_lat, site_lon], zoom_start=8)
+
+# Ajouter couche satellite CH₄
+folium.TileLayer(
+    tiles=map_id["tile_fetcher"].url_format,
+    attr="CH₄ COPERNICUS/S5P",
+    overlay=True,
+    name="CH₄ Satellite"
+).add_to(m)
+
+# ==== Détection AI / Polygones ====
 def detect(val):
     if val is None:
-        return "❌ Pas de données", "gray"
+        return "❌ No data", "gray"
     elif val > 1920:
         return "🔥 Fuite", "red"
     elif val > 1880:
@@ -226,7 +252,7 @@ def detect(val):
     else:
         return "✅ Normal", "green"
 
-# Zones avec coordonnées statiques [lat, lon]
+# Coordonnées des zones [lat, lon]
 zones_coords = {
     "Centre": [
         [32.75662617, 3.37696562],
@@ -252,16 +278,7 @@ zones_coords = {
 
 results = []
 
-# Récupérer les valeurs CH₄ via GEE (7 derniers jours)
-today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
-start = today.advance(-7, "day")
-collection = (
-    ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-    .filterDate(start, today)
-    .select("CH4_column_volume_mixing_ratio_dry_air")
-)
-image = collection.mean()
-
+# Parcourir zones pour calcul CH₄ moyen
 for name, coords in zones_coords.items():
     try:
         zone_geom = ee.Geometry.Polygon([[lon, lat] for lat, lon in coords])
@@ -277,14 +294,9 @@ for name, coords in zones_coords.items():
 
     status, color = detect(value)
     val_str = f"{round(value,2)} ppb" if value else "No data"
+    results.append({"Zone": name, "CH₄": val_str, "Statut": status})
 
-    results.append({
-        "Zone": name,
-        "CH₄": val_str,
-        "Statut": status
-    })
-
-    # Ajouter polygone sur la carte
+    # Ajouter polygone
     folium.Polygon(
         locations=coords,
         color=color,
@@ -293,38 +305,44 @@ for name, coords in zones_coords.items():
         popup=f"{name}: {val_str} ({status})"
     ).add_to(m)
 
-# Ajouter légende visuelle
-legend_html = """
-<div style="position: fixed; 
-     bottom: 50px; left: 50px; width: 140px; height: 120px; 
-     background-color: white; border:2px solid grey; z-index:9999; font-size:14px;
-     padding: 10px;">
-     <b>Légende CH₄</b><br>
-     🔴 Fuite >1920 ppb<br>
-     🟠 Suspect >1880 ppb<br>
-     🟢 Normal ≤1880 ppb<br>
-     ⚪ Pas de données
-</div>
-"""
-m.get_root().html.add_child(folium.Element(legend_html))
+# ==== Heatmap CH₄ (optionnel) ====
+from folium.plugins import HeatMap
+
+heat_data = []
+for name, coords in zones_coords.items():
+    try:
+        zone_geom = ee.Geometry.Polygon([[lon, lat] for lat, lon in coords])
+        val = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone_geom,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+        if val:
+            for lat, lon in coords:
+                heat_data.append([lat, lon, val])
+    except:
+        pass
+
+if heat_data:
+    HeatMap(heat_data, radius=25, blur=15, max_zoom=9).add_to(m)
 
 # Afficher carte
-st_folium(m, width=800, height=500)
+st_folium(m, width=800, height=500, scroll_wheel_zoom=False)
 
-# Afficher tableau des valeurs
+# Tableau des valeurs par zone
 st.dataframe(pd.DataFrame(results))
 
 
-# ==== Section H : Détection locale ====
+# ==== Détection locale stable ====
 st.markdown("## 🎯 Détection locale")
 
 lat_point = st.number_input("Latitude", value=32.90, format="%.6f")
 lon_point = st.number_input("Longitude", value=3.30, format="%.6f")
 
 if st.button("Analyser point"):
-
     point = ee.Geometry.Point([lon_point, lat_point])
-
     try:
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
