@@ -187,80 +187,169 @@ if st.button("Analyser CH₄ (derniers jours)"):
     st.dataframe(df)
     st.bar_chart(df.set_index("Zone"))
 
-# ================= SECTION G : Carte Folium interactive avec CH₄ et zones =================
-import streamlit as st
-import folium
-from folium import CircleMarker, LayerControl
-from streamlit_folium import st_folium
-import pandas as pd
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte CH₄ PRO")
 
-st.header("SECTION G : Carte interactive CH₄ et zones")
+# Initialisation session_state (UNE seule fois)
+if "map" not in st.session_state:
+    st.session_state.map = None
 
-# --- Création de la carte (une seule fois) ---
-if "map_ch4" not in st.session_state:
-    st.session_state.map_ch4 = folium.Map(
-        location=[36.7, 3.1],  # Centré sur la zone d'étude
+if st.button("Afficher carte PRO"):
+
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+    # Calcul centre carte
+    all_lats, all_lons = [], []
+    for name, zone in zones:
+        coords = zone.coordinates().getInfo()
+        for poly in coords:
+            for lon, lat in poly:
+                all_lats.append(lat)
+                all_lons.append(lon)
+
+    center_lat = (max(all_lats) + min(all_lats)) / 2
+    center_lon = (max(all_lons) + min(all_lons)) / 2
+    sw = [min(all_lats), min(all_lons)]
+    ne = [max(all_lats), max(all_lons)]
+
+    # Création carte avec fond satellite
+    m = folium.Map(
+        location=[center_lat, center_lon],
         zoom_start=8,
-        tiles='Esri.WorldImagery',  # Fond satellite
-        control_scale=True
+        tiles=None
     )
 
-m = st.session_state.map_ch4
-
-# --- Ajouter les zones GeoJSON ---
-zones_geojson_path = "zones.geojson"  # À adapter selon ton fichier
-folium.GeoJson(
-    zones_geojson_path,
-    name="Zones",
-    style_function=lambda f: {
-        'fillColor': 'orange',
-        'color': 'red',
-        'weight': 2,
-        'fillOpacity': 0.3
-    },
-    tooltip=folium.GeoJsonTooltip(fields=['nom'], aliases=['Zone'])
-).add_to(m)
-
-# --- Ajouter les points CH₄ ---
-# Exemple de données CH₄, à remplacer par ton DataFrame ou liste réelle
-ch4_data = [
-    {"lat": 36.7, "lon": 3.1, "val": 1.5},
-    {"lat": 36.8, "lon": 3.2, "val": 3.2},
-    {"lat": 36.6, "lon": 3.0, "val": 5.0},
-]
-
-for p in ch4_data:
-    color = "green" if p["val"] < 2 else "orange" if p["val"] < 4 else "red"
-    CircleMarker(
-        location=[p["lat"], p["lon"]],
-        radius=8,
-        color=color,
-        fill=True,
-        fill_color=color,
-        fill_opacity=0.7,
-        popup=f"CH₄ : {p['val']} ppm"
+    # Fond satellite ESRI
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
     ).add_to(m)
 
-# --- Contrôle des calques ---
-LayerControl().add_to(m)
+    # Fond OpenStreetMap pour switch
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
 
-# --- Affichage de la carte ---
-st_folium(
-    m,
-    width=800,
-    height=500,
-    scroll_wheel_zoom=False,
-    key="map_ch4"
-)
+    # Charger données CH4 des 7 derniers jours
+    from datetime import timedelta, datetime
+    today = datetime.utcnow()
+    start = today - timedelta(days=7)
 
-# --- Tableau IA (exemple) ---
-st.subheader("Tableau IA : détection CH₄")
-ia_data = pd.DataFrame({
-    "Zone": ["Zone A", "Zone B", "Zone C"],
-    "CH₄ détecté (ppm)": [1.5, 3.2, 5.0],
-    "Status": ["OK", "Attention", "Danger"]
-})
-st.dataframe(ia_data)
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+
+    count = collection.size().getInfo()
+
+    if count == 0:
+        st.warning("⚠️ Aucune image CH₄ disponible")
+    else:
+        image = collection.mean()
+
+        # Vérification zone principale
+        mean_val = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zoneCentre,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val_check = mean_val.getInfo()
+        except:
+            val_check = None
+
+        if val_check is None:
+            st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
+        else:
+            # Palette dynamique
+            min_val = val_check * 0.95
+            max_val = val_check * 1.05
+
+            map_id = image.getMapId({
+                "min": min_val,
+                "max": max_val,
+                "palette": ["blue", "green", "yellow", "red"]
+            })
+
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="CH4",
+                overlay=True
+            ).add_to(m)
+
+            # Dernière date satellite
+            last_image = collection.sort('system:time_start', False).first()
+            last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+            results = []
+
+            # Ajouter les zones sur la carte
+            for name, zone in zones:
+                value = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+                try:
+                    val = value.getInfo()
+                except:
+                    val = None
+
+                # Détection IA légère
+                status_ia, score = detect_ch4_anomaly(
+                    np.array([[val]]) if val else np.array([[np.nan]])
+                )
+
+                color = "green"
+                if status_ia == "🔥 Fuite critique":
+                    color = "red"
+                elif status_ia == "⚠️ Suspect":
+                    color = "orange"
+
+                # Extraire toutes les coordonnées correctement
+                coords_raw = zone.coordinates().getInfo()
+                coords = []
+                for poly in coords_raw:
+                    for lon, lat in poly:
+                        coords.append([lat, lon])  # Folium attend [lat, lon]
+
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.4,
+                    tooltip=f"{name}: {status_ia} (Score {round(score,2)})"
+                ).add_to(m)
+
+                results.append({
+                    "Zone": name,
+                    "CH₄": val,
+                    "Statut IA": status_ia,
+                    "Score IA": round(score,2),
+                    "Dernière date": last_date
+                })
+
+            # Sauvegarder carte dans session_state
+            st.session_state.map = m
+
+            # Afficher tableau des résultats
+            st.dataframe(pd.DataFrame(results))
+
+# ================= AFFICHAGE CARTE FIXE =================
+if st.session_state.map:
+    st.write("🗺️ Carte CH₄ (fixe)")
+
+    st.components.v1.html(
+        st.session_state.map._repr_html_(),
+        height=500
+    )
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 lat_point = st.number_input("Latitude", value=32.90)
