@@ -384,16 +384,28 @@ if st.button("Analyser point"):
     else:
         st.error("❌ Pas de donnée")
 
-# ================= SECTION I — PDF coloré avec tableaux =================
-st.markdown("## 📝 Générer rapport PDF HSI avec tableaux colorés")
+# ================= SECTION I — PDF Professionnel Style GHGsat =================
+st.markdown("## 📝 Générer rapport PDF pro style GHGsat")
 
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, Flowable
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import mm
 import io
 
-if st.button("Générer rapport PDF coloré"):
+class RiskBar(Flowable):
+    """Barre graphique pour niveau de risque"""
+    def __init__(self, width, height, color):
+        Flowable.__init__(self)
+        self.width = width
+        self.height = height
+        self.color = color
+    def draw(self):
+        self.canv.setFillColor(self.color)
+        self.canv.rect(0,0,self.width,self.height, fill=1)
+
+if st.button("Générer PDF GHGsat pro"):
 
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -462,47 +474,51 @@ if st.button("Générer rapport PDF coloré"):
 
     # Création PDF
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
     elements = []
 
     styles = getSampleStyleSheet()
+
+    # Logo HSE (optionnel) - remplacer 'logo.png' par ton chemin
+    # try:
+    #     logo = Image("logo.png", width=40*mm, height=20*mm)
+    #     elements.append(logo)
+    # except:
+    #     pass
+
     elements.append(Paragraph("Rapport HSI - CH₄", styles['Title']))
     elements.append(Paragraph(f"Date du rapport : {today.strftime('%Y-%m-%d')}", styles['Normal']))
     elements.append(Spacer(1, 12))
 
     # Table Header
-    table_data = [["Zone", "Coordonnées", "CH₄ (ppb)", "IA", "Score", "Niveau HSI", "Action"]]
+    table_data = [["Zone", "Coordonnées", "CH₄ (ppb)", "IA", "Score", "Niveau HSI", "Action", "Risque"]]
 
     for row in data_rows:
-        table_data.append(row[:-1])  # On enlève la couleur pour TableStyle
+        # Ajouter barre graphique en dernier
+        table_data.append(row[:-1] + [RiskBar(30,10,row[-1])])
 
-    table = Table(table_data, colWidths=[60, 90, 60, 60, 50, 80, 120])
+    table = Table(table_data, colWidths=[60,90,60,60,50,80,120,35], repeatRows=1)
 
-    # Styles et couleurs par ligne
+    # Style
     style = TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightblue),
+        ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (-2,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('FONTSIZE', (0,0), (-1,0), 12),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black),
         ('BOX', (0,0), (-1,-1), 1, colors.black)
     ])
-
-    # Couleur de chaque ligne selon HSI
-    for i, row in enumerate(data_rows):
-        style.add('BACKGROUND', (0,i+1), (-1,i+1), row[-1])  # Dernière colonne contient la couleur
-
     table.setStyle(style)
-    elements.append(table)
 
+    elements.append(table)
     doc.build(elements)
     buffer.seek(0)
 
     st.download_button(
-        label="Télécharger rapport PDF coloré",
+        label="Télécharger PDF GHGsat style pro",
         data=buffer,
-        file_name=f"rapport_HSI_CH4_coloré_{today.strftime('%Y%m%d')}.pdf",
+        file_name=f"rapport_HSI_CH4_GHGsat_{today.strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
