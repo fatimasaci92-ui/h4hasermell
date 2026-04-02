@@ -382,14 +382,14 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-        # ================= SECTION I : Carte + IA + Carbon Mapper + Rapport HSE =================
+# ================= SECTION I : Carte CH₄ + IA + Rapport HSE =================
 import streamlit as st
 import folium
 from folium import CircleMarker, LayerControl
 from streamlit_folium import st_folium
 import pandas as pd
 
-st.header("SECTION I : Carte CH₄ + CO₂ + IA + Rapport HSE")
+st.header("SECTION I : Carte CH₄ + IA + Rapport HSE")
 
 # --- Création de la carte (une seule fois) ---
 if "map_final" not in st.session_state:
@@ -435,25 +435,6 @@ for p in ch4_data:
         popup=f"CH₄ : {p['val']} ppm"
     ).add_to(m)
 
-# --- Ajouter Carbon Mapper / CO₂ (exemple overlay) ---
-# Supposons que tu as un GeoJSON / CSV CO₂
-co2_data = [
-    {"lat": 36.75, "lon": 3.15, "val": 400},
-    {"lat": 36.68, "lon": 3.05, "val": 420},
-]
-
-for p in co2_data:
-    color = "blue" if p["val"] < 410 else "purple"
-    CircleMarker(
-        location=[p["lat"], p["lon"]],
-        radius=6,
-        color=color,
-        fill=True,
-        fill_color=color,
-        fill_opacity=0.6,
-        popup=f"CO₂ : {p['val']} ppm"
-    ).add_to(m)
-
 # --- Contrôle des calques ---
 LayerControl().add_to(m)
 
@@ -466,12 +447,11 @@ st_folium(
     key="map_final"
 )
 
-# --- Tableau IA ---
-st.subheader("Tableau IA : détection CH₄ & CO₂")
+# --- Tableau IA CH₄ ---
+st.subheader("Tableau IA : détection CH₄")
 ia_data = pd.DataFrame({
     "Zone": ["Zone A", "Zone B", "Zone C"],
     "CH₄ détecté (ppm)": [1.5, 3.2, 5.0],
-    "CO₂ détecté (ppm)": [400, 420, 405],
     "Status": ["OK", "Attention", "Danger"]
 })
 st.dataframe(ia_data)
@@ -483,7 +463,6 @@ rapport_hse = pd.DataFrame({
     "Latitude": [36.7, 36.8, 36.6],
     "Longitude": [3.1, 3.2, 3.0],
     "CH₄ (ppm)": [1.5, 3.2, 5.0],
-    "CO₂ (ppm)": [400, 420, 405],
     "Analyse HSE": [
         "Zone sécurisée",
         "Surveillance recommandée",
