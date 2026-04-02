@@ -11,8 +11,7 @@ import json
 import tempfile
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime
-
+from datetime import datetime, timedelta
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -390,7 +389,7 @@ if st.button("Générer rapport HSI"):
 
     # Dates pour les 7 derniers jours
     today = datetime.utcnow()
-    start = today - timedelta(days=7)
+    start = today - timedelta(days=7)  # ✅ Fonctionne maintenant
 
     # Collection CH4 dans GEE
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
