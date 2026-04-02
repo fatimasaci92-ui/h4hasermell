@@ -190,7 +190,6 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ PRO")
-
 # Initialisation session_state
 if "map" not in st.session_state:
     st.session_state.map = None
@@ -320,13 +319,13 @@ if st.button("Afficher carte PRO"):
             st.dataframe(pd.DataFrame(results))
 
 # Affichage carte FIXE (hors bouton)
-if st.session_state.map:
-    st_folium(
-        st.session_state.map,
-        width=700,
-        height=500,
-        scroll_wheel_zoom=False
-    )
+st_folium(
+    st.session_state.map,
+    width=700,
+    height=500,
+    scroll_wheel_zoom=False,
+    key="map_ch4"
+)
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 lat_point = st.number_input("Latitude", value=32.90)
