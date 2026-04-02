@@ -382,4 +382,76 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
+# ================= SECTION I =================
+st.markdown("## 📝 Section I — Analyse IA CH₄ et Rapport HSI")
 
+# Bouton pour lancer l'analyse HSI
+if st.button("Générer rapport HSI"):
+
+    today = datetime.utcnow()
+    start = today - timedelta(days=7)  # Derniers 7 jours
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+
+    image = collection.mean()
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+    results = []
+
+    # Analyse par zone
+    for name, zone in zones:
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = value.getInfo()
+        except:
+            val = None
+
+        status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+
+        # Déterminer niveau de risque HSI
+        if status_ia == "🔥 Fuite critique":
+            hsi_level = "⚠️ Risque élevé"
+            action = "Intervention immédiate + maintenance"
+        elif status_ia == "⚠️ Suspect":
+            hsi_level = "⚠️ Risque moyen"
+            action = "Surveillance renforcée"
+        else:
+            hsi_level = "✅ Faible"
+            action = "Continuer suivi standard"
+
+        results.append({
+            "Zone": name,
+            "CH₄ (ppb)": round(val, 2) if val else "No data",
+            "Statut IA": status_ia,
+            "Score IA": round(score, 2),
+            "Niveau HSI": hsi_level,
+            "Action recommandée": action
+        })
+
+    # Afficher tableau HSI
+    df_hsi = pd.DataFrame(results)
+    st.dataframe(df_hsi)
+
+    # Résumé graphique HSI
+    st.markdown("### 📊 Répartition des niveaux de risque HSI")
+    risk_counts = df_hsi["Niveau HSI"].value_counts()
+    st.bar_chart(risk_counts)
+
+    # Générer résumé texte HSI
+    st.markdown("### 🖋️ Résumé HSI")
+    for row in results:
+        st.markdown(
+            f"- **{row['Zone']}** : CH₄ = {row['CH₄ (ppb)']}, "
+            f"IA = {row['Statut IA']} (Score {row['Score IA']}), "
+            f"Niveau HSI = {row['Niveau HSI']}, "
+            f"Action recommandée = {row['Action recommandée']}"
+        )
+
+    st.success("✅ Rapport HSI généré avec succès !")
