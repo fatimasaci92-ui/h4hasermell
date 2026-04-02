@@ -202,23 +202,25 @@ if st.button("Afficher carte PRO"):
     # Calcul centre carte
     all_lats, all_lons = [], []
     for name, zone in zones:
-        coords = zone.coordinates().getInfo()[0]
-        for lon, lat in coords:
-            all_lats.append(lat)
-            all_lons.append(lon)
+        coords = zone.coordinates().getInfo()
+        for poly in coords:
+            for lon, lat in poly:
+                all_lats.append(lat)
+                all_lons.append(lon)
 
     center_lat = (max(all_lats) + min(all_lats)) / 2
     center_lon = (max(all_lons) + min(all_lons)) / 2
     sw = [min(all_lats), min(all_lons)]
     ne = [max(all_lats), max(all_lons)]
 
-    # ✅ CORRECTION ICI (bien indenté)
+    # Création carte avec fond satellite
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=8,
         tiles=None
     )
 
+    # Fond satellite ESRI
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="ESRI Satellite",
@@ -227,10 +229,12 @@ if st.button("Afficher carte PRO"):
         control=True
     ).add_to(m)
 
+    # Fond OpenStreetMap pour switch
     folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
     folium.LayerControl().add_to(m)
-    # Charger données CH4
-    from datetime import timedelta
+
+    # Charger données CH4 des 7 derniers jours
+    from datetime import timedelta, datetime
     today = datetime.utcnow()
     start = today - timedelta(days=7)
 
@@ -241,11 +245,11 @@ if st.button("Afficher carte PRO"):
     count = collection.size().getInfo()
 
     if count == 0:
-        st.warning("⚠️ Aucune image disponible")
+        st.warning("⚠️ Aucune image CH₄ disponible")
     else:
         image = collection.mean()
 
-        # Vérification zone
+        # Vérification zone principale
         mean_val = image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=zoneCentre,
@@ -260,7 +264,7 @@ if st.button("Afficher carte PRO"):
             val_check = None
 
         if val_check is None:
-            st.warning("⚠️ Pas de données sur la zone")
+            st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
         else:
             # Palette dynamique
             min_val = val_check * 0.95
@@ -284,41 +288,22 @@ if st.button("Afficher carte PRO"):
 
             results = []
 
-           if st.button("Afficher carte PRO"):
+            # Ajouter les zones sur la carte
+            for name, zone in zones:
+                value = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
 
-    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+                try:
+                    val = value.getInfo()
+                except:
+                    val = None
 
-    # Calcul centre carte
-    all_lats, all_lons = [], []
-    for name, zone in zones:
-        coords = zone.coordinates().getInfo()[0]
-        for lon, lat in coords:
-            all_lats.append(lat)
-            all_lons.append(lon)
-
-    center_lat = (max(all_lats) + min(all_lats)) / 2
-    center_lon = (max(all_lons) + min(all_lons)) / 2
-    sw = [min(all_lats), min(all_lons)]
-    ne = [max(all_lats), max(all_lons)]
-
-    # ✅ CORRECTION ICI (bien indenté)
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=8,
-        tiles=None
-    )
-
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="ESRI Satellite",
-        name="Satellite",
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
-    folium.LayerControl().add_to(m)
-                # IA
+                # Détection IA légère
                 status_ia, score = detect_ch4_anomaly(
                     np.array([[val]]) if val else np.array([[np.nan]])
                 )
@@ -329,7 +314,12 @@ if st.button("Afficher carte PRO"):
                 elif status_ia == "⚠️ Suspect":
                     color = "orange"
 
-                coords = [[lat, lon] for lon, lat in zone.coordinates().getInfo()[0]]
+                # Extraire toutes les coordonnées correctement
+                coords_raw = zone.coordinates().getInfo()
+                coords = []
+                for poly in coords_raw:
+                    for lon, lat in poly:
+                        coords.append([lat, lon])  # Folium attend [lat, lon]
 
                 folium.Polygon(
                     locations=coords,
@@ -347,10 +337,10 @@ if st.button("Afficher carte PRO"):
                     "Dernière date": last_date
                 })
 
-            # Sauvegarder la carte
+            # Sauvegarder carte dans session_state
             st.session_state.map = m
 
-            # Tableau (ON GARDE ✔️)
+            # Afficher tableau des résultats
             st.dataframe(pd.DataFrame(results))
 
 # ================= AFFICHAGE CARTE FIXE =================
