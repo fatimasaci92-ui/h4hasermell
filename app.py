@@ -190,27 +190,33 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ PRO")
+
+# Initialisation session_state
+if "map" not in st.session_state:
+    st.session_state.map = None
+
 if st.button("Afficher carte PRO"):
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    # Calculer centre et limites pour la carte
+    # Calcul centre carte
     all_lats, all_lons = [], []
     for name, zone in zones:
         coords = zone.coordinates().getInfo()[0]
         for lon, lat in coords:
             all_lats.append(lat)
             all_lons.append(lon)
+
     center_lat = (max(all_lats) + min(all_lats)) / 2
     center_lon = (max(all_lons) + min(all_lons)) / 2
     sw = [min(all_lats), min(all_lons)]
     ne = [max(all_lats), max(all_lons)]
 
-    # Créer la carte centrée
+    # Création carte
     m = folium.Map(location=[center_lat, center_lon], zoom_start=8)
     m.fit_bounds([sw, ne])
 
-    # Charger les images CH₄ des 7 derniers jours
+    # Charger données CH4
     from datetime import timedelta
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -221,86 +227,106 @@ if st.button("Afficher carte PRO"):
 
     count = collection.size().getInfo()
     if count == 0:
-        st.warning("⚠️ Aucune image CH₄ disponible pour cette période")
-        st.stop()
+        st.warning("⚠️ Aucune image disponible")
+    else:
+        image = collection.mean()
 
-    image = collection.mean()
-
-    # Vérifier qu'il y a des données sur la zone principale
-    mean_val = image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=zoneCentre,
-        scale=7000,
-        maxPixels=1e9,
-        bestEffort=True
-    ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-    try:
-        val_check = mean_val.getInfo()
-        if val_check is None:
-            st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
-            st.stop()
-    except Exception as e:
-        st.error(f"Erreur Earth Engine: {e}")
-        st.stop()
-
-    # Générer la carte avec min/max dynamiques
-    min_val = val_check * 0.95
-    max_val = val_check * 1.05
-    map_id = image.getMapId({"min": min_val, "max": max_val, "palette": ["blue", "green", "yellow", "red"]})
-    folium.TileLayer(
-        tiles=map_id["tile_fetcher"].url_format,
-        attr="CH4",
-        overlay=True
-    ).add_to(m)
-
-    # Dernière date satellite
-    last_image = collection.sort('system:time_start', False).first()
-    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
-
-    # Ajouter les zones avec statut IA et dernière date
-    results = []
-    for name, zone in zones:
-        value = image.reduceRegion(
+        # Vérification zone
+        mean_val = image.reduceRegion(
             reducer=ee.Reducer.mean(),
-            geometry=zone,
+            geometry=zoneCentre,
             scale=7000,
             maxPixels=1e9,
             bestEffort=True
         ).get("CH4_column_volume_mixing_ratio_dry_air")
+
         try:
-            val = value.getInfo()
+            val_check = mean_val.getInfo()
         except:
-            val = None
+            val_check = None
 
-        # Détection IA légère
-        status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
-        color = "green"
-        if status_ia == "🔥 Fuite critique":
-            color = "red"
-        elif status_ia == "⚠️ Suspect":
-            color = "orange"
+        if val_check is None:
+            st.warning("⚠️ Pas de données sur la zone")
+        else:
+            # Palette dynamique
+            min_val = val_check * 0.95
+            max_val = val_check * 1.05
 
-        coords = [[lat, lon] for lon, lat in zone.coordinates().getInfo()[0]]
-        folium.Polygon(
-            locations=coords,
-            color=color,
-            fill=True,
-            fill_opacity=0.4,
-            tooltip=f"{name}: {status_ia} ({round(score,2)})"
-        ).add_to(m)
+            map_id = image.getMapId({
+                "min": min_val,
+                "max": max_val,
+                "palette": ["blue", "green", "yellow", "red"]
+            })
 
-        results.append({
-            "Zone": name,
-            "CH₄": val,
-            "Statut IA": status_ia,
-            "Score IA": round(score,2),
-            "Dernière date": last_date
-        })
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="CH4",
+                overlay=True
+            ).add_to(m)
 
-    # Afficher la carte et le tableau des résultats
-    st_folium(m, width=700, height=500)
-    st.dataframe(pd.DataFrame(results))
+            # Dernière date satellite
+            last_image = collection.sort('system:time_start', False).first()
+            last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+            results = []
+
+            for name, zone in zones:
+                value = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+                try:
+                    val = value.getInfo()
+                except:
+                    val = None
+
+                # IA
+                status_ia, score = detect_ch4_anomaly(
+                    np.array([[val]]) if val else np.array([[np.nan]])
+                )
+
+                color = "green"
+                if status_ia == "🔥 Fuite critique":
+                    color = "red"
+                elif status_ia == "⚠️ Suspect":
+                    color = "orange"
+
+                coords = [[lat, lon] for lon, lat in zone.coordinates().getInfo()[0]]
+
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.4,
+                    tooltip=f"{name}: {status_ia} (Score {round(score,2)})"
+                ).add_to(m)
+
+                results.append({
+                    "Zone": name,
+                    "CH₄": val,
+                    "Statut IA": status_ia,
+                    "Score IA": round(score,2),
+                    "Dernière date": last_date
+                })
+
+            # Sauvegarder carte
+            st.session_state.map = m
+
+            # Tableau résultats
+            st.dataframe(pd.DataFrame(results))
+
+# Affichage carte FIXE (hors bouton)
+if st.session_state.map:
+    st_folium(
+        st.session_state.map,
+        width=700,
+        height=500,
+        scroll_wheel_zoom=False
+    )
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 lat_point = st.number_input("Latitude", value=32.90)
