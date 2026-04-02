@@ -212,25 +212,23 @@ if st.button("Afficher carte PRO"):
     sw = [min(all_lats), min(all_lons)]
     ne = [max(all_lats), max(all_lons)]
 
-    # Création carte
-   m = folium.Map(
-    location=[center_lat, center_lon],
-    zoom_start=8,
-    tiles=None
-)
+    # ✅ CORRECTION ICI (bien indenté)
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=8,
+        tiles=None
+    )
 
-# Fond satellite ESRI (meilleur choix gratuit)
-folium.TileLayer(
-    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attr="ESRI Satellite",
-    name="Satellite",
-    overlay=False,
-    control=True
-).add_to(m)
-folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
-folium.LayerControl().add_to(m)
-    m.fit_bounds([sw, ne])
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
 
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
     # Charger données CH4
     from datetime import timedelta
     today = datetime.utcnow()
