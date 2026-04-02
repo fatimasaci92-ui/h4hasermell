@@ -284,20 +284,40 @@ if st.button("Afficher carte PRO"):
 
             results = []
 
-            for name, zone in zones:
-                value = image.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=zone,
-                    scale=7000,
-                    maxPixels=1e9,
-                    bestEffort=True
-                ).get("CH4_column_volume_mixing_ratio_dry_air")
+           if st.button("Afficher carte PRO"):
 
-                try:
-                    val = value.getInfo()
-                except:
-                    val = None
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
+    # Calcul centre carte
+    all_lats, all_lons = [], []
+    for name, zone in zones:
+        coords = zone.coordinates().getInfo()[0]
+        for lon, lat in coords:
+            all_lats.append(lat)
+            all_lons.append(lon)
+
+    center_lat = (max(all_lats) + min(all_lats)) / 2
+    center_lon = (max(all_lons) + min(all_lons)) / 2
+    sw = [min(all_lats), min(all_lons)]
+    ne = [max(all_lats), max(all_lons)]
+
+    # ✅ CORRECTION ICI (bien indenté)
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=8,
+        tiles=None
+    )
+
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
                 # IA
                 status_ia, score = detect_ch4_anomaly(
                     np.array([[val]]) if val else np.array([[np.nan]])
