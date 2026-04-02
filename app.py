@@ -190,7 +190,8 @@ if st.button("Analyser CH₄ (derniers jours)"):
 
 # ================= SECTION G =================
 st.markdown("## 🌍 Carte CH₄ PRO")
-# Initialisation session_state
+
+# Initialisation session_state (UNE seule fois)
 if "map" not in st.session_state:
     st.session_state.map = None
 
@@ -225,6 +226,7 @@ if st.button("Afficher carte PRO"):
         .select("CH4_column_volume_mixing_ratio_dry_air")
 
     count = collection.size().getInfo()
+
     if count == 0:
         st.warning("⚠️ Aucune image disponible")
     else:
@@ -312,20 +314,20 @@ if st.button("Afficher carte PRO"):
                     "Dernière date": last_date
                 })
 
-            # Sauvegarder carte
+            # Sauvegarder la carte
             st.session_state.map = m
 
-            # Tableau résultats
+            # Tableau (ON GARDE ✔️)
             st.dataframe(pd.DataFrame(results))
 
-# Affichage carte FIXE (hors bouton)
-st_folium(
-    st.session_state.map,
-    width=700,
-    height=500,
-    scroll_wheel_zoom=False,
-    key="map_ch4"
-)
+# ================= AFFICHAGE CARTE FIXE =================
+if st.session_state.map:
+    st.write("🗺️ Carte CH₄ (fixe)")
+
+    st.components.v1.html(
+        st.session_state.map._repr_html_(),
+        height=500
+    )
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
 lat_point = st.number_input("Latitude", value=32.90)
