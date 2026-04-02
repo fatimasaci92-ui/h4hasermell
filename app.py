@@ -382,3 +382,112 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
+        # ================= SECTION I : Carte + IA + Carbon Mapper + Rapport HSE =================
+import streamlit as st
+import folium
+from folium import CircleMarker, LayerControl
+from streamlit_folium import st_folium
+import pandas as pd
+
+st.header("SECTION I : Carte CH₄ + CO₂ + IA + Rapport HSE")
+
+# --- Création de la carte (une seule fois) ---
+if "map_final" not in st.session_state:
+    st.session_state.map_final = folium.Map(
+        location=[36.7, 3.1],  # Centré sur la zone d'étude
+        zoom_start=8,
+        tiles='Esri.WorldImagery',  # Fond satellite
+        control_scale=True
+    )
+
+m = st.session_state.map_final
+
+# --- Ajouter les zones GeoJSON ---
+zones_geojson_path = "zones.geojson"  # Chemin vers ton fichier GeoJSON
+folium.GeoJson(
+    zones_geojson_path,
+    name="Zones",
+    style_function=lambda f: {
+        'fillColor': 'orange',
+        'color': 'red',
+        'weight': 2,
+        'fillOpacity': 0.3
+    },
+    tooltip=folium.GeoJsonTooltip(fields=['nom'], aliases=['Zone'])
+).add_to(m)
+
+# --- Ajouter les points CH₄ ---
+ch4_data = [
+    {"lat": 36.7, "lon": 3.1, "val": 1.5},
+    {"lat": 36.8, "lon": 3.2, "val": 3.2},
+    {"lat": 36.6, "lon": 3.0, "val": 5.0},
+]
+
+for p in ch4_data:
+    color = "green" if p["val"] < 2 else "orange" if p["val"] < 4 else "red"
+    CircleMarker(
+        location=[p["lat"], p["lon"]],
+        radius=8,
+        color=color,
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.7,
+        popup=f"CH₄ : {p['val']} ppm"
+    ).add_to(m)
+
+# --- Ajouter Carbon Mapper / CO₂ (exemple overlay) ---
+# Supposons que tu as un GeoJSON / CSV CO₂
+co2_data = [
+    {"lat": 36.75, "lon": 3.15, "val": 400},
+    {"lat": 36.68, "lon": 3.05, "val": 420},
+]
+
+for p in co2_data:
+    color = "blue" if p["val"] < 410 else "purple"
+    CircleMarker(
+        location=[p["lat"], p["lon"]],
+        radius=6,
+        color=color,
+        fill=True,
+        fill_color=color,
+        fill_opacity=0.6,
+        popup=f"CO₂ : {p['val']} ppm"
+    ).add_to(m)
+
+# --- Contrôle des calques ---
+LayerControl().add_to(m)
+
+# --- Affichage de la carte ---
+st_folium(
+    m,
+    width=900,
+    height=500,
+    scroll_wheel_zoom=True,
+    key="map_final"
+)
+
+# --- Tableau IA ---
+st.subheader("Tableau IA : détection CH₄ & CO₂")
+ia_data = pd.DataFrame({
+    "Zone": ["Zone A", "Zone B", "Zone C"],
+    "CH₄ détecté (ppm)": [1.5, 3.2, 5.0],
+    "CO₂ détecté (ppm)": [400, 420, 405],
+    "Status": ["OK", "Attention", "Danger"]
+})
+st.dataframe(ia_data)
+
+# --- Rapport final avec coordonnées et analyse HSE ---
+st.subheader("Rapport final : coordonnées & analyse HSE")
+rapport_hse = pd.DataFrame({
+    "Zone": ["Zone A", "Zone B", "Zone C"],
+    "Latitude": [36.7, 36.8, 36.6],
+    "Longitude": [3.1, 3.2, 3.0],
+    "CH₄ (ppm)": [1.5, 3.2, 5.0],
+    "CO₂ (ppm)": [400, 420, 405],
+    "Analyse HSE": [
+        "Zone sécurisée",
+        "Surveillance recommandée",
+        "Action immédiate requise"
+    ]
+})
+st.dataframe(rapport_hse)
