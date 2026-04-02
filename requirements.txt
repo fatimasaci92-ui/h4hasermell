@@ -18,3 +18,4 @@ streamlit-folium
 torch
 torchvision
 Pillow
+fpdf
