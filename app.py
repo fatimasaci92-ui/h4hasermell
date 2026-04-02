@@ -388,8 +388,11 @@ st.markdown("## 📝 Section I — Analyse IA CH₄ et Rapport HSI")
 # Bouton pour lancer l'analyse HSI
 if st.button("Générer rapport HSI"):
 
+    # Dates pour les 7 derniers jours
     today = datetime.utcnow()
-    start = today - timedelta(days=7)  # Derniers 7 jours
+    start = today - timedelta(days=7)
+
+    # Collection CH4 dans GEE
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
         .filterDate(start, today) \
         .select("CH4_column_volume_mixing_ratio_dry_air")
@@ -413,6 +416,7 @@ if st.button("Générer rapport HSI"):
         except:
             val = None
 
+        # Détection IA légère
         status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
 
         # Déterminer niveau de risque HSI
