@@ -383,21 +383,28 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= SECTION I BIS — Export Rapport =================
-st.markdown("## 📄 Télécharger rapport final HSI")
+# ================= SECTION I PDF SIMPLE =================
+st.markdown("## 📝 Générer rapport PDF HSI simple")
 
-if st.button("Générer et télécharger rapport"):
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+import io
 
-    # Même analyse que Section I
+if st.button("Générer rapport PDF"):
+
     today = datetime.utcnow()
     start = today - timedelta(days=7)
+
+    # Collection CH4
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
         .filterDate(start, today) \
         .select("CH4_column_volume_mixing_ratio_dry_air")
     image = collection.mean()
+
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
     results = []
 
+    # Analyse par zone
     for name, zone in zones:
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
@@ -406,70 +413,75 @@ if st.button("Générer et télécharger rapport"):
             maxPixels=1e9,
             bestEffort=True
         ).get("CH4_column_volume_mixing_ratio_dry_air")
+
         try:
             val = value.getInfo()
         except:
             val = None
+
         status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+
+        # Niveau HSI
         if status_ia == "🔥 Fuite critique":
-            hsi_level = "⚠️ Risque élevé"
+            hsi_level = "Risque élevé"
             action = "Intervention immédiate + maintenance"
         elif status_ia == "⚠️ Suspect":
-            hsi_level = "⚠️ Risque moyen"
+            hsi_level = "Risque moyen"
             action = "Surveillance renforcée"
         else:
-            hsi_level = "✅ Faible"
+            hsi_level = "Faible"
             action = "Continuer suivi standard"
+
+        # Coordonnées approximatives du centre de la zone
+        coords_raw = zone.coordinates().getInfo()
+        all_lats = []
+        all_lons = []
+        for poly in coords_raw:
+            for lon, lat in poly:
+                all_lats.append(lat)
+                all_lons.append(lon)
+        center_lat = round((max(all_lats)+min(all_lats))/2, 5)
+        center_lon = round((max(all_lons)+min(all_lons))/2, 5)
 
         results.append({
             "Zone": name,
-            "CH₄ (ppb)": round(val,2) if val else "No data",
-            "Statut IA": status_ia,
-            "Score IA": round(score,2),
-            "Niveau HSI": hsi_level,
-            "Action recommandée": action
+            "CH4": round(val,2) if val else "No data",
+            "IA": status_ia,
+            "Score": round(score,2),
+            "HSI": hsi_level,
+            "Action": action,
+            "Lat": center_lat,
+            "Lon": center_lon
         })
 
-    df_report = pd.DataFrame(results)
+    # Création PDF
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(180, 820, "Rapport HSI - CH₄")
 
-    # ================= Générer CSV =================
-    csv_buffer = io.StringIO()
-    df_report.to_csv(csv_buffer, index=False)
-    csv_bytes = csv_buffer.getvalue().encode()
+    pdf.setFont("Helvetica", 12)
+    pdf.drawString(50, 790, f"Date du rapport : {today.strftime('%Y-%m-%d')}")
+
+    y = 760
+    for r in results:
+        pdf.drawString(50, y, f"Zone : {r['Zone']}")
+        y -= 15
+        pdf.drawString(60, y, f"Coordonnées : Latitude {r['Lat']}, Longitude {r['Lon']}")
+        y -= 15
+        pdf.drawString(60, y, f"CH₄ : {r['CH4']} ppb — IA : {r['IA']} (Score {r['Score']})")
+        y -= 15
+        pdf.drawString(60, y, f"Niveau HSI : {r['HSI']} — Action : {r['Action']}")
+        y -= 25
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
 
     st.download_button(
-        label="Télécharger rapport CSV",
-        data=csv_bytes,
-        file_name=f"rapport_CH4_HSI_{today.strftime('%Y%m%d')}.csv",
-        mime="text/csv"
+        label="Télécharger le rapport PDF HSI",
+        data=buffer,
+        file_name=f"rapport_HSI_CH4_{today.strftime('%Y%m%d')}.pdf",
+        mime="application/pdf"
     )
 
-    # ================= Générer PDF simple =================
-    try:
-        from fpdf import FPDF
-
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, "Rapport HSI - CH4", ln=True, align="C")
-        pdf.ln(10)
-        pdf.set_font("Arial", "", 12)
-
-        # Ajouter tableau texte
-        for row in results:
-            pdf.multi_cell(0, 8, f"{row['Zone']} | CH4: {row['CH₄ (ppb)']} | IA: {row['Statut IA']} | "
-                                  f"Niveau HSI: {row['Niveau HSI']} | Action: {row['Action recommandée']}")
-            pdf.ln(1)
-
-        pdf_buffer = io.BytesIO()
-        pdf.output(pdf_buffer)
-        pdf_buffer.seek(0)
-
-        st.download_button(
-            label="Télécharger rapport PDF",
-            data=pdf_buffer,
-            file_name=f"rapport_CH4_HSI_{today.strftime('%Y%m%d')}.pdf",
-            mime="application/pdf"
-        )
-    except ImportError:
-        st.warning("Module fpdf non installé. Installer via `pip install fpdf` pour le PDF.")
