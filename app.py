@@ -384,16 +384,16 @@ if st.button("Analyser point"):
     else:
         st.error("❌ Pas de donnée")
 
-# ================= SECTION I — PDF Professionnel HSI =================
-st.markdown("## 📝 Générer rapport PDF professionnel HSI")
+# ================= SECTION I — PDF coloré avec tableaux =================
+st.markdown("## 📝 Générer rapport PDF HSI avec tableaux colorés")
 
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.lib.units import mm
+from reportlab.lib.styles import getSampleStyleSheet
 import io
 
-if st.button("Générer rapport PDF professionnel"):
+if st.button("Générer rapport PDF coloré"):
 
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -405,7 +405,7 @@ if st.button("Générer rapport PDF professionnel"):
     image = collection.mean()
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
-    results = []
+    data_rows = []
 
     # Analyse par zone
     for name, zone in zones:
@@ -438,7 +438,7 @@ if st.button("Générer rapport PDF professionnel"):
             color = colors.green
             action = "Continuer suivi standard"
 
-        # Coordonnées approximatives du centre de la zone
+        # Coordonnées approximatives
         coords_raw = zone.coordinates().getInfo()
         all_lats = []
         all_lons = []
@@ -449,65 +449,60 @@ if st.button("Générer rapport PDF professionnel"):
         center_lat = round((max(all_lats)+min(all_lats))/2, 5)
         center_lon = round((max(all_lons)+min(all_lons))/2, 5)
 
-        results.append({
-            "Zone": name,
-            "CH4": round(val,2) if val else "No data",
-            "IA": status_ia,
-            "Score": round(score,2),
-            "HSI": hsi_level,
-            "Action": action,
-            "Color": color,
-            "Lat": center_lat,
-            "Lon": center_lon
-        })
+        data_rows.append([
+            name,
+            f"{center_lat}, {center_lon}",
+            round(val,2) if val else "No data",
+            status_ia,
+            round(score,2),
+            hsi_level,
+            action,
+            color
+        ])
 
     # Création PDF
     buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
 
-    # Titre
-    pdf.setFont("Helvetica-Bold", 18)
-    pdf.drawCentredString(width/2, height - 40, "Rapport HSI - CH₄")
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("Rapport HSI - CH₄", styles['Title']))
+    elements.append(Paragraph(f"Date du rapport : {today.strftime('%Y-%m-%d')}", styles['Normal']))
+    elements.append(Spacer(1, 12))
 
-    # Date
-    pdf.setFont("Helvetica", 12)
-    pdf.drawString(40, height - 70, f"Date du rapport : {today.strftime('%Y-%m-%d')}")
+    # Table Header
+    table_data = [["Zone", "Coordonnées", "CH₄ (ppb)", "IA", "Score", "Niveau HSI", "Action"]]
 
-    y = height - 110
-    pdf.setFont("Helvetica", 12)
+    for row in data_rows:
+        table_data.append(row[:-1])  # On enlève la couleur pour TableStyle
 
-    for r in results:
-        if y < 100:  # Nouvelle page si bas
-            pdf.showPage()
-            pdf.setFont("Helvetica", 12)
-            y = height - 50
+    table = Table(table_data, colWidths=[60, 90, 60, 60, 50, 80, 120])
 
-        # Zone
-        pdf.setFillColor(r["Color"])
-        pdf.drawString(40, y, f"Zone : {r['Zone']} — Niveau HSI : {r['HSI']}")
-        y -= 18
+    # Styles et couleurs par ligne
+    style = TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightblue),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 12),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BOX', (0,0), (-1,-1), 1, colors.black)
+    ])
 
-        # Coordonnées
-        pdf.setFillColor(colors.black)
-        pdf.drawString(50, y, f"Coordonnées : Latitude {r['Lat']}, Longitude {r['Lon']}")
-        y -= 15
+    # Couleur de chaque ligne selon HSI
+    for i, row in enumerate(data_rows):
+        style.add('BACKGROUND', (0,i+1), (-1,i+1), row[-1])  # Dernière colonne contient la couleur
 
-        # CH4 et IA
-        pdf.drawString(50, y, f"CH₄ : {r['CH4']} ppb — IA : {r['IA']} (Score {r['Score']})")
-        y -= 15
+    table.setStyle(style)
+    elements.append(table)
 
-        # Action recommandée
-        pdf.drawString(50, y, f"Action recommandée : {r['Action']}")
-        y -= 25
-
-    pdf.showPage()
-    pdf.save()
+    doc.build(elements)
     buffer.seek(0)
 
     st.download_button(
-        label="Télécharger rapport PDF professionnel HSI",
+        label="Télécharger rapport PDF coloré",
         data=buffer,
-        file_name=f"rapport_HSI_CH4_professionnel_{today.strftime('%Y%m%d')}.pdf",
+        file_name=f"rapport_HSI_CH4_coloré_{today.strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
