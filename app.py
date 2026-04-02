@@ -12,6 +12,8 @@ import tempfile
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime, timedelta
+import io
+
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -381,26 +383,21 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= SECTION I =================
-st.markdown("## 📝 Section I — Analyse IA CH₄ et Rapport HSI")
+# ================= SECTION I BIS — Export Rapport =================
+st.markdown("## 📄 Télécharger rapport final HSI")
 
-# Bouton pour lancer l'analyse HSI
-if st.button("Générer rapport HSI"):
+if st.button("Générer et télécharger rapport"):
 
-    # Dates pour les 7 derniers jours
+    # Même analyse que Section I
     today = datetime.utcnow()
-    start = today - timedelta(days=7)  # ✅ Fonctionne maintenant
-
-    # Collection CH4 dans GEE
+    start = today - timedelta(days=7)
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
         .filterDate(start, today) \
         .select("CH4_column_volume_mixing_ratio_dry_air")
-
     image = collection.mean()
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
     results = []
 
-    # Analyse par zone
     for name, zone in zones:
         value = image.reduceRegion(
             reducer=ee.Reducer.mean(),
@@ -409,16 +406,11 @@ if st.button("Générer rapport HSI"):
             maxPixels=1e9,
             bestEffort=True
         ).get("CH4_column_volume_mixing_ratio_dry_air")
-
         try:
             val = value.getInfo()
         except:
             val = None
-
-        # Détection IA légère
         status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
-
-        # Déterminer niveau de risque HSI
         if status_ia == "🔥 Fuite critique":
             hsi_level = "⚠️ Risque élevé"
             action = "Intervention immédiate + maintenance"
@@ -431,30 +423,53 @@ if st.button("Générer rapport HSI"):
 
         results.append({
             "Zone": name,
-            "CH₄ (ppb)": round(val, 2) if val else "No data",
+            "CH₄ (ppb)": round(val,2) if val else "No data",
             "Statut IA": status_ia,
-            "Score IA": round(score, 2),
+            "Score IA": round(score,2),
             "Niveau HSI": hsi_level,
             "Action recommandée": action
         })
 
-    # Afficher tableau HSI
-    df_hsi = pd.DataFrame(results)
-    st.dataframe(df_hsi)
+    df_report = pd.DataFrame(results)
 
-    # Résumé graphique HSI
-    st.markdown("### 📊 Répartition des niveaux de risque HSI")
-    risk_counts = df_hsi["Niveau HSI"].value_counts()
-    st.bar_chart(risk_counts)
+    # ================= Générer CSV =================
+    csv_buffer = io.StringIO()
+    df_report.to_csv(csv_buffer, index=False)
+    csv_bytes = csv_buffer.getvalue().encode()
 
-    # Générer résumé texte HSI
-    st.markdown("### 🖋️ Résumé HSI")
-    for row in results:
-        st.markdown(
-            f"- **{row['Zone']}** : CH₄ = {row['CH₄ (ppb)']}, "
-            f"IA = {row['Statut IA']} (Score {row['Score IA']}), "
-            f"Niveau HSI = {row['Niveau HSI']}, "
-            f"Action recommandée = {row['Action recommandée']}"
+    st.download_button(
+        label="Télécharger rapport CSV",
+        data=csv_bytes,
+        file_name=f"rapport_CH4_HSI_{today.strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
+
+    # ================= Générer PDF simple =================
+    try:
+        from fpdf import FPDF
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Rapport HSI - CH4", ln=True, align="C")
+        pdf.ln(10)
+        pdf.set_font("Arial", "", 12)
+
+        # Ajouter tableau texte
+        for row in results:
+            pdf.multi_cell(0, 8, f"{row['Zone']} | CH4: {row['CH₄ (ppb)']} | IA: {row['Statut IA']} | "
+                                  f"Niveau HSI: {row['Niveau HSI']} | Action: {row['Action recommandée']}")
+            pdf.ln(1)
+
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        pdf_buffer.seek(0)
+
+        st.download_button(
+            label="Télécharger rapport PDF",
+            data=pdf_buffer,
+            file_name=f"rapport_CH4_HSI_{today.strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
         )
-
-    st.success("✅ Rapport HSI généré avec succès !")
+    except ImportError:
+        st.warning("Module fpdf non installé. Installer via `pip install fpdf` pour le PDF.")
