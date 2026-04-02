@@ -212,14 +212,14 @@ if st.button("Afficher carte PRO"):
     sw = [min(all_lats), min(all_lons)]
     ne = [max(all_lats), max(all_lons)]
 
-    # Création carte avec fond satellite
+    # Création carte vide (sans tiles)
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=8,
         tiles=None
     )
 
-    # Fond satellite ESRI
+    # Ajouter fond satellite ESRI
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="ESRI Satellite",
@@ -228,7 +228,7 @@ if st.button("Afficher carte PRO"):
         control=True
     ).add_to(m)
 
-    # Fond OpenStreetMap pour switch
+    # Ajouter fond OSM pour switch
     folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
     folium.LayerControl().add_to(m)
 
@@ -265,7 +265,7 @@ if st.button("Afficher carte PRO"):
         if val_check is None:
             st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
         else:
-            # Palette dynamique
+            # Palette dynamique CH₄
             min_val = val_check * 0.95
             max_val = val_check * 1.05
 
@@ -275,10 +275,12 @@ if st.button("Afficher carte PRO"):
                 "palette": ["blue", "green", "yellow", "red"]
             })
 
+            # Ajouter la couche CH4 sur la carte
             folium.TileLayer(
                 tiles=map_id["tile_fetcher"].url_format,
                 attr="CH4",
-                overlay=True
+                overlay=True,
+                name="CH4"
             ).add_to(m)
 
             # Dernière date satellite
@@ -346,9 +348,13 @@ if st.button("Afficher carte PRO"):
 if st.session_state.map:
     st.write("🗺️ Carte CH₄ (fixe)")
 
-    st.components.v1.html(
-        st.session_state.map._repr_html_(),
-        height=500
+    # Affichage correct avec Folium
+    st_folium(
+        st.session_state.map,
+        width=700,
+        height=500,
+        scroll_wheel_zoom=False,
+        key="map_ch4"
     )
 # ================= SECTION H =================
 st.markdown("## 🎯 Détection locale")
