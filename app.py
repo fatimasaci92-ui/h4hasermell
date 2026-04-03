@@ -464,3 +464,184 @@ elements.append(Paragraph(
 # ================= BUILD =================
 doc.build(elements)
 buffer.seek(0)
+# ================= SECTION I — FINAL CLEAN =================
+st.markdown("## 🧾 Rapport Final PDF (PRO & Stable)")
+
+if st.button("📄 Générer Rapport PDF"):
+
+    # ================= IMPORT LOCAL (SAFE) =================
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+
+    import io
+    import matplotlib.pyplot as plt
+    from datetime import datetime, timedelta
+
+    # ================= VARIABLES SAFE =================
+    today = datetime.utcnow()
+    last_date = "N/A"
+    img_path = "temp_map.png"
+
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+    # ================= GEE SAFE =================
+    try:
+        start = today - timedelta(days=7)
+
+        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+            .filterDate(start, today) \
+            .select("CH4_column_volume_mixing_ratio_dry_air")
+
+        image = collection.mean()
+
+        last_image = collection.sort('system:time_start', False).first()
+        last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+    except:
+        st.warning("⚠️ Erreur récupération données satellite")
+        image = None
+
+    # ================= IMAGE CH4 =================
+    try:
+        import rasterio
+        with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
+            img = src.read(1)
+
+        img[img <= 0] = np.nan
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(img, cmap="jet")
+        ax.set_title("CH4 Detection")
+        ax.axis("off")
+
+        plt.savefig(img_path, bbox_inches='tight')
+        plt.close()
+
+    except:
+        st.warning("⚠️ Image CH4 non disponible")
+
+    # ================= TABLE DATA =================
+    table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
+
+    for name, zone in zones:
+
+        val = None
+
+        if image:
+            try:
+                value = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+                val = value.getInfo()
+            except:
+                val = None
+
+        # IA SAFE
+        status, score = detect_ch4_anomaly(
+            np.array([[val]]) if val else np.array([[np.nan]])
+        )
+
+        # Débit SAFE
+        debit = round((val - 1800) * 0.5, 2) if val else "N/A"
+
+        # Coordonnées SAFE
+        try:
+            coords = zone.centroid().coordinates().getInfo()
+            lon, lat = coords
+        except:
+            lat, lon = "N/A", "N/A"
+
+        table_data.append([
+            name,
+            round(val, 2) if val else "N/A",
+            debit,
+            status,
+            lat,
+            lon
+        ])
+
+    # ================= PDF =================
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # HEADER
+    elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+    elements.append(Paragraph("CH₄ Measurement Report", styles["Heading2"]))
+    elements.append(Spacer(1, 10))
+
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1, 10))
+
+    # IMAGE
+    try:
+        elements.append(Paragraph("<b>Detection Map</b>", styles["Heading3"]))
+        img_pdf = Image(img_path)
+        img_pdf.drawHeight = 4 * inch
+        img_pdf.drawWidth = 6 * inch
+        elements.append(img_pdf)
+        elements.append(Spacer(1, 15))
+    except:
+        pass
+
+    # TABLE
+    table = Table(table_data, colWidths=[70, 70, 70, 100, 60, 60])
+
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+
+    elements.append(Paragraph("<b>Emission Data</b>", styles["Heading3"]))
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+
+    # HSE ANALYSIS
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Methane anomalies detected via satellite indicate potential leaks. "
+        "Critical zones may present risks of fire, explosion, and environmental impact.",
+        styles["Normal"]
+    ))
+
+    elements.append(Spacer(1, 12))
+
+    # ACTIONS
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "- Field inspection\n"
+        "- Leak verification\n"
+        "- Maintenance\n"
+        "- Continuous monitoring",
+        styles["Normal"]
+    ))
+
+    # BUILD PDF
+    try:
+        doc.build(elements)
+        buffer.seek(0)
+
+        st.download_button(
+            label="📥 Télécharger Rapport PDF",
+            data=buffer,
+            file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+
+    except Exception as e:
+        st.error(f"Erreur PDF : {e}")
