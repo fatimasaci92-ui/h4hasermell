@@ -587,6 +587,117 @@ if st.button("📄 Générer Rapport PDF"):
 
 
 
+# ================= SECTION J — Analyse point critique + PDF amélioré =================
+st.markdown("## 📝 Section J — Analyse Point Critique et Rapport Ultra PRO")
+
+days = st.number_input("Analyser les derniers jours pour fuite", min_value=1, max_value=30, value=7, key="days_j")
+
+if st.button("Analyser et Générer Rapport (Point critique)"):
+    today = datetime.utcnow()
+    start = today - timedelta(days=days)
+
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    
+    image = collection.mean()
+    critical_points = []
+    results = []
+
+    for name, zone in zones:
+        # Réduction moyenne
+        try:
+            mean_val = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9,
+                bestEffort=True
+            ).getInfo()["CH4_column_volume_mixing_ratio_dry_air"]
+        except:
+            mean_val = np.nan
+
+        # Détection IA
+        status, score = detect_ch4_anomaly(mean_val)
+
+        # Détection pixel maximal
+        try:
+            # Extraire l'image en numpy (résolution 7000m)
+            array = np.array(image.sampleRectangle(region=zone).getInfo()["CH4_column_volume_mixing_ratio_dry_air"])
+            max_idx = np.unravel_index(np.nanargmax(array), array.shape)
+            # Coordonnées approximatives du pixel max
+            lon_min, lat_min, lon_max, lat_max = zone.bounds().getInfo()[0][0][0], zone.bounds().getInfo()[0][0][1], zone.bounds().getInfo()[0][2][0], zone.bounds().getInfo()[0][2][1]
+            lat_max_point = lat_min + (lat_max - lat_min) * (max_idx[0] / array.shape[0])
+            lon_max_point = lon_min + (lon_max - lon_min) * (max_idx[1] / array.shape[1])
+        except:
+            lat_max_point, lon_max_point = zone.centroid().coordinates().getInfo()[1], zone.centroid().coordinates().getInfo()[0]
+
+        # Calcul débit (exemple)
+        debit = round((mean_val - 1800) * 0.5,2) if mean_val else "N/A"
+
+        results.append([name, round(mean_val,2) if mean_val else 'N/A', status, round(score,2), debit, lat_max_point, lon_max_point])
+        if status == "🔥 Fuite critique":
+            critical_points.append({"lat": lat_max_point, "lon": lon_max_point, "zone": name, "val": mean_val})
+
+    # Stockage dataframe pour PDF
+    df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Débit","Lat","Lon"])
+    st.session_state.df_critical = df
+    st.dataframe(df)
+
+    # Carte Folium avec image satellite et points critiques
+    if critical_points:
+        center_lat = critical_points[0]['lat']
+        center_lon = critical_points[0]['lon']
+    else:
+        center_lat = np.mean([r[5] for r in results])
+        center_lon = np.mean([r[6] for r in results])
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles=None)
+
+    # Fond satellite ESRI
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # Marqueurs des points critiques
+    for r in results:
+        color = "green" if r[2]=="✅ Normal" else ("orange" if r[2]=="⚠️ Suspect" else "red")
+        folium.CircleMarker(
+            location=[r[5], r[6]],
+            radius=10,
+            color=color,
+            fill=True,
+            fill_opacity=0.7,
+            tooltip=f"{r[0]} | CH4: {r[1]} ppb | IA: {r[2]} | Débit: {r[4]}"
+        ).add_to(m)
+
+    st.session_state.critical_map = m
+
+# Affichage carte fixe
+if "critical_map" in st.session_state:
+    st.write("🗺️ Carte Point Critique (Fixe)")
+    st.components.v1.html(
+        st.session_state.critical_map._repr_html_(),
+        height=500
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ================= SECTION PDF PRO FUITES =================
