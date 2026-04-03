@@ -388,82 +388,6 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= PDF PRO CORRIGÉ =================
-from reportlab.platypus import PageBreak
-from reportlab.lib.pagesizes import A4
-
-buffer = io.BytesIO()
-doc = SimpleDocTemplate(buffer, pagesize=A4)
-
-styles = getSampleStyleSheet()
-elements = []
-
-# ================= HEADER =================
-elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
-elements.append(Paragraph("CH₄ Measurement Report", styles["Heading2"]))
-elements.append(Spacer(1, 10))
-
-elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
-elements.append(Spacer(1, 10))
-
-# ================= IMAGE BIEN DIMENSIONNÉE =================
-elements.append(Paragraph("<b>Detection Map</b>", styles["Heading3"]))
-
-img = Image(img_path)
-img.drawHeight = 4 * inch
-img.drawWidth = 6 * inch
-elements.append(img)
-
-elements.append(Spacer(1, 15))
-
-# ================= TABLEAU LARGE =================
-table = Table(table_data, colWidths=[70, 70, 70, 100, 60, 60])
-
-table.setStyle(TableStyle([
-    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1f4e79")),
-    ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-
-    ('ALIGN',(0,0),(-1,-1),'CENTER'),
-
-    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-
-    ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-
-    ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-]))
-
-elements.append(Paragraph("<b>Emission Data</b>", styles["Heading3"]))
-elements.append(table)
-
-elements.append(Spacer(1, 20))
-
-# ================= HSE ANALYSIS =================
-elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
-
-elements.append(Paragraph(
-    "Satellite data analysis reveals methane concentration anomalies in monitored zones. "
-    "Critical levels indicate potential leaks requiring immediate intervention to prevent "
-    "industrial hazards such as fire, explosion, and environmental damage.",
-    styles["Normal"]
-))
-
-elements.append(Spacer(1, 12))
-
-# ================= ACTIONS =================
-elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
-
-elements.append(Paragraph(
-    "- Immediate field inspection\n"
-    "- Leak detection verification\n"
-    "- Maintenance intervention\n"
-    "- Continuous satellite monitoring",
-    styles["Normal"]
-))
-
-# ================= BUILD =================
-doc.build(elements)
-buffer.seek(0)
 # ================= SECTION I — FINAL CLEAN =================
 st.markdown("## 🧾 Rapport Final PDF (PRO & Stable)")
 
@@ -475,15 +399,12 @@ if st.button("📄 Générer Rapport PDF"):
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import inch
-
-    import io
-    import matplotlib.pyplot as plt
     from datetime import datetime, timedelta
 
     # ================= VARIABLES SAFE =================
     today = datetime.utcnow()
     last_date = "N/A"
-    img_path = "temp_map.png"
+    img_path = os.path.join(tempfile.gettempdir(), "temp_map.png")
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
