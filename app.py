@@ -589,158 +589,171 @@ if st.button("📄 Générer Rapport PDF"):
 
 
 
-# ================= SECTION J — Analyse point critique + PDF amélioré =================
-st.markdown("## 📝 Section J — Analyse Point Critique et Rapport Ultra PRO")
+# ================= SECTION PDF PRO FUITES =================
+st.markdown("## 🧾 Rapport CH₄ avec Point de Fuite")
 
-days = st.number_input("Analyser les derniers jours pour fuite", min_value=1, max_value=30, value=7, key="days_j")
+if st.button("📄 Générer Rapport Fuite"):
 
-if st.button("Analyser et Générer Rapport (Point critique)"):
+    import io
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+    from datetime import datetime
+    from PIL import Image as PILImage
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import tempfile
+    import os
+
     today = datetime.utcnow()
-    start = today - timedelta(days=days)
 
-    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
-        .filterDate(start, today) \
-        .select("CH4_column_volume_mixing_ratio_dry_air")
-    
-    image = collection.mean()
-    critical_points = []
+    # ------------------- Récupération des données CH4 -------------------
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
     results = []
 
+    # On prend l'image moyenne de 7 derniers jours
+    try:
+        start = ee.Date(today.strftime("%Y-%m-%d")).advance(-7, "day")
+        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+            .filterDate(start, ee.Date(today.strftime("%Y-%m-%d"))) \
+            .select("CH4_column_volume_mixing_ratio_dry_air")
+        image = collection.mean()
+
+        last_image = collection.sort('system:time_start', False).first()
+        last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+    except:
+        st.warning("⚠️ Erreur récupération données satellite")
+        image = None
+        last_date = "N/A"
+
+    # ------------------- Analyse par zone -------------------
+    table_data = [["Zone", "CH₄ (ppb)", "Débit", "Statut IA", "Lat", "Lon"]]
+
     for name, zone in zones:
-        # Réduction moyenne
+        val = None
+        if image:
+            try:
+                val = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).getInfo().get("CH4_column_volume_mixing_ratio_dry_air")
+            except:
+                val = None
+
+        # IA légère
+        status, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+        debit = round((val-1800)*0.5,2) if val else "N/A"
+
+        # Coordonnées du centre
         try:
-            mean_val = image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=zone,
-                scale=7000,
-                maxPixels=1e9,
-                bestEffort=True
-            ).getInfo()["CH4_column_volume_mixing_ratio_dry_air"]
+            lon, lat = zone.centroid().coordinates().getInfo()
         except:
-            mean_val = np.nan
+            lat, lon = "N/A", "N/A"
 
-        # Détection IA
-        status, score = detect_ch4_anomaly(mean_val)
+        table_data.append([name, round(val,2) if val else "N/A", debit, status, lat, lon])
+        results.append((name, val, status, lat, lon))
 
-        # Détection pixel maximal
-        try:
-            # Extraire l'image en numpy (résolution 7000m)
-            array = np.array(image.sampleRectangle(region=zone).getInfo()["CH4_column_volume_mixing_ratio_dry_air"])
-            max_idx = np.unravel_index(np.nanargmax(array), array.shape)
-            # Coordonnées approximatives du pixel max
-            lon_min, lat_min, lon_max, lat_max = zone.bounds().getInfo()[0][0][0], zone.bounds().getInfo()[0][0][1], zone.bounds().getInfo()[0][2][0], zone.bounds().getInfo()[0][2][1]
-            lat_max_point = lat_min + (lat_max - lat_min) * (max_idx[0] / array.shape[0])
-            lon_max_point = lon_min + (lon_max - lon_min) * (max_idx[1] / array.shape[1])
-        except:
-            lat_max_point, lon_max_point = zone.centroid().coordinates().getInfo()[1], zone.centroid().coordinates().getInfo()[0]
+    # ------------------- Détection point de fuite le plus élevé -------------------
+    # On récupère le point le plus chaud du raster si possible
+    try:
+        # On utilise le fichier raster CH4 moyen de 2024 (ou l'année en cours)
+        raster_path = f"data/Moyenne CH4/CH4_mean_2024.tif"
+        import rasterio
+        with rasterio.open(raster_path) as src:
+            img = src.read(1)
+        img[img <=0] = np.nan
 
-        # Calcul débit (exemple)
-        debit = round((mean_val - 1800) * 0.5,2) if mean_val else "N/A"
+        # Point de fuite max
+        y, x = np.unravel_index(np.nanargmax(img), img.shape)
+        max_val = img[y, x]
 
-        results.append([name, round(mean_val,2) if mean_val else 'N/A', status, round(score,2), debit, lat_max_point, lon_max_point])
-        if status == "🔥 Fuite critique":
-            critical_points.append({"lat": lat_max_point, "lon": lon_max_point, "zone": name, "val": mean_val})
+        # Création image zoom plume
+        size = 60
+        y1, y2 = max(0, y-size), min(img.shape[0], y+size)
+        x1, x2 = max(0, x-size), min(img.shape[1], x+size)
+        zoom = img[y1:y2, x1:x2]
 
-    # Stockage dataframe pour PDF
-    df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Débit","Lat","Lon"])
-    st.session_state.df_critical = df
-    st.dataframe(df)
+        fig, ax = plt.subplots()
+        im = ax.imshow(zoom, cmap="jet", vmin=np.nanpercentile(zoom,5), vmax=np.nanpercentile(zoom,98))
+        ax.set_title(f"Point de fuite CH₄ ({round(max_val,2)} ppb)")
+        ax.axis("off")
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label("CH₄ (ppb)")
 
-    # Carte Folium avec image satellite et points critiques
-    if critical_points:
-        center_lat = critical_points[0]['lat']
-        center_lon = critical_points[0]['lon']
-    else:
-        center_lat = np.mean([r[5] for r in results])
-        center_lon = np.mean([r[6] for r in results])
+        tmp_img = os.path.join(tempfile.gettempdir(), "ch4_fuite.png")
+        plt.savefig(tmp_img, bbox_inches='tight', dpi=300)
+        plt.close()
+    except Exception as e:
+        st.warning(f"⚠️ Impossible de générer image fuite: {e}")
+        tmp_img = None
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles=None)
+    # ------------------- Génération PDF -------------------
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
 
-    # Fond satellite ESRI
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="ESRI Satellite",
-        name="Satellite",
-        overlay=False,
-        control=True
-    ).add_to(m)
+    # Header
+    elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+    elements.append(Paragraph("CH₄ Detection Report", styles["Heading2"]))
+    elements.append(Spacer(1,10))
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1,10))
 
-    # Marqueurs des points critiques
-    for r in results:
-        color = "green" if r[2]=="✅ Normal" else ("orange" if r[2]=="⚠️ Suspect" else "red")
-        folium.CircleMarker(
-            location=[r[5], r[6]],
-            radius=10,
-            color=color,
-            fill=True,
-            fill_opacity=0.7,
-            tooltip=f"{r[0]} | CH4: {r[1]} ppb | IA: {r[2]} | Débit: {r[4]}"
-        ).add_to(m)
+    # Image plume
+    if tmp_img:
+        img_pdf = Image(tmp_img)
+        img_pdf.drawHeight = 4*inch
+        img_pdf.drawWidth = 6*inch
+        elements.append(Paragraph("<b>Detection Point de Fuite</b>", styles["Heading3"]))
+        elements.append(img_pdf)
+        elements.append(Spacer(1,15))
 
-    st.session_state.critical_map = m
+    # Tableau
+    table = Table(table_data, colWidths=[70,70,70,80,60,60])
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(Paragraph("<b>Analyse par Zone</b>", styles["Heading3"]))
+    elements.append(table)
+    elements.append(Spacer(1,20))
 
-# Affichage carte fixe
-if "critical_map" in st.session_state:
-    st.write("🗺️ Carte Point Critique (Fixe)")
-    st.components.v1.html(
-        st.session_state.critical_map._repr_html_(),
-        height=500
-    )
+    # HSE
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Les anomalies CH₄ détectées via satellite indiquent des fuites potentielles. "
+        "Les zones critiques peuvent présenter un risque incendie/explosion et un impact environnemental.",
+        styles["Normal"]
+    ))
 
-# ================= PDF Point Critique =================
-if st.button("📄 Générer Rapport Point Critique PDF"):
-    if "df_critical" not in st.session_state:
-        st.warning("⚠️ Analyse non réalisée, impossible de générer PDF")
-    else:
-        df = st.session_state.df_critical
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        elements = []
+    # Actions
+    elements.append(Spacer(1,12))
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "- Field inspection\n- Leak verification\n- Maintenance\n- Continuous monitoring",
+        styles["Normal"]
+    ))
 
-        today = datetime.utcnow()
-        elements.append(Paragraph("<b>DATA.SAT — Point critique</b>", styles['Title']))
-        elements.append(Paragraph(f"Date: {today.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-        elements.append(Spacer(1,12))
-
-        # Carte satellite + point critique
-        img_path = os.path.join(tempfile.gettempdir(), "critical_map.png")
-        m = st.session_state.critical_map
-        m.save(img_path)  # sauvegarde HTML comme image via screenshot externe ou folium_static + selenium si besoin
-        # Ici, on suppose que tu as une capture PNG de la carte
-        try:
-            elements.append(Paragraph("<b>Carte Point Critique</b>", styles["Heading3"]))
-            img_pdf = Image(img_path, width=6*inch, height=4*inch)
-            elements.append(img_pdf)
-            elements.append(Spacer(1,12))
-        except:
-            pass
-
-        # Table
-        table = Table([df.columns.tolist()] + df.values.tolist(), colWidths=[70,70,80,60,60,60,60])
-        table.setStyle(TableStyle([
-            ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
-            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-            ('ALIGN',(0,0),(-1,-1),'CENTER'),
-            ('GRID',(0,0),(-1,-1),0.5,colors.black),
-            ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-        ]))
-        elements.append(table)
-
-        # Analyse HSE
-        elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
-        elements.append(Paragraph(
-            "Les anomalies CH₄ détectées par satellite indiquent les points de fuite critiques. "
-            "Les zones rouges présentent un risque potentiel d'incendie, explosion et impact environnemental.",
-            styles["Normal"]
-        ))
-
+    # Build PDF
+    try:
         doc.build(elements)
         buffer.seek(0)
-
         st.download_button(
-            label="📥 Télécharger Rapport Point Critique PDF",
+            "📥 Télécharger Rapport Fuite CH₄",
             data=buffer,
-            file_name=f"rapport_CH4_point_critique_{today.strftime('%Y%m%d')}.pdf",
+            file_name=f"rapport_CH4_fuite_{today.strftime('%Y%m%d')}.pdf",
             mime="application/pdf"
         )
+    except Exception as e:
+        st.error(f"Erreur PDF: {e}")
