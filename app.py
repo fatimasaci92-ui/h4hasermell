@@ -425,24 +425,57 @@ if st.button("📄 Générer Rapport PDF"):
         st.warning("⚠️ Erreur récupération données satellite")
         image = None
 
-    # ================= IMAGE CH4 =================
-    try:
-        import rasterio
-        with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
-            img = src.read(1)
+    # ================= IMAGE CH4 PRO =================
+try:
+    import rasterio
 
-        img[img <= 0] = np.nan
+    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
+        img = src.read(1)
 
-        fig, ax = plt.subplots()
-        im = ax.imshow(img, cmap="jet")
-        ax.set_title("CH4 Detection")
-        ax.axis("off")
+    img[img <= 0] = np.nan
 
-        plt.savefig(img_path, bbox_inches='tight')
-        plt.close()
+    # 🔥 DETECTION ZONE ACTIVE (max CH4)
+    max_idx = np.unravel_index(np.nanargmax(img), img.shape)
+    y, x = max_idx
 
-    except:
-        st.warning("⚠️ Image CH4 non disponible")
+    # 🔍 ZOOM autour de la fuite
+    size = 50  # taille du zoom (ajuste si besoin)
+    y1, y2 = max(0, y-size), min(img.shape[0], y+size)
+    x1, x2 = max(0, x-size), min(img.shape[1], x+size)
+
+    zoom_img = img[y1:y2, x1:x2]
+
+    # 🎨 NORMALISATION (améliore contraste)
+    vmin = np.nanpercentile(zoom_img, 5)
+    vmax = np.nanpercentile(zoom_img, 95)
+
+    fig, ax = plt.subplots()
+
+    im = ax.imshow(zoom_img, cmap="jet", vmin=vmin, vmax=vmax)
+
+    # 🟩 RECTANGLE CENTRE (zone fuite)
+    rect = plt.Rectangle(
+        (size//2 - 10, size//2 - 10),
+        20, 20,
+        linewidth=2,
+        edgecolor='lime',
+        facecolor='none'
+    )
+    ax.add_patch(rect)
+
+    # 📊 BARRE COULEUR (IMPORTANT GHGSAT)
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("CH₄ (ppb)")
+
+    ax.set_title("CH4 Detection (Zoom fuite)")
+    ax.axis("off")
+
+    img_path = os.path.join(tempfile.gettempdir(), "ch4_map.png")
+    plt.savefig(img_path, bbox_inches='tight', dpi=300)
+    plt.close()
+
+except Exception as e:
+    st.warning(f"⚠️ Image CH4 erreur : {e}")
 
     # ================= TABLE DATA =================
     table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
