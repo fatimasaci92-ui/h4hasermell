@@ -19,6 +19,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Image
 from reportlab.lib.units import inch
 import matplotlib.pyplot as plt 
+from reportlab.lib.pagesizes import A4
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
