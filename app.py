@@ -598,7 +598,6 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
     today = datetime.utcnow()
     start = today - timedelta(days=days)
 
-    # Collecte des images CH4
     collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
         .filterDate(start, today) \
         .select("CH4_column_volume_mixing_ratio_dry_air")
@@ -607,7 +606,6 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
     critical_points = []
     results = []
 
-    # Analyse par zone
     for name, zone in zones:
         try:
             val = image.reduceRegion(
@@ -629,21 +627,13 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
         if status == "🔥 Fuite critique":
             critical_points.append({'lat': lat, 'lon': lon, 'zone': name, 'val': val})
 
-    # Tableau
     df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Lat","Lon"])
+    st.session_state.df_critical = df  # 🔹 Stockage dans session_state
     st.dataframe(df)
 
-    # Carte Folium centrée sur point critique
-    if critical_points:
-        center_lat = critical_points[0]['lat']
-        center_lon = critical_points[0]['lon']
-    else:
-        center_lat = np.mean([r[4] for r in results])
-        center_lon = np.mean([r[5] for r in results])
-
-    # ✅ Stocker la carte dans session_state pour la rendre “fixe”
-    if "critical_map" not in st.session_state:
-        st.session_state.critical_map = None
+    # Carte
+    center_lat = critical_points[0]['lat'] if critical_points else np.mean([r[4] for r in results])
+    center_lon = critical_points[0]['lon'] if critical_points else np.mean([r[5] for r in results])
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
     for r in results:
@@ -660,7 +650,7 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
     st.session_state.critical_map = m
 
 # Affichage carte fixe
-if st.session_state.critical_map:
+if "critical_map" in st.session_state:
     st.write("🗺️ Carte Point Critique (Fixe)")
     st.components.v1.html(
         st.session_state.critical_map._repr_html_(),
@@ -674,45 +664,24 @@ if st.button("📄 Générer Rapport Point Critique PDF"):
     styles = getSampleStyleSheet()
     elements = []
 
+    today = datetime.utcnow()
+
     elements.append(Paragraph("<b>DATA.SAT — Point critique</b>", styles['Title']))
     elements.append(Paragraph(f"Date: {today.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     elements.append(Spacer(1,12))
 
-    # Tableau PDF
-    table = Table([df.columns.tolist()] + df.values.tolist(), colWidths=[70,70,80,60,60,60])
-    table.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-    ]))
-    elements.append(table)
-    elements.append(Spacer(1,12))
-
-    # Capture plume si critique
-    if critical_points:
-        try:
-            fig, ax = plt.subplots()
-            ax.scatter([p['lon'] for p in critical_points],[p['lat'] for p in critical_points], color='red', s=200)
-            ax.set_title("Point(s) critique(s) de fuite")
-            ax.set_xlabel("Longitude")
-            ax.set_ylabel("Latitude")
-            img_path = os.path.join(tempfile.gettempdir(),"critical_points.png")
-            plt.savefig(img_path, bbox_inches='tight', dpi=300)
-            plt.close()
-
-            elements.append(Paragraph("<b>Carte des points critiques</b>", styles['Heading3']))
-            elements.append(Image(img_path, width=6*inch, height=4*inch))
-        except Exception as e:
-            st.warning(f"Erreur image plume: {e}")
-
-    # Build PDF
-    doc.build(elements)
-    buffer.seek(0)
-    st.download_button(
-        "📥 Télécharger Rapport Point Critique PDF",
-        data=buffer,
-        file_name=f"rapport_point_critique_CH4_{today.strftime('%Y%m%d')}.pdf",
-        mime="application/pdf"
-    )
+    # 🔹 Utiliser df depuis session_state
+    if "df_critical" in st.session_state:
+        df = st.session_state.df_critical
+        table = Table([df.columns.tolist()] + df.values.tolist(), colWidths=[70,70,80,60,60,60])
+        table.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ('GRID',(0,0),(-1,-1),0.5,colors.black),
+            ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1,12))
+    else:
+        st.warning("⚠️ Analyse non réalisée, impossible de générer PDF")
