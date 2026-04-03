@@ -579,3 +579,131 @@ if st.button("📄 Générer Rapport PDF"):
         )
     except Exception as e:
         st.error(f"Erreur génération PDF : {e}")
+
+
+
+
+
+
+
+
+
+
+
+# ================= SECTION J — ANALYSE CRITIQUE ET RAPPORT =================
+st.markdown("## 📝 Section J — Analyse point critique et Rapport")
+
+days = st.number_input("Analyser les derniers jours pour fuite", min_value=1, max_value=30, value=7, key="days_j")
+
+if st.button("Analyser et Générer Rapport (Point critique)"):
+    today = datetime.utcnow()
+    start = today - timedelta(days=days)
+
+    # Collecte des images CH4
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    
+    image = collection.mean()
+    critical_points = []
+    results = []
+
+    # Analyse par zone
+    for name, zone in zones:
+        try:
+            val = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9,
+                bestEffort=True
+            ).getInfo()["CH4_column_volume_mixing_ratio_dry_air"]
+        except:
+            val = np.nan
+
+        status, score = detect_ch4_anomaly(val)
+
+        coords = zone.centroid().coordinates().getInfo()
+        lon, lat = coords
+
+        results.append([name, round(val,2) if val else 'N/A', status, round(score,2), lat, lon])
+
+        if status == "🔥 Fuite critique":
+            critical_points.append({'lat': lat, 'lon': lon, 'zone': name, 'val': val})
+
+    # Tableau
+    df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Lat","Lon"])
+    st.dataframe(df)
+
+    # Carte Folium centrée sur le point critique
+    if critical_points:
+        center_lat = critical_points[0]['lat']
+        center_lon = critical_points[0]['lon']
+    else:
+        center_lat = np.mean([r[4] for r in results])
+        center_lon = np.mean([r[5] for r in results])
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+
+    for r in results:
+        color = "green" if r[2]=="✅ Normal" else ("orange" if r[2]=="⚠️ Suspect" else "red")
+        folium.CircleMarker(
+            location=[r[4], r[5]],
+            radius=10,
+            color=color,
+            fill=True,
+            fill_opacity=0.7,
+            tooltip=f"{r[0]}: {r[2]} ({r[1]} ppb)"
+        ).add_to(m)
+
+    st_folium(m, width=800, height=500)
+
+    # ================= PDF =================
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("<b>DATA.SAT — Point critique</b>", styles['Title']))
+    elements.append(Paragraph(f"Date: {today.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+    elements.append(Spacer(1,12))
+
+    # Tableau PDF
+    table = Table([df.columns.tolist()] + df.values.tolist(), colWidths=[70,70,80,60,60,60])
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1,12))
+
+    # Capture plume si critique
+    if critical_points:
+        try:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots()
+            ax.scatter([p['lon'] for p in critical_points],[p['lat'] for p in critical_points], color='red', s=200)
+            ax.set_title("Point(s) critique(s) de fuite")
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            img_path = os.path.join(tempfile.gettempdir(),"critical_points.png")
+            plt.savefig(img_path, bbox_inches='tight', dpi=300)
+            plt.close()
+
+            elements.append(Paragraph("<b>Carte des points critiques</b>", styles['Heading3']))
+            elements.append(Image(img_path, width=6*inch, height=4*inch))
+        except Exception as e:
+            st.warning(f"Erreur image plume: {e}")
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    st.download_button(
+        "📥 Télécharger Rapport Point Critique PDF",
+        data=buffer,
+        file_name=f"rapport_point_critique_CH4_{today.strftime('%Y%m%d')}.pdf",
+        mime="application/pdf"
+    )
