@@ -388,141 +388,79 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= SECTION I — GHGSAT PRO =================
-st.markdown("## 🛰️ Rapport GHGSat PRO (PDF)")
+# ================= PDF PRO CORRIGÉ =================
+from reportlab.platypus import PageBreak
+from reportlab.lib.pagesizes import A4
 
-if st.button("📄 Générer Rapport GHGSat"):
+buffer = io.BytesIO()
+doc = SimpleDocTemplate(buffer, pagesize=A4)
 
-    today = datetime.utcnow()
-    start = today - timedelta(days=7)
+styles = getSampleStyleSheet()
+elements = []
 
-    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
-        .filterDate(start, today) \
-        .select("CH4_column_volume_mixing_ratio_dry_air")
+# ================= HEADER =================
+elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+elements.append(Paragraph("CH₄ Measurement Report", styles["Heading2"]))
+elements.append(Spacer(1, 10))
 
-    image = collection.mean()
+elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+elements.append(Spacer(1, 10))
 
-    # Dernière date satellite
-    last_image = collection.sort('system:time_start', False).first()
-    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+# ================= IMAGE BIEN DIMENSIONNÉE =================
+elements.append(Paragraph("<b>Detection Map</b>", styles["Heading3"]))
 
-    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+img = Image(img_path)
+img.drawHeight = 4 * inch
+img.drawWidth = 6 * inch
+elements.append(img)
 
-    # ================= IMAGE CH4 =================
-    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
-        img = src.read(1)
+elements.append(Spacer(1, 15))
 
-    img[img <= 0] = np.nan
+# ================= TABLEAU LARGE =================
+table = Table(table_data, colWidths=[70, 70, 70, 100, 60, 60])
 
-    fig, ax = plt.subplots()
-    im = ax.imshow(img, cmap="jet")
-    ax.set_title("Détection CH4")
-    ax.axis("off")
+table.setStyle(TableStyle([
+    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1f4e79")),
+    ('TEXTCOLOR',(0,0),(-1,0),colors.white),
 
-    img_path = "temp_map.png"
-    plt.savefig(img_path, bbox_inches='tight')
-    plt.close()
+    ('ALIGN',(0,0),(-1,-1),'CENTER'),
 
-    # ================= DATA =================
-    table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
+    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
 
-    for name, zone in zones:
+    ('GRID', (0,0), (-1,-1), 0.5, colors.black),
 
-        value = image.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=zone,
-            scale=7000,
-            maxPixels=1e9,
-            bestEffort=True
-        ).get("CH4_column_volume_mixing_ratio_dry_air")
+    ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+]))
 
-        try:
-            val = value.getInfo()
-        except:
-            val = None
+elements.append(Paragraph("<b>Emission Data</b>", styles["Heading3"]))
+elements.append(table)
 
-        status, score = detect_ch4_anomaly(
-            np.array([[val]]) if val else np.array([[np.nan]])
-        )
+elements.append(Spacer(1, 20))
 
-        debit = round((val - 1800) * 0.5, 2) if val else "N/A"
+# ================= HSE ANALYSIS =================
+elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
 
-        # centre zone (coordonnées)
-        coords = zone.centroid().coordinates().getInfo()
-        lon, lat = coords
+elements.append(Paragraph(
+    "Satellite data analysis reveals methane concentration anomalies in monitored zones. "
+    "Critical levels indicate potential leaks requiring immediate intervention to prevent "
+    "industrial hazards such as fire, explosion, and environmental damage.",
+    styles["Normal"]
+))
 
-        table_data.append([
-            name,
-            round(val,2) if val else "N/A",
-            debit,
-            status,
-            round(lat,4),
-            round(lon,4)
-        ])
+elements.append(Spacer(1, 12))
 
-    # ================= PDF =================
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer)
+# ================= ACTIONS =================
+elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
 
-    styles = getSampleStyleSheet()
-    elements = []
+elements.append(Paragraph(
+    "- Immediate field inspection\n"
+    "- Leak detection verification\n"
+    "- Maintenance intervention\n"
+    "- Continuous satellite monitoring",
+    styles["Normal"]
+))
 
-    # HEADER STYLE GHGSAT
-    elements.append(Paragraph("<b>DATA.SAT – CH4 Measurement Report</b>", styles["Title"]))
-    elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-    elements.append(Paragraph(f"<b>Satellite:</b> Sentinel-5P", styles["Normal"]))
-    elements.append(Paragraph(f"<b>Last Observation:</b> {last_date}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    # IMAGE
-    elements.append(Paragraph("<b>CH4 Detection Map</b>", styles["Heading2"]))
-    elements.append(Image(img_path, width=5*inch, height=3*inch))
-    elements.append(Spacer(1, 12))
-
-    # TABLEAU
-    table = Table(table_data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('GRID', (0,0), (-1,-1), 1, colors.black),
-        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-    ]))
-
-    elements.append(Paragraph("<b>Emission Analysis</b>", styles["Heading2"]))
-    elements.append(table)
-    elements.append(Spacer(1, 20))
-
-    # ANALYSE HSE
-    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading2"]))
-
-    elements.append(Paragraph(
-        "Les données satellitaires indiquent des variations de concentration de méthane dans les zones analysées. "
-        "Les zones présentant des anomalies nécessitent une attention particulière afin de limiter les risques "
-        "environnementaux et industriels (incendie, explosion, émissions fugitives).",
-        styles["Normal"]
-    ))
-
-    elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading2"]))
-    elements.append(Paragraph(
-        "- Inspection terrain immédiate\n"
-        "- Vérification des équipements\n"
-        "- Maintenance corrective\n"
-        "- Surveillance continue par satellite",
-        styles["Normal"]
-    ))
-
-    doc.build(elements)
-    buffer.seek(0)
-
-    # DOWNLOAD
-    st.download_button(
-        label="📥 Télécharger Rapport GHGSat PDF",
-        data=buffer,
-        file_name=f"GHGSat_CH4_Report_{today.strftime('%Y%m%d')}.pdf",
-        mime="application/pdf"
-    )
-
+# ================= BUILD =================
+doc.build(elements)
+buffer.seek(0)
