@@ -13,7 +13,9 @@ import folium
 from streamlit_folium import st_folium
 from datetime import datetime, timedelta
 import io
-
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -384,9 +386,9 @@ if st.button("Analyser point"):
     else:
         st.error("❌ Pas de donnée")
 # ================= SECTION I =================
-st.markdown("## 🧾 Rapport Final HSE (Automatique)")
+st.markdown("## 🧾 Rapport Final PDF (Style GHGSat)")
 
-if st.button("Générer Rapport Final"):
+if st.button("📄 Générer Rapport PDF"):
 
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -397,13 +399,13 @@ if st.button("Générer Rapport Final"):
 
     image = collection.mean()
 
-    # Dernière image satellite
+    # Dernière date satellite
     last_image = collection.sort('system:time_start', False).first()
     last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    rapport_data = []
+    data_table = [["Zone", "CH4 (ppb)", "Débit (kg/h)", "Statut", "Risque", "Action"]]
 
     for name, zone in zones:
 
@@ -420,76 +422,82 @@ if st.button("Générer Rapport Final"):
         except:
             val = None
 
-        # IA
         status, score = detect_ch4_anomaly(
             np.array([[val]]) if val else np.array([[np.nan]])
         )
 
-        # Estimation débit (approximation simple)
-        if val:
-            debit = round((val - 1800) * 0.5, 2)  # modèle simplifié
-        else:
-            debit = None
+        # Débit estimé
+        debit = round((val - 1800) * 0.5, 2) if val else "N/A"
 
-        # Analyse de risque
+        # Risque & action
         if status == "🔥 Fuite critique":
-            risque = "Risque élevé (Explosion / Impact environnemental majeur)"
-            action = "🚨 Intervention immédiate, inspection terrain, arrêt installation"
+            risque = "Élevé"
+            action = "Intervention immédiate"
         elif status == "⚠️ Suspect":
-            risque = "Risque modéré (Fuite possible)"
-            action = "🔍 Inspection terrain recommandée + surveillance continue"
+            risque = "Modéré"
+            action = "Inspection recommandée"
         else:
-            risque = "Risque faible"
-            action = "✅ Surveillance normale"
+            risque = "Faible"
+            action = "Surveillance"
 
-        rapport_data.append({
-            "Zone": name,
-            "CH4 (ppb)": round(val,2) if val else "N/A",
-            "Débit estimé (kg/h)": debit,
-            "Statut IA": status,
-            "Risque": risque,
-            "Action": action
-        })
+        data_table.append([
+            name,
+            round(val,2) if val else "N/A",
+            debit,
+            status,
+            risque,
+            action
+        ])
 
-    df_rapport = pd.DataFrame(rapport_data)
+    # ================= CREATION PDF =================
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer)
 
-    # ================= TEXTE RAPPORT =================
-    rapport_txt = f"""
-================ RAPPORT HSE CH₄ =================
+    styles = getSampleStyleSheet()
+    elements = []
 
-📅 Date du rapport : {today.strftime('%Y-%m-%d %H:%M')}
-🛰️ Dernière observation satellite : {last_date}
+    # TITRE
+    elements.append(Paragraph("RAPPORT HSE – SURVEILLANCE CH₄", styles["Title"]))
+    elements.append(Spacer(1, 12))
 
-📍 Zone étudiée : Hassi R'mel (Algérie)
+    # INFOS GENERALES
+    elements.append(Paragraph(f"Date du rapport : {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"Dernier passage satellite : {last_date}", styles["Normal"]))
+    elements.append(Paragraph("Zone : Hassi R'mel – Algérie", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
---------------------------------------------------
+    # TABLEAU
+    table = Table(data_table)
 
-"""
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
 
-    for row in rapport_data:
-        rapport_txt += f"""
-🔹 Zone : {row['Zone']}
-- CH₄ : {row['CH4 (ppb)']} ppb
-- Débit estimé : {row['Débit estimé (kg/h)']} kg/h
-- Statut IA : {row['Statut IA']}
-- Analyse de risque : {row['Risque']}
-- Action recommandée : {row['Action']}
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
 
---------------------------------------------------
-"""
+        ('BACKGROUND',(0,1),(-1,-1),colors.beige),
+    ]))
 
-    rapport_txt += "\n✅ Fin du rapport\n"
+    elements.append(table)
+    elements.append(Spacer(1, 20))
 
-    # ================= AFFICHAGE =================
-    st.text_area("📄 Rapport généré", rapport_txt, height=400)
+    # CONCLUSION
+    elements.append(Paragraph("Conclusion :", styles["Heading2"]))
+    elements.append(Paragraph(
+        "Les résultats montrent des variations de concentration de méthane détectées par satellite. "
+        "Les zones à risque nécessitent une intervention rapide afin de réduire l’impact environnemental "
+        "et les risques industriels.", styles["Normal"]
+    ))
 
-    st.dataframe(df_rapport)
+    doc.build(elements)
 
-    # ================= TELECHARGEMENT =================
+    buffer.seek(0)
+
+    # TELECHARGEMENT
     st.download_button(
-        label="📥 Télécharger Rapport (.txt)",
-        data=rapport_txt,
-        file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.txt",
-        mime="text/plain"
+        label="📥 Télécharger Rapport PDF",
+        data=buffer,
+        file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf",
+        mime="application/pdf"
     )
 
