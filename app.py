@@ -593,22 +593,7 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
 
 
 
-import streamlit as stimport streamlit as st
-import pandas as pd
-import numpy as np
-import ee
-import json
-import tempfile
-import folium
-import io
-import os
-from datetime import datetime, timedelta
-from streamlit_folium import st_folium
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import inch
+
 
 # ================= CONFIGURATION =================
 st.set_page_config(page_title="CH4 Monitor PRO", layout="wide")
