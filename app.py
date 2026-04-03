@@ -20,6 +20,11 @@ from reportlab.platypus import Image
 from reportlab.lib.units import inch
 import matplotlib.pyplot as plt 
 from reportlab.lib.pagesizes import A4
+
+
+    import streamlit as stimport streamlit as st # <-- L'ERREUR EST ICI
+
+
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
