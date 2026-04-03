@@ -16,6 +16,9 @@ import io
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Image
+from reportlab.lib.units import inch
+import matplotlib.pyplot as plt
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -385,10 +388,10 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= SECTION I =================
-st.markdown("## 🧾 Rapport Final PDF (Style GHGSat)")
+# ================= SECTION I — GHGSAT PRO =================
+st.markdown("## 🛰️ Rapport GHGSat PRO (PDF)")
 
-if st.button("📄 Générer Rapport PDF"):
+if st.button("📄 Générer Rapport GHGSat"):
 
     today = datetime.utcnow()
     start = today - timedelta(days=7)
@@ -405,7 +408,23 @@ if st.button("📄 Générer Rapport PDF"):
 
     zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
 
-    data_table = [["Zone", "CH4 (ppb)", "Débit (kg/h)", "Statut", "Risque", "Action"]]
+    # ================= IMAGE CH4 =================
+    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
+        img = src.read(1)
+
+    img[img <= 0] = np.nan
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(img, cmap="jet")
+    ax.set_title("Détection CH4")
+    ax.axis("off")
+
+    img_path = "temp_map.png"
+    plt.savefig(img_path, bbox_inches='tight')
+    plt.close()
+
+    # ================= DATA =================
+    table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
 
     for name, zone in zones:
 
@@ -426,78 +445,84 @@ if st.button("📄 Générer Rapport PDF"):
             np.array([[val]]) if val else np.array([[np.nan]])
         )
 
-        # Débit estimé
         debit = round((val - 1800) * 0.5, 2) if val else "N/A"
 
-        # Risque & action
-        if status == "🔥 Fuite critique":
-            risque = "Élevé"
-            action = "Intervention immédiate"
-        elif status == "⚠️ Suspect":
-            risque = "Modéré"
-            action = "Inspection recommandée"
-        else:
-            risque = "Faible"
-            action = "Surveillance"
+        # centre zone (coordonnées)
+        coords = zone.centroid().coordinates().getInfo()
+        lon, lat = coords
 
-        data_table.append([
+        table_data.append([
             name,
             round(val,2) if val else "N/A",
             debit,
             status,
-            risque,
-            action
+            round(lat,4),
+            round(lon,4)
         ])
 
-    # ================= CREATION PDF =================
+    # ================= PDF =================
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer)
 
     styles = getSampleStyleSheet()
     elements = []
 
-    # TITRE
-    elements.append(Paragraph("RAPPORT HSE – SURVEILLANCE CH₄", styles["Title"]))
+    # HEADER STYLE GHGSAT
+    elements.append(Paragraph("<b>DATA.SAT – CH4 Measurement Report</b>", styles["Title"]))
     elements.append(Spacer(1, 12))
 
-    # INFOS GENERALES
-    elements.append(Paragraph(f"Date du rapport : {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-    elements.append(Paragraph(f"Dernier passage satellite : {last_date}", styles["Normal"]))
-    elements.append(Paragraph("Zone : Hassi R'mel – Algérie", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Satellite:</b> Sentinel-5P", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Observation:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # IMAGE
+    elements.append(Paragraph("<b>CH4 Detection Map</b>", styles["Heading2"]))
+    elements.append(Image(img_path, width=5*inch, height=3*inch))
     elements.append(Spacer(1, 12))
 
     # TABLEAU
-    table = Table(data_table)
-
+    table = Table(table_data)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-
         ('GRID', (0,0), (-1,-1), 1, colors.black),
-
-        ('BACKGROUND',(0,1),(-1,-1),colors.beige),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
     ]))
 
+    elements.append(Paragraph("<b>Emission Analysis</b>", styles["Heading2"]))
     elements.append(table)
     elements.append(Spacer(1, 20))
 
-    # CONCLUSION
-    elements.append(Paragraph("Conclusion :", styles["Heading2"]))
+    # ANALYSE HSE
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading2"]))
+
     elements.append(Paragraph(
-        "Les résultats montrent des variations de concentration de méthane détectées par satellite. "
-        "Les zones à risque nécessitent une intervention rapide afin de réduire l’impact environnemental "
-        "et les risques industriels.", styles["Normal"]
+        "Les données satellitaires indiquent des variations de concentration de méthane dans les zones analysées. "
+        "Les zones présentant des anomalies nécessitent une attention particulière afin de limiter les risques "
+        "environnementaux et industriels (incendie, explosion, émissions fugitives).",
+        styles["Normal"]
+    ))
+
+    elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading2"]))
+    elements.append(Paragraph(
+        "- Inspection terrain immédiate\n"
+        "- Vérification des équipements\n"
+        "- Maintenance corrective\n"
+        "- Surveillance continue par satellite",
+        styles["Normal"]
     ))
 
     doc.build(elements)
-
     buffer.seek(0)
 
-    # TELECHARGEMENT
+    # DOWNLOAD
     st.download_button(
-        label="📥 Télécharger Rapport PDF",
+        label="📥 Télécharger Rapport GHGSat PDF",
         data=buffer,
-        file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf",
+        file_name=f"GHGSat_CH4_Report_{today.strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
 
