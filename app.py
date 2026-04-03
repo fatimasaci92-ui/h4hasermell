@@ -600,16 +600,28 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
 
 
 
-if st.button("📊 Analyser et Générer Carte + PDF"):
+# ================= SECTION I+J OPTIMISÉE — Carte + PDF PRO =================
+st.markdown("## 🚀 Rapport CH₄ Ultra PRO avec Plume et Points Critiques")
+
+# Input nombre de jours à analyser
+days = st.number_input(
+    "Analyser les derniers jours", 
+    min_value=1, max_value=30, value=7, key="days_pro_input"
+)
+
+# Bouton pour lancer l'analyse et générer le PDF
+if st.button("📊 Analyser et Générer Carte + PDF", key="analyse_pdf_pro_button"):
 
     today = datetime.utcnow()
     start = today - timedelta(days=days)
 
     # ------------------- Récupération données satellite -------------------
     try:
-        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
-            .filterDate(start, today) \
+        collection = (
+            ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+            .filterDate(start, today)
             .select("CH4_column_volume_mixing_ratio_dry_air")
+        )
         image = collection.mean()
         last_image = collection.sort('system:time_start', False).first()
         last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
@@ -621,8 +633,11 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     results = []
     critical_points = []
 
+    # Zones (déjà définies avant)
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
     # ------------------- Analyse par zone -------------------
-    for name, zone in zones:
+    for idx, (name, zone) in enumerate(zones):
         val = None
         if image:
             try:
@@ -650,30 +665,42 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     df_results = pd.DataFrame(results, columns=["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"])
     st.dataframe(df_results)
 
-    # ------------------- Carte matplotlib -------------------
-    fig, ax = plt.subplots(figsize=(8,6))
-    ax.set_title("Carte CH₄ – Zones et Points Critiques", fontsize=14)
+    # ------------------- Carte interactive -------------------
+    if critical_points:
+        center_lat = critical_points[0]['lat']
+        center_lon = critical_points[0]['lon']
+    else:
+        center_lat = np.mean([r[5] for r in results if isinstance(r[5], float)])
+        center_lon = np.mean([r[6] for r in results if isinstance(r[6], float)])
 
-    # Tracer zones
-    for name, zone in zones:
-        coords = np.array(zone.coordinates().getInfo()[0])
-        ax.plot(coords[:,0], coords[:,1], '-o', label=name)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles=None)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
 
-    # Tracer points critiques
-    for p in critical_points:
-        ax.scatter(p['lon'], p['lat'], color='red', s=100, label=f"Critique {p['zone']}")
-        ax.text(p['lon'], p['lat'], f"{p['zone']}", color='black', fontsize=8)
+    # Ajout des points critiques
+    for idx, r in enumerate(results):
+        zone_name, val, debit, status, score, lat, lon = r
+        color = "green" if status=="✅ Normal" else ("orange" if status=="⚠️ Suspect" else "red")
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=10,
+            color=color,
+            fill=True,
+            fill_opacity=0.7,
+            tooltip=f"{zone_name} | CH₄: {val} ppb | IA: {status} | Débit: {debit}",
+            key=f"circle_{idx}"  # clé unique pour chaque cercle
+        ).add_to(m)
 
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.legend()
-    ax.grid(True)
-
-    tmp_map_png = os.path.join(tempfile.gettempdir(), "ch4_map.png")
-    plt.savefig(tmp_map_png, bbox_inches='tight', dpi=200)
-    plt.close(fig)
-
-    st.image(tmp_map_png, caption="Carte CH₄ – Points Critiques", use_column_width=True)
+    # Affichage carte
+    st.write("🗺️ Carte CH₄ et Points Critiques")
+    st.components.v1.html(m._repr_html_(), height=500)
 
     # ------------------- Génération PDF -------------------
     buffer = io.BytesIO()
@@ -681,7 +708,7 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     styles = getSampleStyleSheet()
     elements = []
 
-    # Header
+    # Header PDF
     elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
     elements.append(Paragraph("CH₄ Detection Ultra PRO Report", styles["Heading2"]))
     elements.append(Spacer(1,10))
@@ -689,16 +716,7 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
     elements.append(Spacer(1,10))
 
-    # Carte image
-    if os.path.exists(tmp_map_png):
-        img_pdf = Image(tmp_map_png)
-        img_pdf.drawHeight = 4*inch
-        img_pdf.drawWidth = 6*inch
-        elements.append(Paragraph("<b>Carte CH₄ et Points Critiques</b>", styles["Heading3"]))
-        elements.append(img_pdf)
-        elements.append(Spacer(1,15))
-
-    # Tableau résultats
+    # Table PDF
     table = Table([["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"]] + results, colWidths=[50,50,50,70,50,50,50])
     table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
@@ -726,7 +744,6 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
         styles["Normal"]
     ))
 
-    # Build PDF
     try:
         doc.build(elements)
         buffer.seek(0)
@@ -734,7 +751,8 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
             label="📥 Télécharger Rapport PDF Ultra PRO",
             data=buffer,
             file_name=f"rapport_CH4_pro_{today.strftime('%Y%m%d')}.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
+            key="download_pdf_pro"
         )
     except Exception as e:
         st.error(f"Erreur génération PDF : {e}")
