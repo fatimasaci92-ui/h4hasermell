@@ -389,6 +389,68 @@ if st.button("Analyser point"):
     else:
         st.error("❌ Pas de donnée")
 # ================= SECTION I — FINAL CLEAN =================
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import tempfile
+
+# Chargement image
+try:
+    import rasterio
+    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
+        img = src.read(1)
+    img[img <= 0] = np.nan
+
+    # Lissage simple avec moyenne locale (pas besoin de scipy)
+    kernel_size = 3
+    img_padded = np.pad(np.nan_to_num(img), pad_width=kernel_size, mode='constant', constant_values=0)
+    smooth = np.zeros_like(img)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            smooth[i,j] = np.mean(img_padded[i:i+kernel_size, j:j+kernel_size])
+
+    # Détection zone forte
+    threshold = np.nanpercentile(smooth, 98)
+    mask = smooth > threshold
+
+    # Centre de masse
+    ys, xs = np.where(mask)
+    y_center = int(np.mean(ys))
+    x_center = int(np.mean(xs))
+
+    # Zoom auto
+    size = 60
+    y1, y2 = max(0, y_center-size), min(img.shape[0], y_center+size)
+    x1, x2 = max(0, x_center-size), min(img.shape[1], x_center+size)
+    zoom = smooth[y1:y2, x1:x2]
+    mask_zoom = mask[y1:y2, x1:x2]
+
+    # Création figure
+    fig, ax = plt.subplots()
+    im = ax.imshow(zoom, cmap='jet', vmin=np.nanpercentile(zoom,5), vmax=np.nanpercentile(zoom,98))
+
+    # Contour plume
+    ax.contour(mask_zoom, colors='lime', linewidths=1.5)
+
+    # Flèche vent simple
+    ax.arrow(5, 5, 20, 0, head_width=5, head_length=5, fc='white', ec='white')
+    ax.text(5, 0, "Wind →", color='white', fontsize=10)
+
+    # Colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("CH₄ (ppb)")
+    ax.set_title("Methane Plume Detection")
+    ax.axis('off')
+
+    # Sauvegarde PNG temporaire
+    img_path = os.path.join(tempfile.gettempdir(), "temp_map.png")
+    plt.savefig(img_path, bbox_inches='tight', dpi=300)
+    plt.close()
+
+    st.success("Image plume générée avec succès ✅")
+
+except Exception as e:
+    st.warning(f"⚠️ Erreur image plume : {e}")
 st.markdown("## 🧾 Rapport Final PDF (PRO & Stable)")
 
 if st.button("📄 Générer Rapport PDF"):
