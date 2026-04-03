@@ -388,246 +388,157 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
-# ================= SECTION I — FINAL CLEAN =================
+# ================= SECTION I — PLUME + RAPPORT PDF SAFE =================
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import tempfile
+import io
+from datetime import datetime, timedelta
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
 
-# Chargement image
+# Définir zones avant tout try
+zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+# ----------------- IMAGE PLUME -----------------
 try:
     import rasterio
-    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
+
+    # Chargement image CH4 2024
+    with rasterio.open("data/Moyenne CH4/CH4_mean_2024.tif") as src:
         img = src.read(1)
     img[img <= 0] = np.nan
 
-    # Lissage simple avec moyenne locale (pas besoin de scipy)
+    # 🔹 Lissage simple 3x3 sans scipy
     kernel_size = 3
     img_padded = np.pad(np.nan_to_num(img), pad_width=kernel_size, mode='constant', constant_values=0)
     smooth = np.zeros_like(img)
     for i in range(img.shape[0]):
         for j in range(img.shape[1]):
-            smooth[i,j] = np.mean(img_padded[i:i+kernel_size, j:j+kernel_size])
+            smooth[i, j] = np.mean(img_padded[i:i+kernel_size, j:j+kernel_size])
 
-    # Détection zone forte
+    # 🔹 Détection zones fortes (top 2%)
     threshold = np.nanpercentile(smooth, 98)
     mask = smooth > threshold
 
-    # Centre de masse
+    # 🔹 Centre de masse plume
     ys, xs = np.where(mask)
     y_center = int(np.mean(ys))
     x_center = int(np.mean(xs))
 
-    # Zoom auto
+    # 🔹 Zoom auto
     size = 60
-    y1, y2 = max(0, y_center-size), min(img.shape[0], y_center+size)
-    x1, x2 = max(0, x_center-size), min(img.shape[1], x_center+size)
+    y1, y2 = max(0, y_center - size), min(img.shape[0], y_center + size)
+    x1, x2 = max(0, x_center - size), min(img.shape[1], x_center + size)
     zoom = smooth[y1:y2, x1:x2]
     mask_zoom = mask[y1:y2, x1:x2]
 
-    # Création figure
+    # 🔹 Création figure
     fig, ax = plt.subplots()
-    im = ax.imshow(zoom, cmap='jet', vmin=np.nanpercentile(zoom,5), vmax=np.nanpercentile(zoom,98))
-
-    # Contour plume
+    im = ax.imshow(zoom, cmap="jet", vmin=np.nanpercentile(zoom,5), vmax=np.nanpercentile(zoom,98))
     ax.contour(mask_zoom, colors='lime', linewidths=1.5)
-
-    # Flèche vent simple
     ax.arrow(5, 5, 20, 0, head_width=5, head_length=5, fc='white', ec='white')
     ax.text(5, 0, "Wind →", color='white', fontsize=10)
-
-    # Colorbar
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label("CH₄ (ppb)")
-    ax.set_title("Methane Plume Detection")
-    ax.axis('off')
-
-    # Sauvegarde PNG temporaire
-    img_path = os.path.join(tempfile.gettempdir(), "temp_map.png")
-    plt.savefig(img_path, bbox_inches='tight', dpi=300)
-    plt.close()
-
-    st.success("Image plume générée avec succès ✅")
-
-except Exception as e:
-    st.warning(f"⚠️ Erreur image plume : {e}")
-st.markdown("## 🧾 Rapport Final PDF (PRO & Stable)")
-
-if st.button("📄 Générer Rapport PDF"):
-
-    # ================= IMPORT LOCAL (SAFE) =================
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import inch
-    from datetime import datetime, timedelta
-
-    # ================= VARIABLES SAFE =================
-    today = datetime.utcnow()
-    last_date = "N/A"
-    img_path = os.path.join(tempfile.gettempdir(), "temp_map.png")
-
-    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
-
-    # ================= GEE SAFE =================
-    try:
-        start = today - timedelta(days=7)
-
-        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
-            .filterDate(start, today) \
-            .select("CH4_column_volume_mixing_ratio_dry_air")
-
-        image = collection.mean()
-
-        last_image = collection.sort('system:time_start', False).first()
-        last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
-
-    except:
-        st.warning("⚠️ Erreur récupération données satellite")
-        image = None
-
-    # ================= IMAGE CH4 ULTRA PRO (PLUME + VENT) =================
-try:
-    import rasterio
-    from scipy.ndimage import gaussian_filter
-
-    with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
-        img = src.read(1)
-
-    img[img <= 0] = np.nan
-
-    # 🔥 LISSAGE (effet plume)
-    smooth = gaussian_filter(np.nan_to_num(img), sigma=3)
-
-    # 🔥 DETECTION ZONE FORTE
-    threshold = np.nanpercentile(smooth, 98)  # top 2%
-    plume_mask = smooth > threshold
-
-    # 📍 CENTRE DE MASSE (vraie source)
-    ys, xs = np.where(plume_mask)
-    y_center = int(np.mean(ys))
-    x_center = int(np.mean(xs))
-
-    # 🔍 ZOOM AUTO
-    size = 60
-    y1, y2 = max(0, y_center-size), min(img.shape[0], y_center+size)
-    x1, x2 = max(0, x_center-size), min(img.shape[1], x_center+size)
-
-    zoom = smooth[y1:y2, x1:x2]
-    mask_zoom = plume_mask[y1:y2, x1:x2]
-
-    # 🎨 CONTRASTE
-    vmin = np.nanpercentile(zoom, 5)
-    vmax = np.nanpercentile(zoom, 98)
-
-    fig, ax = plt.subplots()
-
-    im = ax.imshow(zoom, cmap="jet", vmin=vmin, vmax=vmax)
-
-    # 🔥 CONTOUR PLUME (style GHGSat)
-    ax.contour(mask_zoom, colors='lime', linewidths=1.5)
-
-    # 🌬️ VENT (simulation)
-    ax.arrow(
-        10, 10,   # position
-        20, 0,    # direction (horizontal)
-        head_width=5,
-        head_length=5,
-        fc='white',
-        ec='white'
-    )
-    ax.text(10, 5, "Wind →", color='white', fontsize=10)
-
-    # 📊 COLORBAR
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label("CH₄ (ppb)")
-
     ax.set_title("Methane Plume Detection")
     ax.axis("off")
 
+    # Sauvegarde PNG temporaire
     img_path = os.path.join(tempfile.gettempdir(), "ch4_plume.png")
     plt.savefig(img_path, bbox_inches='tight', dpi=300)
     plt.close()
+    st.success("Image plume générée avec succès ✅")
 
 except Exception as e:
-    st.warning(f"⚠️ Erreur image plume : {e}")
+    st.warning(f"⚠️ Erreur génération image plume : {e}")
+    img_path = None
 
-    # ================= TABLE DATA =================
-    table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
+# ----------------- DONNÉES PAR ZONE -----------------
+table_data = [["Zone", "CH₄ (ppb)", "Débit", "Statut IA", "Lat", "Lon"]]
 
-    for name, zone in zones:
+# Récupération données satellite dernière semaine
+today = datetime.utcnow()
+start = today - timedelta(days=7)
+try:
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    image = collection.mean()
+    last_image = collection.sort('system:time_start', False).first()
+    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+except:
+    st.warning("⚠️ Impossible de récupérer les données satellite")
+    image = None
+    last_date = "N/A"
 
-        val = None
-
-        if image:
-            try:
-                value = image.reduceRegion(
-                    reducer=ee.Reducer.mean(),
-                    geometry=zone,
-                    scale=7000,
-                    maxPixels=1e9,
-                    bestEffort=True
-                ).get("CH4_column_volume_mixing_ratio_dry_air")
-
-                val = value.getInfo()
-            except:
-                val = None
-
-        # IA SAFE
-        status, score = detect_ch4_anomaly(
-            np.array([[val]]) if val else np.array([[np.nan]])
-        )
-
-        # Débit SAFE
-        debit = round((val - 1800) * 0.5, 2) if val else "N/A"
-
-        # Coordonnées SAFE
+for name, zone in zones:
+    val = None
+    if image:
         try:
-            coords = zone.centroid().coordinates().getInfo()
-            lon, lat = coords
+            value = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
+            val = value.getInfo()
         except:
-            lat, lon = "N/A", "N/A"
+            val = None
 
-        table_data.append([
-            name,
-            round(val, 2) if val else "N/A",
-            debit,
-            status,
-            lat,
-            lon
-        ])
+    # IA légère
+    status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
 
-    # ================= PDF =================
+    # Débit estimé
+    debit = round((val - 1800) * 0.5, 2) if val else "N/A"
+
+    # Coordonnées
+    try:
+        coords = zone.centroid().coordinates().getInfo()
+        lon, lat = coords
+    except:
+        lat, lon = "N/A", "N/A"
+
+    table_data.append([
+        name,
+        round(val,2) if val else "N/A",
+        debit,
+        status_ia,
+        lat,
+        lon
+    ])
+
+# ----------------- PDF -----------------
+if st.button("📄 Générer Rapport PDF"):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
-
     styles = getSampleStyleSheet()
     elements = []
 
-    # HEADER
+    # Header
     elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
     elements.append(Paragraph("CH₄ Measurement Report", styles["Heading2"]))
-    elements.append(Spacer(1, 10))
-
+    elements.append(Spacer(1,10))
     elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
     elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1,10))
 
-    # IMAGE
-    try:
+    # Image plume
+    if img_path:
         elements.append(Paragraph("<b>Detection Map</b>", styles["Heading3"]))
         img_pdf = Image(img_path)
-        img_pdf.drawHeight = 4 * inch
-        img_pdf.drawWidth = 6 * inch
+        img_pdf.drawHeight = 4*inch
+        img_pdf.drawWidth = 6*inch
         elements.append(img_pdf)
-        elements.append(Spacer(1, 15))
-    except:
-        pass
+        elements.append(Spacer(1,15))
 
-    # TABLE
-    table = Table(table_data, colWidths=[70, 70, 70, 100, 60, 60])
-
+    # Table
+    table = Table(table_data, colWidths=[70,70,70,100,60,60])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1f4e79")),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
@@ -636,22 +547,18 @@ except Exception as e:
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
     ]))
-
     elements.append(Paragraph("<b>Emission Data</b>", styles["Heading3"]))
     elements.append(table)
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1,20))
 
-    # HSE ANALYSIS
+    # HSE Analysis
     elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
     elements.append(Paragraph(
         "Methane anomalies detected via satellite indicate potential leaks. "
         "Critical zones may present risks of fire, explosion, and environmental impact.",
         styles["Normal"]
     ))
-
-    elements.append(Spacer(1, 12))
-
-    # ACTIONS
+    elements.append(Spacer(1,12))
     elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
     elements.append(Paragraph(
         "- Field inspection\n"
@@ -661,17 +568,14 @@ except Exception as e:
         styles["Normal"]
     ))
 
-    # BUILD PDF
     try:
         doc.build(elements)
         buffer.seek(0)
-
         st.download_button(
             label="📥 Télécharger Rapport PDF",
             data=buffer,
             file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf",
             mime="application/pdf"
         )
-
     except Exception as e:
-        st.error(f"Erreur PDF : {e}")
+        st.error(f"Erreur génération PDF : {e}")
