@@ -593,27 +593,32 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
 
 
 
-import streamlit as st
+import streamlit as stimport streamlit as st
 import pandas as pd
 import numpy as np
-import rasterio
-import matplotlib.pyplot as plt
-import os
 import ee
 import json
 import tempfile
 import folium
 import io
+import os
 from datetime import datetime, timedelta
 from streamlit_folium import st_folium
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 
-# ================= CONFIGURATION PAGE =================
-st.set_page_config(page_title="CH4 Monitor PRO", layout="wide", initial_sidebar_state="expanded")
+# ================= CONFIGURATION =================
+st.set_page_config(page_title="CH4 Monitor PRO", layout="wide")
+
+# Définition des zones en global pour qu'elles soient accessibles partout
+ZONES = {
+    "Centre": ee.Geometry.Polygon([[3.37, 32.75], [3.61, 32.75], [3.60, 33.01], [2.93, 33.02], [3.37, 32.75]]),
+    "Sud": ee.Geometry.Polygon([[2.88, 32.45], [3.37, 32.45], [3.37, 32.88], [2.88, 32.88], [2.88, 32.45]]),
+    "Nord": ee.Geometry.Polygon([[3.18, 33.01], [3.18, 33.28], [3.81, 33.27], [3.81, 33.01], [3.18, 33.01]])
+}
 
 # ================= INITIALISATION GEE =================
 @st.cache_resource
@@ -629,27 +634,30 @@ def init_ee():
             os.remove(key_path)
             return True
     except Exception as e:
-        st.error(f"Erreur d'authentification GEE : {e}")
+        st.error(f"Erreur GEE : {e}")
     return False
 
 ee_initialized = init_ee()
 
-# ================= FONCTIONS UTILES (LOGIQUE) =================
+# ================= FONCTIONS DE CALCUL =================
 def detect_ch4_anomaly(val):
-    """Analyse par seuils de la concentration de CH4"""
     if val is None or np.isnan(val):
-        return "❌ Pas de données", 0.0, colors.grey
+        return "❌ Pas de données", 0.0
     elif val > 1920:
-        return "🔥 Fuite critique", 1.0, colors.red
+        return "🔥 Fuite critique", 1.0
     elif val > 1880:
-        return "⚠️ Suspect", 0.7, colors.orange
+        return "⚠️ Suspect", 0.7
     else:
-        return "✅ Normal", 0.1, colors.green
+        return "✅ Normal", 0.1
 
 @st.cache_data(ttl=3600)
-def get_gee_data(geometry, start_date, end_date):
-    """Récupère la moyenne CH4 sur une zone et une période donnée"""
+def get_gee_data_cached(zone_name, start_date, end_date):
+    """
+    On passe 'zone_name' (string) au lieu de l'objet Geometry 
+    pour éviter l'erreur UnhashableParamError.
+    """
     try:
+        geometry = ZONES[zone_name]
         collection = (ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
                       .filterDate(start_date, end_date)
                       .select("CH4_column_volume_mixing_ratio_dry_air"))
@@ -658,121 +666,74 @@ def get_gee_data(geometry, start_date, end_date):
             return None, "N/A"
             
         image = collection.mean()
-        stats = image.reduceRegion(
+        val = image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=geometry,
             scale=7000,
             bestEffort=True
-        ).getInfo()
+        ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
         
         last_date = ee.Date(collection.sort('system:time_start', False).first().get('system:time_start')).format('YYYY-MM-dd').getInfo()
-        return stats.get("CH4_column_volume_mixing_ratio_dry_air"), last_date
+        return val, last_date
     except:
-        return None, "Error"
+        return None, "Erreur"
 
-# ================= GEOMETRIES =================
-ZONES = {
-    "Centre": ee.Geometry.Polygon([[3.37, 32.75], [3.61, 32.75], [3.60, 33.01], [2.93, 33.02], [3.37, 32.75]]),
-    "Sud": ee.Geometry.Polygon([[2.88, 32.45], [3.37, 32.45], [3.37, 32.88], [2.88, 32.88], [2.88, 32.45]]),
-    "Nord": ee.Geometry.Polygon([[3.18, 33.01], [3.18, 33.28], [3.81, 33.27], [3.81, 33.01], [3.18, 33.01]])
-}
+# ================= INTERFACE UTILISATEUR =================
+st.title("🛰️ Surveillance CH₄ - Version Corrigée")
 
-# ================= INTERFACE (UI) =================
-st.title("🛰️ Surveillance Méthane (CH₄) - Dashboard HSE")
-st.sidebar.header("Paramètres d'analyse")
-days_lookback = st.sidebar.slider("Période d'analyse (jours)", 1, 30, 7)
+if ee_initialized:
+    days = st.sidebar.slider("Jours d'historique", 1, 30, 7)
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
 
-# Calcul des dates
-end_dt = datetime.utcnow()
-start_dt = end_dt - timedelta(days=days_lookback)
-
-if not ee_initialized:
-    st.stop()
-
-# --- ANALYSE PRINCIPALE ---
-if st.sidebar.button("🚀 Lancer l'analyse globale"):
-    with st.spinner("Analyse des données satellite en cours..."):
+    if st.button("Lancer l'Analyse"):
         results = []
-        for name, geom in ZONES.items():
-            val, last_date = get_gee_data(geom, start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d'))
-            status, score, _ = detect_ch4_anomaly(val)
-            
-            # Calcul débit théorique
-            debit = round((val - 1800) * 0.5, 2) if val and val > 1800 else 0.0
-            coords = geom.centroid().coordinates().getInfo()
-            
-            results.append({
-                "Zone": name,
-                "CH₄ (ppb)": round(val, 2) if val else "N/A",
-                "Status": status,
-                "Score": score,
-                "Débit Est.": debit,
-                "Lat": coords[1],
-                "Lon": coords[0],
-                "Dernier passage": last_date
-            })
+        with st.spinner("Extraction des données satellite..."):
+            for name in ZONES.keys():
+                # Appel de la fonction avec le NOM de la zone (hashable)
+                val, last_pass = get_gee_data_cached(name, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                status, score = detect_ch4_anomaly(val)
+                
+                coords = ZONES[name].centroid().coordinates().getInfo()
+                
+                results.append({
+                    "Zone": name,
+                    "CH₄ (ppb)": round(val, 2) if val else "N/A",
+                    "Statut": status,
+                    "Lat": coords[1],
+                    "Lon": coords[0],
+                    "Passage": last_pass
+                })
 
         df = pd.DataFrame(results)
-        
-        # --- AFFICHAGE ---
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.subheader("📊 Résultats par Zone")
-            st.dataframe(df.style.applymap(lambda x: 'color: red' if x == "🔥 Fuite critique" else 'color: orange' if x == "⚠️ Suspect" else 'color: green', subset=['Status']))
-        
-        with col2:
-            st.subheader("📈 Niveaux de concentration")
-            st.bar_chart(df.set_index("Zone")["CH₄ (ppb)"])
+        st.dataframe(df)
 
-        # --- CARTE ---
-        st.subheader("🗺️ Localisation des anomalies")
+        # Carte
         m = folium.Map(location=[32.9, 3.3], zoom_start=8)
-        folium.TileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 
-                         attr='Esri', name='Satellite').add_to(m)
-        
-        for _, row in df.iterrows():
-            if row["Lat"] != "N/A":
-                color = "red" if "Fuite" in row["Status"] else "orange" if "Suspect" in row["Status"] else "green"
-                folium.Marker(
-                    [row["Lat"], row["Lon"]],
-                    popup=f"{row['Zone']}: {row['CH₄ (ppb)']} ppb",
-                    icon=folium.Icon(color=color, icon='info-sign')
-                ).add_to(m)
-        
-        st_folium(m, width=1200, height=500)
-
-        # --- GÉNÉRATION PDF ---
-        pdf_buffer = io.BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        elements = []
-
-        # Header PDF
-        elements.append(Paragraph("RAPPORT D'ANALYSE MÉTHANE SATELLITAIRE", styles['Title']))
-        elements.append(Paragraph(f"Généré le : {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-        elements.append(Spacer(1, 20))
-
-        # Table PDF
-        data_table = [["Zone", "CH4 (ppb)", "Status", "Débit Est.", "Coordonnées"]]
         for r in results:
-            data_table.append([r["Zone"], r["CH₄ (ppb)"], r["Status"], r["Débit Est."], f"{r['Lat']}, {r['Lon']}"])
+            if r["Lat"] != "N/A":
+                folium.Marker(
+                    [r["Lat"], r["Lon"]], 
+                    popup=f"{r['Zone']}: {r['CH₄ (ppb)']} ppb",
+                    icon=folium.Icon(color="red" if "🔥" in r["Statut"] else "green")
+                ).add_to(m)
+        st_folium(m, width=1000, height=400)
+
+        # Bouton PDF simplifié
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        elements = [Paragraph("Rapport HSE Méthane", getSampleStyleSheet()['Title']), Spacer(1, 12)]
         
-        t = Table(data_table, colWidths=[1*inch, 1*inch, 1.5*inch, 1*inch, 1.5*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.dodgerblue),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('GRID', (0,0), (-1,-1), 1, colors.black)
-        ]))
+        # Transformation du DF pour le tableau ReportLab
+        table_data = [df.columns.to_list()] + df.values.tolist()
+        t = Table(table_data)
+        t.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.grey), ('GRID', (0,0), (-1,-1), 1, colors.black)]))
         elements.append(t)
         
-        # Build
         doc.build(elements)
-        st.download_button("📥 Télécharger le Rapport PDF Professionnel", data=pdf_buffer.getvalue(), 
-                           file_name=f"Rapport_CH4_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf")
-
+        st.download_button("📥 Télécharger PDF", buffer.getvalue(), "rapport.pdf", "application/pdf")
 else:
-    st.info("Sélectionnez vos paramètres et cliquez sur 'Lancer l'analyse' dans la barre latérale.")
+    st.error("L'application n'a pas pu s'initialiser. Vérifiez vos secrets EE_KEY_JSON.")
 
 
 
