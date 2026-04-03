@@ -383,5 +383,113 @@ if st.button("Analyser point"):
         st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
     else:
         st.error("❌ Pas de donnée")
+# ================= SECTION I =================
+st.markdown("## 🧾 Rapport Final HSE (Automatique)")
 
+if st.button("Générer Rapport Final"):
+
+    today = datetime.utcnow()
+    start = today - timedelta(days=7)
+
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+
+    image = collection.mean()
+
+    # Dernière image satellite
+    last_image = collection.sort('system:time_start', False).first()
+    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+    rapport_data = []
+
+    for name, zone in zones:
+
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val = value.getInfo()
+        except:
+            val = None
+
+        # IA
+        status, score = detect_ch4_anomaly(
+            np.array([[val]]) if val else np.array([[np.nan]])
+        )
+
+        # Estimation débit (approximation simple)
+        if val:
+            debit = round((val - 1800) * 0.5, 2)  # modèle simplifié
+        else:
+            debit = None
+
+        # Analyse de risque
+        if status == "🔥 Fuite critique":
+            risque = "Risque élevé (Explosion / Impact environnemental majeur)"
+            action = "🚨 Intervention immédiate, inspection terrain, arrêt installation"
+        elif status == "⚠️ Suspect":
+            risque = "Risque modéré (Fuite possible)"
+            action = "🔍 Inspection terrain recommandée + surveillance continue"
+        else:
+            risque = "Risque faible"
+            action = "✅ Surveillance normale"
+
+        rapport_data.append({
+            "Zone": name,
+            "CH4 (ppb)": round(val,2) if val else "N/A",
+            "Débit estimé (kg/h)": debit,
+            "Statut IA": status,
+            "Risque": risque,
+            "Action": action
+        })
+
+    df_rapport = pd.DataFrame(rapport_data)
+
+    # ================= TEXTE RAPPORT =================
+    rapport_txt = f"""
+================ RAPPORT HSE CH₄ =================
+
+📅 Date du rapport : {today.strftime('%Y-%m-%d %H:%M')}
+🛰️ Dernière observation satellite : {last_date}
+
+📍 Zone étudiée : Hassi R'mel (Algérie)
+
+--------------------------------------------------
+
+"""
+
+    for row in rapport_data:
+        rapport_txt += f"""
+🔹 Zone : {row['Zone']}
+- CH₄ : {row['CH4 (ppb)']} ppb
+- Débit estimé : {row['Débit estimé (kg/h)']} kg/h
+- Statut IA : {row['Statut IA']}
+- Analyse de risque : {row['Risque']}
+- Action recommandée : {row['Action']}
+
+--------------------------------------------------
+"""
+
+    rapport_txt += "\n✅ Fin du rapport\n"
+
+    # ================= AFFICHAGE =================
+    st.text_area("📄 Rapport généré", rapport_txt, height=400)
+
+    st.dataframe(df_rapport)
+
+    # ================= TELECHARGEMENT =================
+    st.download_button(
+        label="📥 Télécharger Rapport (.txt)",
+        data=rapport_txt,
+        file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.txt",
+        mime="text/plain"
+    )
 
