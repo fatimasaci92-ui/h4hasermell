@@ -589,9 +589,8 @@ if st.button("📄 Générer Rapport PDF"):
 
 
 
-
-# ================= SECTION J — ANALYSE CRITIQUE ET RAPPORT =================
-st.markdown("## 📝 Section J — Analyse point critique et Rapport")
+# ================= SECTION J — ANALYSE CRITIQUE ET RAPPORT FIXE =================
+st.markdown("## 📝 Section J — Analyse point critique et Rapport Fixe")
 
 days = st.number_input("Analyser les derniers jours pour fuite", min_value=1, max_value=30, value=7, key="days_j")
 
@@ -622,7 +621,6 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
             val = np.nan
 
         status, score = detect_ch4_anomaly(val)
-
         coords = zone.centroid().coordinates().getInfo()
         lon, lat = coords
 
@@ -635,7 +633,7 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
     df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Lat","Lon"])
     st.dataframe(df)
 
-    # Carte Folium centrée sur le point critique
+    # Carte Folium centrée sur point critique
     if critical_points:
         center_lat = critical_points[0]['lat']
         center_lon = critical_points[0]['lon']
@@ -643,8 +641,11 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
         center_lat = np.mean([r[4] for r in results])
         center_lon = np.mean([r[5] for r in results])
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+    # ✅ Stocker la carte dans session_state pour la rendre “fixe”
+    if "critical_map" not in st.session_state:
+        st.session_state.critical_map = None
 
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
     for r in results:
         color = "green" if r[2]=="✅ Normal" else ("orange" if r[2]=="⚠️ Suspect" else "red")
         folium.CircleMarker(
@@ -656,9 +657,18 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
             tooltip=f"{r[0]}: {r[2]} ({r[1]} ppb)"
         ).add_to(m)
 
-    st_folium(m, width=800, height=500)
+    st.session_state.critical_map = m
 
-    # ================= PDF =================
+# Affichage carte fixe
+if st.session_state.critical_map:
+    st.write("🗺️ Carte Point Critique (Fixe)")
+    st.components.v1.html(
+        st.session_state.critical_map._repr_html_(),
+        height=500
+    )
+
+# ================= PDF =================
+if st.button("📄 Générer Rapport Point Critique PDF"):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -683,7 +693,6 @@ if st.button("Analyser et Générer Rapport (Point critique)"):
     # Capture plume si critique
     if critical_points:
         try:
-            import matplotlib.pyplot as plt
             fig, ax = plt.subplots()
             ax.scatter([p['lon'] for p in critical_points],[p['lat'] for p in critical_points], color='red', s=200)
             ax.set_title("Point(s) critique(s) de fuite")
