@@ -579,3 +579,162 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
         )
     except Exception as e:
         st.error(f"Erreur génération PDF : {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if st.button("📊 Analyser et Générer Carte + PDF"):
+
+    today = datetime.utcnow()
+    start = today - timedelta(days=days)
+
+    # ------------------- Récupération données satellite -------------------
+    try:
+        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+            .filterDate(start, today) \
+            .select("CH4_column_volume_mixing_ratio_dry_air")
+        image = collection.mean()
+        last_image = collection.sort('system:time_start', False).first()
+        last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+    except:
+        st.warning("⚠️ Impossible de récupérer les données satellite")
+        image = None
+        last_date = "N/A"
+
+    results = []
+    critical_points = []
+
+    # ------------------- Analyse par zone -------------------
+    for name, zone in zones:
+        val = None
+        if image:
+            try:
+                val = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).getInfo().get("CH4_column_volume_mixing_ratio_dry_air")
+            except:
+                val = None
+
+        status, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+        debit = round((val-1800)*0.5,2) if val else "N/A"
+        try:
+            lon, lat = zone.centroid().coordinates().getInfo()
+        except:
+            lat, lon = "N/A", "N/A"
+
+        results.append([name, round(val,2) if val else "N/A", debit, status, round(score,2), lat, lon])
+        if status=="🔥 Fuite critique":
+            critical_points.append({"lat":lat,"lon":lon,"zone":name,"val":val})
+
+    df_results = pd.DataFrame(results, columns=["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"])
+    st.dataframe(df_results)
+
+    # ------------------- Carte matplotlib -------------------
+    fig, ax = plt.subplots(figsize=(8,6))
+    ax.set_title("Carte CH₄ – Zones et Points Critiques", fontsize=14)
+
+    # Tracer zones
+    for name, zone in zones:
+        coords = np.array(zone.coordinates().getInfo()[0])
+        ax.plot(coords[:,0], coords[:,1], '-o', label=name)
+
+    # Tracer points critiques
+    for p in critical_points:
+        ax.scatter(p['lon'], p['lat'], color='red', s=100, label=f"Critique {p['zone']}")
+        ax.text(p['lon'], p['lat'], f"{p['zone']}", color='black', fontsize=8)
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.legend()
+    ax.grid(True)
+
+    tmp_map_png = os.path.join(tempfile.gettempdir(), "ch4_map.png")
+    plt.savefig(tmp_map_png, bbox_inches='tight', dpi=200)
+    plt.close(fig)
+
+    st.image(tmp_map_png, caption="Carte CH₄ – Points Critiques", use_column_width=True)
+
+    # ------------------- Génération PDF -------------------
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Header
+    elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+    elements.append(Paragraph("CH₄ Detection Ultra PRO Report", styles["Heading2"]))
+    elements.append(Spacer(1,10))
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1,10))
+
+    # Carte image
+    if os.path.exists(tmp_map_png):
+        img_pdf = Image(tmp_map_png)
+        img_pdf.drawHeight = 4*inch
+        img_pdf.drawWidth = 6*inch
+        elements.append(Paragraph("<b>Carte CH₄ et Points Critiques</b>", styles["Heading3"]))
+        elements.append(img_pdf)
+        elements.append(Spacer(1,15))
+
+    # Tableau résultats
+    table = Table([["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"]] + results, colWidths=[50,50,50,70,50,50,50])
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(Paragraph("<b>Analyse par Zone</b>", styles["Heading3"]))
+    elements.append(table)
+    elements.append(Spacer(1,15))
+
+    # HSE Analysis
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Les anomalies CH₄ détectées via satellite indiquent des fuites potentielles. "
+        "Les zones critiques peuvent présenter un risque incendie/explosion et un impact environnemental.",
+        styles["Normal"]
+    ))
+    elements.append(Spacer(1,12))
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "- Field inspection\n- Leak verification\n- Maintenance\n- Continuous monitoring",
+        styles["Normal"]
+    ))
+
+    # Build PDF
+    try:
+        doc.build(elements)
+        buffer.seek(0)
+        st.download_button(
+            label="📥 Télécharger Rapport PDF Ultra PRO",
+            data=buffer,
+            file_name=f"rapport_CH4_pro_{today.strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.error(f"Erreur génération PDF : {e}")
