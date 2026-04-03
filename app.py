@@ -868,3 +868,184 @@ if st.button("📄 Générer Rapport Fuite"):
         )
     except Exception as e:
         st.error(f"Erreur PDF: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ================= SECTION I+J OPTIMISÉE — Carte + PDF PRO =================
+st.markdown("## 🚀 Rapport CH₄ Ultra PRO avec Plume et Points Critiques")
+
+days = st.number_input("Analyser les derniers jours", min_value=1, max_value=30, value=7, key="days_pro")
+
+if st.button("📊 Analyser et Générer Carte + PDF"):
+
+    today = datetime.utcnow()
+    start = today - timedelta(days=days)
+
+    # ------------------- Récupération données satellite -------------------
+    try:
+        collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+            .filterDate(start, today) \
+            .select("CH4_column_volume_mixing_ratio_dry_air")
+        image = collection.mean()
+        last_image = collection.sort('system:time_start', False).first()
+        last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+    except:
+        st.warning("⚠️ Impossible de récupérer les données satellite")
+        image = None
+        last_date = "N/A"
+
+    results = []
+    critical_points = []
+
+    # ------------------- Analyse par zone -------------------
+    for name, zone in zones:
+        val = None
+        if image:
+            try:
+                val = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).getInfo().get("CH4_column_volume_mixing_ratio_dry_air")
+            except:
+                val = None
+
+        status, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+        debit = round((val-1800)*0.5,2) if val else "N/A"
+        try:
+            lon, lat = zone.centroid().coordinates().getInfo()
+        except:
+            lat, lon = "N/A", "N/A"
+
+        results.append([name, round(val,2) if val else "N/A", debit, status, round(score,2), lat, lon])
+        if status=="🔥 Fuite critique":
+            critical_points.append({"lat":lat,"lon":lon,"zone":name,"val":val})
+
+    df_results = pd.DataFrame(results, columns=["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"])
+    st.dataframe(df_results)
+
+    # ------------------- Carte interactive -------------------
+    if critical_points:
+        center_lat = critical_points[0]['lat']
+        center_lon = critical_points[0]['lon']
+    else:
+        center_lat = np.mean([r[5] for r in results])
+        center_lon = np.mean([r[6] for r in results])
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles=None)
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
+
+    # Ajout zones + points critiques
+    for r in results:
+        zone_name, val, debit, status, score, lat, lon = r
+        color = "green" if status=="✅ Normal" else ("orange" if status=="⚠️ Suspect" else "red")
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=10,
+            color=color,
+            fill=True,
+            fill_opacity=0.7,
+            tooltip=f"{zone_name} | CH₄: {val} ppb | IA: {status} | Débit: {debit}"
+        ).add_to(m)
+
+    # Affichage carte
+    st.write("🗺️ Carte CH₄ et Points Critiques")
+    st.components.v1.html(m._repr_html_(), height=500)
+
+    # ------------------- Génération PDF -------------------
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Header
+    elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+    elements.append(Paragraph("CH₄ Detection Ultra PRO Report", styles["Heading2"]))
+    elements.append(Spacer(1,10))
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1,10))
+
+    # Carte image snapshot temporaire
+    try:
+        tmp_map = os.path.join(tempfile.gettempdir(), "ch4_map.png")
+        m.save(tmp_map.replace(".png",".html"))  # sauvegarde html
+    except:
+        tmp_map = None
+
+    # Table
+    table = Table([["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"]] + results, colWidths=[50,50,50,70,50,50,50])
+    table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(Paragraph("<b>Analyse par Zone</b>", styles["Heading3"]))
+    elements.append(table)
+    elements.append(Spacer(1,15))
+
+    # HSE Analysis
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Les anomalies CH₄ détectées via satellite indiquent des fuites potentielles. "
+        "Les zones critiques peuvent présenter un risque incendie/explosion et un impact environnemental.",
+        styles["Normal"]
+    ))
+    elements.append(Spacer(1,12))
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "- Field inspection\n- Leak verification\n- Maintenance\n- Continuous monitoring",
+        styles["Normal"]
+    ))
+
+    try:
+        doc.build(elements)
+        buffer.seek(0)
+        st.download_button(
+            label="📥 Télécharger Rapport PDF Ultra PRO",
+            data=buffer,
+            file_name=f"rapport_CH4_pro_{today.strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.error(f"Erreur génération PDF : {e}")
