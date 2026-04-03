@@ -1,21 +1,24 @@
-# ================= app.py — Analyse CH4 + Rapport =================
+# ================= app.py — VERSION FINALE AVEC IA LÉGÈRE =================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import rasterio
+import matplotlib.pyplot as plt
+import os
+import ee
+import json
+import tempfile
 import folium
 from streamlit_folium import st_folium
-import ee
-import tempfile
-import os
+from datetime import datetime, timedelta
 import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+from reportlab.platypus import Image
 from reportlab.lib.units import inch
-from datetime import datetime, timedelta
-
+import matplotlib.pyplot as plt 
 # ================= INIT GEE =================
 try:
     ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
@@ -29,14 +32,14 @@ except Exception as e:
     st.error(f"Erreur GEE : {e}")
     st.stop()
 
-# ================= ZONES =================
-zoneCentre = ee.Geometry.Polygon([[3.37696562,32.75662617],[3.61159117,32.75663435],[3.60634757,33.01349055],[2.93385218,33.02401464],[2.92757292,32.89394392],[3.3769424,32.88954646],[3.37696562,32.75662617]])
-zoneSud = ee.Geometry.Polygon([[2.88567251,32.45093128],[3.37963967,32.45092697],[3.37964793,32.88379946],[2.88561768,32.88378899],[2.88567251,32.45093128]])
-zoneNord = ee.Geometry.Polygon([[3.18513508,33.01358581],[3.18482285,33.28297225],[3.81093387,33.27857017],[3.81077745,33.01358819],[3.18513508,33.01358581]])
-zones = [("Centre", zoneCentre),("Sud", zoneSud),("Nord", zoneNord)]
+# ================= CONFIG =================
+st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
+st.title("Surveillance du Méthane (CH₄) – HSE")
 
-# ================= IA LÉGÈRE =================
-def detect_ch4_anomaly(val):
+# ================= IA LÉGÈRE (SANS TORCH) =================
+def detect_ch4_anomaly(image_array):
+    """IA simplifiée par seuils, compatible Streamlit Cloud"""
+    val = np.nanmean(image_array)
     if np.isnan(val):
         return "❌ Pas de données", 0.0
     elif val > 1920:
@@ -46,103 +49,533 @@ def detect_ch4_anomaly(val):
     else:
         return "✅ Normal", 0.1
 
-# ================= STREAMLIT UI =================
-st.set_page_config(page_title="Surveillance CH4", layout="wide")
-st.title("Surveillance CH4 – Détection et Rapport")
+# ================= ZONES FIXES =================
+zoneCentre = ee.Geometry.Polygon([
+  [3.37696562, 32.75662617],
+  [3.61159117, 32.75663435],
+  [3.60634757, 33.01349055],
+  [2.93385218, 33.02401464],
+  [2.92757292, 32.89394392],
+  [3.3769424, 32.88954646],
+  [3.37696562, 32.75662617]
+])
 
-# Choix période
-days = st.number_input("Analyser les derniers jours", min_value=1, max_value=30, value=7)
+zoneSud = ee.Geometry.Polygon([
+  [2.88567251, 32.45093128],
+  [3.37963967, 32.45092697],
+  [3.37964793, 32.88379946],
+  [2.88561768, 32.88378899],
+  [2.88567251, 32.45093128]
+])
 
-if st.button("Lancer Analyse"):
-    today = datetime.utcnow()
-    start = today - timedelta(days=days)
+zoneNord = ee.Geometry.Polygon([
+  [3.18513508, 33.01358581],
+  [3.18482285, 33.28297225],
+  [3.81093387, 33.27857017],
+  [3.81077745, 33.01358819],
+  [3.18513508, 33.01358581]
+])
 
-    # Collection CH4
-    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
-    collection = collection.filterDate(start, today).select("CH4_column_volume_mixing_ratio_dry_air")
-    image = collection.mean()
+# ================= PATHS =================
+DATA_DIR = "data"
+csv_hist = "data/2020 2024/CH4_HassiRmel_2020_2024.csv"
+csv_annual = "data/2020 2024/CH4_HassiRmel_annual_2020_2024.csv"
 
-    results = []
-    critical_points = []
+# ================= SECTION A =================
+st.markdown("## 📁 Section A — Données")
+if st.button("Afficher dossiers"):
+    for root, dirs, files in os.walk(DATA_DIR):
+        st.write(root)
+        for f in files:
+            st.write(" └─", f)
 
-    # Analyse par zone
-    for name, zone in zones:
+# ================= SECTION B =================
+st.markdown("## 📑 Section B — CSV")
+if st.button("Afficher CSV"):
+    if os.path.exists(csv_hist):
+        df = pd.read_csv(csv_hist)
+        st.dataframe(df.head())
+    else:
+        st.warning("CSV introuvable")
+
+# ================= SECTION C =================
+st.markdown("## 🗺️ Carte CH₄ moyenne")
+year_mean = st.selectbox("Choisir l'année", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Afficher carte CH₄ moyenne"):
+    path = f"data/Moyenne CH4/CH4_mean_{year_mean}.tif"
+    if os.path.exists(path):
+        with rasterio.open(path) as src:
+            img = src.read(1)
+        img[img <= 0] = np.nan
+        fig, ax = plt.subplots()
+        im = ax.imshow(img, cmap="viridis")
+        plt.colorbar(im, ax=ax, label="CH₄ (ppb)")
+        ax.set_title(f"CH₄ moyen {year_mean}")
+        ax.axis("off")
+        st.pyplot(fig)
+    else:
+        st.warning("Carte introuvable")
+
+# ================= SECTION D =================
+st.markdown("## 🔎 Analyse annuelle")
+if st.button("Analyser année"):
+    if os.path.exists(csv_annual):
+        df = pd.read_csv(csv_annual)
+        st.dataframe(df)
+
+# ================= SECTION E =================
+st.markdown("## 📊 Analyse CH₄ par Zone et Année")
+year = st.selectbox("Choisir année analyse", [2020, 2021, 2022, 2023, 2024, 2025])
+if st.button("Lancer analyse CH₄"):
+    start = ee.Date(f"{year}-01-01")
+    end = ee.Date(f"{year}-12-31")
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, end)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+
+    def compute(zone, name):
+        value = collection.mean().reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
         try:
-            val = image.reduceRegion(reducer=ee.Reducer.mean(), geometry=zone, scale=7000, maxPixels=1e9, bestEffort=True).getInfo()["CH4_column_volume_mixing_ratio_dry_air"]
+            val = value.getInfo()
         except:
-            val = np.nan
+            val = None
+        return {"Zone": name, "CH₄ (ppb)": val}
 
-        status, score = detect_ch4_anomaly(val)
+    results = [compute(zoneCentre, "Centre"), compute(zoneSud, "Sud"), compute(zoneNord, "Nord")]
+    df = pd.DataFrame(results)
+    st.dataframe(df)
+    st.bar_chart(df.set_index("Zone"))
 
+# ================= SECTION F =================
+st.markdown("## 📡 Analyse CH₄ récente par zone")
+if st.button("Analyser CH₄ (derniers jours)"):
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+    image = collection.mean()
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+    results = []
+
+    for name, zone in zones:
+        value = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zone,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+        try:
+            val = value.getInfo()
+        except:
+            val = None
+
+        status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+        results.append({
+            "Zone": name,
+            "CH₄": round(val,2) if val else "No data",
+            "Risque IA": status_ia,
+            "Score IA": round(score,2)
+        })
+
+    df = pd.DataFrame(results)
+    st.dataframe(df)
+    st.bar_chart(df.set_index("Zone"))
+
+# ================= SECTION G =================
+st.markdown("## 🌍 Carte CH₄ PRO")
+
+# Initialisation session_state (UNE seule fois)
+if "map" not in st.session_state:
+    st.session_state.map = None
+
+if st.button("Afficher carte PRO"):
+
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+    # Calcul centre carte
+    all_lats, all_lons = [], []
+    for name, zone in zones:
+        coords = zone.coordinates().getInfo()
+        for poly in coords:
+            for lon, lat in poly:
+                all_lats.append(lat)
+                all_lons.append(lon)
+
+    center_lat = (max(all_lats) + min(all_lats)) / 2
+    center_lon = (max(all_lons) + min(all_lons)) / 2
+    sw = [min(all_lats), min(all_lons)]
+    ne = [max(all_lats), max(all_lons)]
+
+    # Création carte avec fond satellite
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=8,
+        tiles=None
+    )
+
+    # Fond satellite ESRI
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # Fond OpenStreetMap pour switch
+    folium.TileLayer("OpenStreetMap", name="Carte simple").add_to(m)
+    folium.LayerControl().add_to(m)
+
+    # Charger données CH4 des 7 derniers jours
+    from datetime import timedelta, datetime
+    today = datetime.utcnow()
+    start = today - timedelta(days=7)
+
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+
+    count = collection.size().getInfo()
+
+    if count == 0:
+        st.warning("⚠️ Aucune image CH₄ disponible")
+    else:
+        image = collection.mean()
+
+        # Vérification zone principale
+        mean_val = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=zoneCentre,
+            scale=7000,
+            maxPixels=1e9,
+            bestEffort=True
+        ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+        try:
+            val_check = mean_val.getInfo()
+        except:
+            val_check = None
+
+        if val_check is None:
+            st.warning("⚠️ Pas de données CH₄ dans la zone Centre")
+        else:
+            # Palette dynamique
+            min_val = val_check * 0.95
+            max_val = val_check * 1.05
+
+            map_id = image.getMapId({
+                "min": min_val,
+                "max": max_val,
+                "palette": ["blue", "green", "yellow", "red"]
+            })
+
+            folium.TileLayer(
+                tiles=map_id["tile_fetcher"].url_format,
+                attr="CH4",
+                overlay=True
+            ).add_to(m)
+
+            # Dernière date satellite
+            last_image = collection.sort('system:time_start', False).first()
+            last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+
+            results = []
+
+            # Ajouter les zones sur la carte
+            for name, zone in zones:
+                value = image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=zone,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air")
+
+                try:
+                    val = value.getInfo()
+                except:
+                    val = None
+
+                # Détection IA légère
+                status_ia, score = detect_ch4_anomaly(
+                    np.array([[val]]) if val else np.array([[np.nan]])
+                )
+
+                color = "green"
+                if status_ia == "🔥 Fuite critique":
+                    color = "red"
+                elif status_ia == "⚠️ Suspect":
+                    color = "orange"
+
+                # Extraire toutes les coordonnées correctement
+                coords_raw = zone.coordinates().getInfo()
+                coords = []
+                for poly in coords_raw:
+                    for lon, lat in poly:
+                        coords.append([lat, lon])  # Folium attend [lat, lon]
+
+                folium.Polygon(
+                    locations=coords,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.4,
+                    tooltip=f"{name}: {status_ia} (Score {round(score,2)})"
+                ).add_to(m)
+
+                results.append({
+                    "Zone": name,
+                    "CH₄": val,
+                    "Statut IA": status_ia,
+                    "Score IA": round(score,2),
+                    "Dernière date": last_date
+                })
+
+            # Sauvegarder carte dans session_state
+            st.session_state.map = m
+
+            # Afficher tableau des résultats
+            st.dataframe(pd.DataFrame(results))
+
+# ================= AFFICHAGE CARTE FIXE =================
+if st.session_state.map:
+    st.write("🗺️ Carte CH₄ (fixe)")
+
+    st.components.v1.html(
+        st.session_state.map._repr_html_(),
+        height=500
+    )
+# ================= SECTION H =================
+st.markdown("## 🎯 Détection locale")
+lat_point = st.number_input("Latitude", value=32.90)
+lon_point = st.number_input("Longitude", value=3.30)
+
+if st.button("Analyser point"):
+    today = ee.Date(datetime.utcnow().strftime("%Y-%m-%d"))
+    start = today.advance(-7, "day")
+    collection = (
+        ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+        .filterDate(start, today)
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    )
+    image = collection.mean()
+    point = ee.Geometry.Point([lon_point, lat_point])
+    value = image.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=point,
+        scale=7000,
+        maxPixels=1e9,
+        bestEffort=True
+    ).get("CH4_column_volume_mixing_ratio_dry_air")
+    try:
+        val = value.getInfo()
+    except:
+        val = None
+
+    status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+    if val:
+        st.success(f"CH₄ : {round(val,2)} ppb — IA: {status_ia} (Score {round(score,2)})")
+    else:
+        st.error("❌ Pas de donnée")
+# ================= SECTION I — PLUME + RAPPORT PDF SAFE =================
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import tempfile
+import io
+from datetime import datetime, timedelta
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
+
+# Définir zones avant tout try
+zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
+# ----------------- IMAGE PLUME -----------------
+try:
+    import rasterio
+
+    # Chargement image CH4 2024
+    with rasterio.open("data/Moyenne CH4/CH4_mean_2024.tif") as src:
+        img = src.read(1)
+    img[img <= 0] = np.nan
+
+    # 🔹 Lissage simple 3x3 sans scipy
+    kernel_size = 3
+    img_padded = np.pad(np.nan_to_num(img), pad_width=kernel_size, mode='constant', constant_values=0)
+    smooth = np.zeros_like(img)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            smooth[i, j] = np.mean(img_padded[i:i+kernel_size, j:j+kernel_size])
+
+    # 🔹 Détection zones fortes (top 2%)
+    threshold = np.nanpercentile(smooth, 98)
+    mask = smooth > threshold
+
+    # 🔹 Centre de masse plume
+    ys, xs = np.where(mask)
+    y_center = int(np.mean(ys))
+    x_center = int(np.mean(xs))
+
+    # 🔹 Zoom auto
+    size = 60
+    y1, y2 = max(0, y_center - size), min(img.shape[0], y_center + size)
+    x1, x2 = max(0, x_center - size), min(img.shape[1], x_center + size)
+    zoom = smooth[y1:y2, x1:x2]
+    mask_zoom = mask[y1:y2, x1:x2]
+
+    # 🔹 Création figure
+    fig, ax = plt.subplots()
+    im = ax.imshow(zoom, cmap="jet", vmin=np.nanpercentile(zoom,5), vmax=np.nanpercentile(zoom,98))
+    ax.contour(mask_zoom, colors='lime', linewidths=1.5)
+    ax.arrow(5, 5, 20, 0, head_width=5, head_length=5, fc='white', ec='white')
+    ax.text(5, 0, "Wind →", color='white', fontsize=10)
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("CH₄ (ppb)")
+    ax.set_title("Methane Plume Detection")
+    ax.axis("off")
+
+    # Sauvegarde PNG temporaire
+    img_path = os.path.join(tempfile.gettempdir(), "ch4_plume.png")
+    plt.savefig(img_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    st.success("Image plume générée avec succès ✅")
+
+except Exception as e:
+    st.warning(f"⚠️ Erreur génération image plume : {e}")
+    img_path = None
+
+# ----------------- DONNÉES PAR ZONE -----------------
+table_data = [["Zone", "CH₄ (ppb)", "Débit", "Statut IA", "Lat", "Lon"]]
+
+# Récupération données satellite dernière semaine
+today = datetime.utcnow()
+start = today - timedelta(days=7)
+try:
+    collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
+        .filterDate(start, today) \
+        .select("CH4_column_volume_mixing_ratio_dry_air")
+    image = collection.mean()
+    last_image = collection.sort('system:time_start', False).first()
+    last_date = ee.Date(last_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
+except:
+    st.warning("⚠️ Impossible de récupérer les données satellite")
+    image = None
+    last_date = "N/A"
+
+for name, zone in zones:
+    val = None
+    if image:
+        try:
+            value = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=zone,
+                scale=7000,
+                maxPixels=1e9,
+                bestEffort=True
+            ).get("CH4_column_volume_mixing_ratio_dry_air")
+            val = value.getInfo()
+        except:
+            val = None
+
+    # IA légère
+    status_ia, score = detect_ch4_anomaly(np.array([[val]]) if val else np.array([[np.nan]]))
+
+    # Débit estimé
+    debit = round((val - 1800) * 0.5, 2) if val else "N/A"
+
+    # Coordonnées
+    try:
         coords = zone.centroid().coordinates().getInfo()
         lon, lat = coords
+    except:
+        lat, lon = "N/A", "N/A"
 
-        results.append([name, round(val,2) if val else 'N/A', status, round(score,2), lat, lon])
-        if status == "🔥 Fuite critique":
-            critical_points.append({'lat': lat, 'lon': lon, 'zone': name, 'val': val})
+    table_data.append([
+        name,
+        round(val,2) if val else "N/A",
+        debit,
+        status_ia,
+        lat,
+        lon
+    ])
 
-    # Affichage tableau
-    df = pd.DataFrame(results, columns=["Zone","CH4 (ppb)","Statut IA","Score IA","Lat","Lon"])
-    st.dataframe(df)
+# ----------------- PDF -----------------
+if st.button("📄 Générer Rapport PDF"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
 
-    # ================= CARTE =================
-    if df.shape[0] > 0:
-        if critical_points:
-            center_lat = critical_points[0]['lat']
-            center_lon = critical_points[0]['lon']
-        else:
-            center_lat = np.mean([r[4] for r in results])
-            center_lon = np.mean([r[5] for r in results])
+    # Header
+    elements.append(Paragraph("<b>DATA.SAT</b>", styles["Title"]))
+    elements.append(Paragraph("CH₄ Measurement Report", styles["Heading2"]))
+    elements.append(Spacer(1,10))
+    elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
+    elements.append(Spacer(1,10))
 
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+    # Image plume
+    if img_path:
+        elements.append(Paragraph("<b>Detection Map</b>", styles["Heading3"]))
+        img_pdf = Image(img_path)
+        img_pdf.drawHeight = 4*inch
+        img_pdf.drawWidth = 6*inch
+        elements.append(img_pdf)
+        elements.append(Spacer(1,15))
 
-        for r in results:
-            color = "green" if r[2]=="✅ Normal" else ("orange" if r[2]=="⚠️ Suspect" else "red")
-            folium.CircleMarker([r[4], r[5]], radius=10, color=color, fill=True, fill_opacity=0.7, tooltip=f"{r[0]}: {r[2]} ({r[1]} ppb)").add_to(m)
+    # Table
+    table = Table(table_data, colWidths=[70,70,70,100,60,60])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1f4e79")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(Paragraph("<b>Emission Data</b>", styles["Heading3"]))
+    elements.append(table)
+    elements.append(Spacer(1,20))
 
-        st_folium(m, width=800, height=500)
+    # HSE Analysis
+    elements.append(Paragraph("<b>HSE Risk Analysis</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Methane anomalies detected via satellite indicate potential leaks. "
+        "Critical zones may present risks of fire, explosion, and environmental impact.",
+        styles["Normal"]
+    ))
+    elements.append(Spacer(1,12))
+    elements.append(Paragraph("<b>Recommended Actions</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "- Field inspection\n"
+        "- Leak verification\n"
+        "- Maintenance\n"
+        "- Continuous monitoring",
+        styles["Normal"]
+    ))
 
-        # ================= PDF =================
-        if st.button("📄 Générer Rapport PDF"):
-            buffer = io.BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=A4)
-            styles = getSampleStyleSheet()
-            elements = []
-
-            elements.append(Paragraph("<b>DATA.SAT</b>", styles['Title']))
-            elements.append(Paragraph(f"Date: {today.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-            elements.append(Spacer(1,12))
-
-            # Tableau
-            table = Table([df.columns.tolist()] + df.values.tolist(), colWidths=[70,70,80,60,60,60])
-            table.setStyle(TableStyle([
-                ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1f4e79")),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-                ('ALIGN',(0,0),(-1,-1),'CENTER'),
-                ('GRID',(0,0),(-1,-1),0.5,colors.black),
-                ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-            ]))
-            elements.append(table)
-            elements.append(Spacer(1,12))
-
-            # Capture carte + plume
-            if critical_points:
-                try:
-                    import matplotlib.pyplot as plt
-                    fig, ax = plt.subplots()
-                    ax.scatter([p['lon'] for p in critical_points],[p['lat'] for p in critical_points], color='red', s=200)
-                    ax.set_title("Point(s) critique(s) de fuite")
-                    ax.set_xlabel("Longitude")
-                    ax.set_ylabel("Latitude")
-                    img_path = os.path.join(tempfile.gettempdir(),"critical_points.png")
-                    plt.savefig(img_path, bbox_inches='tight', dpi=300)
-                    plt.close()
-
-                    elements.append(Paragraph("<b>Carte des points critiques</b>", styles['Heading3']))
-                    elements.append(Image(img_path, width=6*inch, height=4*inch))
-                except Exception as e:
-                    st.warning(f"Erreur image plume: {e}")
-
-            doc.build(elements)
-            buffer.seek(0)
-            st.download_button("📥 Télécharger PDF", data=buffer, file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf", mime="application/pdf")
+    try:
+        doc.build(elements)
+        buffer.seek(0)
+        st.download_button(
+            label="📥 Télécharger Rapport PDF",
+            data=buffer,
+            file_name=f"rapport_CH4_{today.strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.error(f"Erreur génération PDF : {e}")
