@@ -438,6 +438,9 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     today = datetime.utcnow()
     start = today - timedelta(days=days)
 
+    # ------------------- Définition zones -------------------
+    zones = [("Centre", zoneCentre), ("Sud", zoneSud), ("Nord", zoneNord)]
+
     # ------------------- Récupération données satellite -------------------
     try:
         collection = ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4") \
@@ -488,8 +491,8 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
         center_lat = critical_points[0]['lat']
         center_lon = critical_points[0]['lon']
     else:
-        center_lat = np.mean([r[5] for r in results])
-        center_lon = np.mean([r[6] for r in results])
+        center_lat = np.mean([r[5] for r in results if r[5] != "N/A"])
+        center_lon = np.mean([r[6] for r in results if r[6] != "N/A"])
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles=None)
     folium.TileLayer(
@@ -505,6 +508,8 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     # Ajout zones + points critiques
     for r in results:
         zone_name, val, debit, status, score, lat, lon = r
+        if lat=="N/A" or lon=="N/A":
+            continue
         color = "green" if status=="✅ Normal" else ("orange" if status=="⚠️ Suspect" else "red")
         folium.CircleMarker(
             location=[lat, lon],
@@ -532,13 +537,6 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
     elements.append(Paragraph(f"<b>Date:</b> {today.strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
     elements.append(Paragraph(f"<b>Last Satellite Pass:</b> {last_date}", styles["Normal"]))
     elements.append(Spacer(1,10))
-
-    # Carte image snapshot temporaire
-    try:
-        tmp_map = os.path.join(tempfile.gettempdir(), "ch4_map.png")
-        m.save(tmp_map.replace(".png",".html"))  # sauvegarde html
-    except:
-        tmp_map = None
 
     # Table
     table = Table([["Zone","CH₄ (ppb)","Débit","Statut IA","Score IA","Lat","Lon"]] + results, colWidths=[50,50,50,70,50,50,50])
@@ -568,6 +566,7 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
         styles["Normal"]
     ))
 
+    # Build PDF
     try:
         doc.build(elements)
         buffer.seek(0)
