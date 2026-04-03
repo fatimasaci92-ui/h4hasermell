@@ -425,57 +425,71 @@ if st.button("📄 Générer Rapport PDF"):
         st.warning("⚠️ Erreur récupération données satellite")
         image = None
 
-    # ================= IMAGE CH4 PRO =================
+    # ================= IMAGE CH4 ULTRA PRO (PLUME + VENT) =================
 try:
     import rasterio
+    from scipy.ndimage import gaussian_filter
 
     with rasterio.open(f"data/Moyenne CH4/CH4_mean_2024.tif") as src:
         img = src.read(1)
 
     img[img <= 0] = np.nan
 
-    # 🔥 DETECTION ZONE ACTIVE (max CH4)
-    max_idx = np.unravel_index(np.nanargmax(img), img.shape)
-    y, x = max_idx
+    # 🔥 LISSAGE (effet plume)
+    smooth = gaussian_filter(np.nan_to_num(img), sigma=3)
 
-    # 🔍 ZOOM autour de la fuite
-    size = 50  # taille du zoom (ajuste si besoin)
-    y1, y2 = max(0, y-size), min(img.shape[0], y+size)
-    x1, x2 = max(0, x-size), min(img.shape[1], x+size)
+    # 🔥 DETECTION ZONE FORTE
+    threshold = np.nanpercentile(smooth, 98)  # top 2%
+    plume_mask = smooth > threshold
 
-    zoom_img = img[y1:y2, x1:x2]
+    # 📍 CENTRE DE MASSE (vraie source)
+    ys, xs = np.where(plume_mask)
+    y_center = int(np.mean(ys))
+    x_center = int(np.mean(xs))
 
-    # 🎨 NORMALISATION (améliore contraste)
-    vmin = np.nanpercentile(zoom_img, 5)
-    vmax = np.nanpercentile(zoom_img, 95)
+    # 🔍 ZOOM AUTO
+    size = 60
+    y1, y2 = max(0, y_center-size), min(img.shape[0], y_center+size)
+    x1, x2 = max(0, x_center-size), min(img.shape[1], x_center+size)
+
+    zoom = smooth[y1:y2, x1:x2]
+    mask_zoom = plume_mask[y1:y2, x1:x2]
+
+    # 🎨 CONTRASTE
+    vmin = np.nanpercentile(zoom, 5)
+    vmax = np.nanpercentile(zoom, 98)
 
     fig, ax = plt.subplots()
 
-    im = ax.imshow(zoom_img, cmap="jet", vmin=vmin, vmax=vmax)
+    im = ax.imshow(zoom, cmap="jet", vmin=vmin, vmax=vmax)
 
-    # 🟩 RECTANGLE CENTRE (zone fuite)
-    rect = plt.Rectangle(
-        (size//2 - 10, size//2 - 10),
-        20, 20,
-        linewidth=2,
-        edgecolor='lime',
-        facecolor='none'
+    # 🔥 CONTOUR PLUME (style GHGSat)
+    ax.contour(mask_zoom, colors='lime', linewidths=1.5)
+
+    # 🌬️ VENT (simulation)
+    ax.arrow(
+        10, 10,   # position
+        20, 0,    # direction (horizontal)
+        head_width=5,
+        head_length=5,
+        fc='white',
+        ec='white'
     )
-    ax.add_patch(rect)
+    ax.text(10, 5, "Wind →", color='white', fontsize=10)
 
-    # 📊 BARRE COULEUR (IMPORTANT GHGSAT)
+    # 📊 COLORBAR
     cbar = plt.colorbar(im, ax=ax)
     cbar.set_label("CH₄ (ppb)")
 
-    ax.set_title("CH4 Detection (Zoom fuite)")
+    ax.set_title("Methane Plume Detection")
     ax.axis("off")
 
-    img_path = os.path.join(tempfile.gettempdir(), "ch4_map.png")
+    img_path = os.path.join(tempfile.gettempdir(), "ch4_plume.png")
     plt.savefig(img_path, bbox_inches='tight', dpi=300)
     plt.close()
 
 except Exception as e:
-    st.warning(f"⚠️ Image CH4 erreur : {e}")
+    st.warning(f"⚠️ Erreur image plume : {e}")
 
     # ================= TABLE DATA =================
     table_data = [["Zone", "CH4", "Débit", "Statut", "Lat", "Lon"]]
