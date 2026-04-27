@@ -429,8 +429,6 @@ if st.button("📄 Générer Rapport Fuite"):
 
 
 
-
-
 # ================= SECTION I+J OPTIMISÉE — Carte + PDF PRO =================
 st.markdown("## 🚀 Rapport CH₄ Ultra PRO avec Plume et Points Critiques")
 
