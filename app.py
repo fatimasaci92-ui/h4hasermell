@@ -795,3 +795,360 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
         st.error(f"Erreur génération PDF : {e}")
 
 
+
+# ================= SECTION K — CARBON MAPPER : FUITES RÉELLES GÉOLOCALISÉES =================
+# À insérer dans app.py après la Section H
+#
+# PRÉREQUIS :
+#   1. Créer un compte sur https://data.carbonmapper.org
+#   2. Récupérer votre token API dans votre profil
+#   3. Ajouter dans .streamlit/secrets.toml :
+#        CARBON_MAPPER_TOKEN = "votre_token_ici"
+#
+# DÉPENDANCES (requirements.txt) :
+#   requests, folium, streamlit-folium, pandas
+
+import streamlit as st
+import requests
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+from datetime import datetime, timedelta
+import io
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+
+st.markdown("## 🛰️ Carbon Mapper — Fuites CH₄ réelles géolocalisées")
+st.info(
+    "Source : Carbon Mapper (satellite Tanager-1 + NASA EMIT + AVIRIS-NG). "
+    "Résolution 3–30 m. Données réelles de panaches détectés sur votre zone."
+)
+
+# -------- Paramètres utilisateur --------
+col1, col2 = st.columns(2)
+with col1:
+    cm_lat_min = st.number_input("Lat min", value=32.45, format="%.4f", key="cm_lat_min")
+    cm_lat_max = st.number_input("Lat max", value=33.28, format="%.4f", key="cm_lat_max")
+with col2:
+    cm_lon_min = st.number_input("Lon min", value=2.88, format="%.4f", key="cm_lon_min")
+    cm_lon_max = st.number_input("Lon max", value=3.81, format="%.4f", key="cm_lon_max")
+
+col3, col4 = st.columns(2)
+with col3:
+    cm_date_start = st.date_input("Date début", value=datetime(2022, 1, 1), key="cm_date_start")
+with col4:
+    cm_date_end = st.date_input("Date fin", value=datetime.utcnow(), key="cm_date_end")
+
+cm_gas = st.selectbox("Gaz", ["CH4", "CO2"], key="cm_gas")
+cm_sector = st.selectbox(
+    "Secteur",
+    ["Tous", "oil-and-gas", "solid-waste", "coal", "agriculture", "wastewater"],
+    key="cm_sector"
+)
+cm_min_rate = st.number_input(
+    "Débit minimum (kg/h)", value=0, min_value=0, step=10, key="cm_min_rate",
+    help="Filtrer les petites fuites. 0 = tout afficher."
+)
+
+# -------- Récupération token --------
+try:
+    CM_TOKEN = st.secrets["CARBON_MAPPER_TOKEN"]
+except Exception:
+    CM_TOKEN = None
+    st.warning(
+        "⚠️ Token Carbon Mapper manquant. "
+        "Ajoutez `CARBON_MAPPER_TOKEN` dans `.streamlit/secrets.toml`. "
+        "Inscription gratuite sur https://data.carbonmapper.org"
+    )
+
+# -------- Requête API Carbon Mapper --------
+def fetch_carbon_mapper_plumes(token, bbox, date_start, date_end, gas, sector, min_rate):
+    """
+    Interroge l'API Carbon Mapper pour récupérer les panaches (plumes)
+    dans une bounding box et une période données.
+
+    Endpoint public documenté :
+      GET https://api.carbonmapper.org/api/v1/catalog/sources/
+    Paramètres clés :
+      - bbox         : "lon_min,lat_min,lon_max,lat_max"
+      - gas          : "CH4" ou "CO2"
+      - date_start   : "YYYY-MM-DD"
+      - date_end     : "YYYY-MM-DD"
+      - sector       : code secteur optionnel
+      - emission_min : débit minimum kg/h
+    """
+    BASE = "https://api.carbonmapper.org/api/v1/catalog/plumes/"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    params = {
+        "bbox": f"{bbox['lon_min']},{bbox['lat_min']},{bbox['lon_max']},{bbox['lat_max']}",
+        "gas": gas,
+        "date_start": str(date_start),
+        "date_end": str(date_end),
+        "limit": 200,
+        "offset": 0,
+    }
+    if sector != "Tous":
+        params["sector"] = sector
+    if min_rate > 0:
+        params["emission_min"] = min_rate
+
+    all_results = []
+    while True:
+        try:
+            r = requests.get(BASE, headers=headers, params=params, timeout=20)
+            r.raise_for_status()
+            data = r.json()
+        except requests.exceptions.HTTPError as e:
+            st.error(f"Erreur API Carbon Mapper ({r.status_code}) : {e}")
+            break
+        except Exception as e:
+            st.error(f"Erreur réseau : {e}")
+            break
+
+        results = data.get("results", [])
+        all_results.extend(results)
+
+        # Pagination
+        if data.get("next"):
+            params["offset"] += params["limit"]
+        else:
+            break
+
+    return all_results
+
+
+def plumes_to_dataframe(plumes):
+    """Convertit la liste de panaches en DataFrame propre."""
+    rows = []
+    for p in plumes:
+        # Coordonnées du point d'origine de la fuite
+        lat = p.get("source_lat") or p.get("lat") or p.get("plume_lat")
+        lon = p.get("source_lon") or p.get("lon") or p.get("plume_lon")
+
+        emission = p.get("emission_auto") or p.get("emission_uncertainty_upper")
+
+        rows.append({
+            "ID": p.get("plume_id") or p.get("id", ""),
+            "Date": p.get("acquisition_date", "")[:10] if p.get("acquisition_date") else "",
+            "Lat": round(float(lat), 5) if lat else None,
+            "Lon": round(float(lon), 5) if lon else None,
+            "Débit (kg/h)": round(float(emission), 1) if emission else None,
+            "Secteur": p.get("sector", ""),
+            "Capteur": p.get("instrument", ""),
+            "Nom source": p.get("source_name", ""),
+        })
+    return pd.DataFrame(rows)
+
+
+# -------- Bouton principal --------
+if st.button("🔍 Récupérer les fuites Carbon Mapper"):
+    if not CM_TOKEN:
+        st.error("❌ Token API manquant — voir instructions ci-dessus.")
+        st.stop()
+
+    bbox = {
+        "lat_min": cm_lat_min, "lat_max": cm_lat_max,
+        "lon_min": cm_lon_min, "lon_max": cm_lon_max,
+    }
+
+    with st.spinner("Interrogation Carbon Mapper en cours..."):
+        plumes = fetch_carbon_mapper_plumes(
+            CM_TOKEN, bbox,
+            cm_date_start, cm_date_end,
+            cm_gas, cm_sector, cm_min_rate
+        )
+
+    if not plumes:
+        st.warning(
+            "Aucun panache trouvé sur cette zone/période. "
+            "Carbon Mapper n'a peut-être pas encore survolé Hassi Rmel avec Tanager-1. "
+            "Essayez d'élargir la période ou consultez directement https://data.carbonmapper.org"
+        )
+        st.stop()
+
+    df_cm = plumes_to_dataframe(plumes)
+    df_cm_valid = df_cm.dropna(subset=["Lat", "Lon"])
+
+    st.success(f"✅ {len(df_cm_valid)} panache(s) détecté(s) sur la zone")
+    st.dataframe(df_cm_valid, use_container_width=True)
+
+    # -------- Statistiques rapides --------
+    if "Débit (kg/h)" in df_cm_valid.columns and df_cm_valid["Débit (kg/h)"].notna().any():
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Débit max (kg/h)", f"{df_cm_valid['Débit (kg/h)'].max():.1f}")
+        col_b.metric("Débit moyen (kg/h)", f"{df_cm_valid['Débit (kg/h)'].mean():.1f}")
+        col_c.metric("Total estimé (kg/h)", f"{df_cm_valid['Débit (kg/h)'].sum():.1f}")
+
+    # -------- Carte Folium --------
+    center_lat = df_cm_valid["Lat"].mean()
+    center_lon = df_cm_valid["Lon"].mean()
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles=None)
+
+    # Fond satellite ESRI
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
+    folium.LayerControl().add_to(m)
+
+    # Groupe Carbon Mapper
+    fg = folium.FeatureGroup(name="Fuites Carbon Mapper")
+
+    max_emission = df_cm_valid["Débit (kg/h)"].max() if df_cm_valid["Débit (kg/h)"].notna().any() else 1
+
+    for _, row in df_cm_valid.iterrows():
+        if pd.isna(row["Lat"]) or pd.isna(row["Lon"]):
+            continue
+
+        emission = row["Débit (kg/h)"]
+
+        # Couleur selon intensité
+        if pd.notna(emission):
+            ratio = emission / max_emission if max_emission > 0 else 0
+            if ratio > 0.6:
+                color = "red"
+                radius = 14
+            elif ratio > 0.3:
+                color = "orange"
+                radius = 10
+            else:
+                color = "yellow"
+                radius = 7
+        else:
+            color = "gray"
+            radius = 6
+
+        popup_html = f"""
+        <div style='font-family:sans-serif;font-size:13px;min-width:200px'>
+            <b>🛰 Carbon Mapper</b><br>
+            <b>ID:</b> {row['ID']}<br>
+            <b>Date:</b> {row['Date']}<br>
+            <b>Débit:</b> {emission if pd.notna(emission) else 'N/A'} kg/h<br>
+            <b>Secteur:</b> {row['Secteur']}<br>
+            <b>Capteur:</b> {row['Capteur']}<br>
+            <b>Source:</b> {row['Nom source']}<br>
+            📍 {row['Lat']}, {row['Lon']}
+        </div>
+        """
+
+        # Halo pour les fuites majeures
+        if color == "red":
+            folium.CircleMarker(
+                location=[row["Lat"], row["Lon"]],
+                radius=radius + 8,
+                color="darkred",
+                fill=True,
+                fill_color="red",
+                fill_opacity=0.15,
+            ).add_to(fg)
+
+        folium.CircleMarker(
+            location=[row["Lat"], row["Lon"]],
+            radius=radius,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.85,
+            tooltip=f"{row['ID']} | {emission if pd.notna(emission) else '?'} kg/h",
+            popup=folium.Popup(popup_html, max_width=240)
+        ).add_to(fg)
+
+    fg.add_to(m)
+
+    # Légende
+    legend_html = """
+    <div style='position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(255,255,255,0.92);
+         padding:10px 14px;border-radius:8px;font-size:12px;font-family:sans-serif;
+         box-shadow:0 2px 6px rgba(0,0,0,0.2)'>
+    <b>Carbon Mapper — Débit</b><br>
+    <span style='color:red'>●</span> Élevé (&gt;60% du max)<br>
+    <span style='color:orange'>●</span> Moyen (30–60%)<br>
+    <span style='color:#cccc00'>●</span> Faible (&lt;30%)<br>
+    <span style='color:gray'>●</span> Débit non renseigné
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    st.write("### 🗺️ Carte des panaches CH₄ — Carbon Mapper")
+    st_folium(m, width=None, height=540, returned_objects=[])
+
+    # -------- Export CSV --------
+    csv_buf = io.StringIO()
+    df_cm_valid.to_csv(csv_buf, index=False)
+    st.download_button(
+        "📥 Télécharger CSV",
+        data=csv_buf.getvalue(),
+        file_name=f"carbon_mapper_{cm_gas}_{cm_date_start}_{cm_date_end}.csv",
+        mime="text/csv"
+    )
+
+    # -------- Export PDF --------
+    if st.button("📄 Générer rapport PDF Carbon Mapper"):
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        elements.append(Paragraph("<b>DATA.SAT — Carbon Mapper Report</b>", styles["Title"]))
+        elements.append(Paragraph(f"Gaz: {cm_gas} | Période: {cm_date_start} → {cm_date_end}", styles["Heading3"]))
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph(
+            f"Zone: lat [{cm_lat_min}, {cm_lat_max}] | lon [{cm_lon_min}, {cm_lon_max}]",
+            styles["Normal"]
+        ))
+        elements.append(Paragraph(f"Panaches détectés: {len(df_cm_valid)}", styles["Normal"]))
+        elements.append(Spacer(1, 12))
+
+        # Tableau
+        table_data = [["ID", "Date", "Lat", "Lon", "Débit (kg/h)", "Secteur", "Capteur"]]
+        for _, row in df_cm_valid.head(30).iterrows():
+            table_data.append([
+                str(row["ID"])[:20],
+                str(row["Date"]),
+                str(row["Lat"]),
+                str(row["Lon"]),
+                str(row["Débit (kg/h)"]),
+                str(row["Secteur"]),
+                str(row["Capteur"]),
+            ])
+
+        table = Table(table_data, colWidths=[70, 55, 55, 55, 55, 70, 55])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.black),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.whitesmoke),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 15))
+
+        elements.append(Paragraph("<b>Source des données</b>", styles["Heading3"]))
+        elements.append(Paragraph(
+            "Carbon Mapper (Tanager-1, NASA EMIT, AVIRIS-NG) — "
+            "Résolution 3–50 m — Non-commercial use (CC BY 4.0)",
+            styles["Normal"]
+        ))
+
+        doc.build(elements)
+        buffer.seek(0)
+        st.download_button(
+            "📥 Télécharger rapport PDF",
+            data=buffer,
+            file_name=f"rapport_carbonmapper_{cm_gas}_{datetime.utcnow().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+
+
+
