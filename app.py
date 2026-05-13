@@ -1009,14 +1009,20 @@ if st.button("🛰️ Rechercher les fuites", disabled=not token_ok):
                     f"{{radius:{radius+8},color:'#A32D2D',fillColor:'#E24B4A',"
                     f"fillOpacity:0.15,weight:1}}).addTo(markerGroup);\n"
                 )
+            pid     = p["id"][:24]
+            pdate   = p["date"]
+            psector = p["sector"] or "N/A"
+            psensor = p["sensor"] or "N/A"
+            plat    = p["lat"]
+            plon    = p["lon"]
             markers_js += (
-                f"L.circleMarker([{p['lat']},{p['lon']}],"
+                f"L.circleMarker([{plat},{plon}],"
                 f"{{radius:{radius},color:'{color}',fillColor:'{color}',"
                 f"fillOpacity:0.85,weight:1.5}})"
-                f".bindPopup('<b>{p[\"id\"][:24]}</b><br/>Date: {p[\"date\"]}<br/>"
-                f"Débit: <b>{rate_str}</b><br/>Secteur: {p[\"sector\"] or \"N/A\"}<br/>"
-                f"Capteur: {p[\"sensor\"] or \"N/A\"}<br/>"
-                f"📍 {p[\"lat\"]:.5f}, {p[\"lon\"]:.5f}')"
+                f".bindPopup('<b>{pid}</b><br/>Date: {pdate}<br/>"
+                f"Débit: <b>{rate_str}</b><br/>Secteur: {psector}<br/>"
+                f"Capteur: {psensor}<br/>"
+                f"📍 {plat:.5f}, {plon:.5f}')"
                 f".addTo(markerGroup);\n"
             )
 
