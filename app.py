@@ -404,7 +404,221 @@ if st.button("📄 Générer Rapport Fuite"):
 
 
 
+# ================= SECTION H — DÉTECTION DES POINTS DE FUITE CH₄ =================
+# À insérer dans app.py, après la Section G et avant la Section I
 
+import streamlit as st
+import numpy as np
+import rasterio
+import rasterio.transform
+import folium
+import pandas as pd
+import ee
+from datetime import datetime, timedelta
+
+st.markdown("## 🔥 Détection automatique des points de fuite CH₄")
+
+col1, col2 = st.columns(2)
+with col1:
+    year_leak = st.selectbox("Année du raster", [2020, 2021, 2022, 2023, 2024], key="year_leak")
+with col2:
+    n_hotspots = st.slider("Nombre de points de fuite à détecter", 1, 20, 5)
+
+validate_gee = st.checkbox("Valider les hotspots via GEE (satellite récent)", value=True)
+
+if st.button("🔍 Détecter les fuites et cartographier"):
+
+    raster_path = f"data/Moyenne CH4/CH4_mean_{year_leak}.tif"
+
+    if not os.path.exists(raster_path):
+        st.error(f"❌ Raster introuvable : {raster_path}")
+        st.stop()
+
+    # -------- Lecture raster --------
+    with rasterio.open(raster_path) as src:
+        img = src.read(1).astype(float)
+        transform = src.transform
+        crs = src.crs
+
+    img[img <= 0] = np.nan
+
+    # -------- Détection des N hotspots --------
+    # Masque valide
+    valid_mask = ~np.isnan(img)
+    flat_valid_indices = np.flatnonzero(valid_mask)
+
+    # Top-N indices
+    flat_vals = img.flatten()
+    flat_vals_clean = np.where(np.isnan(flat_vals), -np.inf, flat_vals)
+    top_n_flat = np.argsort(flat_vals_clean)[-n_hotspots:][::-1]
+
+    hotspots = []
+    for flat_idx in top_n_flat:
+        row, col = np.unravel_index(flat_idx, img.shape)
+        val = img[row, col]
+        # Conversion pixel → coordonnées géographiques
+        lon, lat = rasterio.transform.xy(transform, row, col)
+        hotspots.append({
+            "rank": len(hotspots) + 1,
+            "lat": lat,
+            "lon": lon,
+            "ch4_raster": round(float(val), 2),
+            "row": int(row),
+            "col": int(col)
+        })
+
+    # -------- Validation GEE optionnelle --------
+    if validate_gee:
+        today = datetime.utcnow()
+        start = today - timedelta(days=14)
+        try:
+            collection = (
+                ee.ImageCollection("COPERNICUS/S5P/OFFL/L3_CH4")
+                .filterDate(start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
+                .select("CH4_column_volume_mixing_ratio_dry_air")
+            )
+            gee_image = collection.mean()
+        except Exception as e:
+            st.warning(f"⚠️ GEE non disponible : {e}")
+            gee_image = None
+    else:
+        gee_image = None
+
+    for hp in hotspots:
+        val_gee = None
+        if gee_image:
+            try:
+                point = ee.Geometry.Point([hp["lon"], hp["lat"]])
+                val_gee = gee_image.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=point,
+                    scale=7000,
+                    maxPixels=1e9,
+                    bestEffort=True
+                ).get("CH4_column_volume_mixing_ratio_dry_air").getInfo()
+            except:
+                val_gee = None
+
+        hp["ch4_gee"] = round(val_gee, 2) if val_gee else "N/A"
+
+        # Score IA combiné
+        val_ref = val_gee if val_gee else hp["ch4_raster"]
+        status, score = detect_ch4_anomaly(np.array([[val_ref]]))
+        hp["statut_ia"] = status
+        hp["score_ia"] = score
+
+    # -------- Affichage tableau --------
+    df_hp = pd.DataFrame(hotspots)[["rank", "lat", "lon", "ch4_raster", "ch4_gee", "statut_ia", "score_ia"]]
+    df_hp.columns = ["#", "Latitude", "Longitude", "CH₄ raster (ppb)", "CH₄ GEE (ppb)", "Statut IA", "Score IA"]
+    st.dataframe(df_hp, use_container_width=True)
+
+    # -------- Carte interactive Folium --------
+    center_lat = np.mean([hp["lat"] for hp in hotspots])
+    center_lon = np.mean([hp["lon"] for hp in hotspots])
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles=None)
+
+    # Fond satellite ESRI
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI World Imagery",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+    folium.TileLayer("OpenStreetMap", name="Carte").add_to(m)
+    folium.LayerControl().add_to(m)
+
+    # Couleur selon statut
+    def _color(status):
+        if "critique" in status:
+            return "red"
+        elif "Suspect" in status:
+            return "orange"
+        else:
+            return "green"
+
+    # Groupe de marqueurs pour les hotspots
+    fg_leaks = folium.FeatureGroup(name="Points de fuite CH₄")
+
+    for hp in hotspots:
+        color = _color(hp["statut_ia"])
+        ch4_gee_str = f"{hp['ch4_gee']} ppb" if hp["ch4_gee"] != "N/A" else "N/A"
+
+        popup_html = f"""
+        <div style='font-family:sans-serif;font-size:13px;min-width:180px'>
+            <b>Point #{hp['rank']}</b><br>
+            📍 {round(hp['lat'],4)}, {round(hp['lon'],4)}<br>
+            📡 Raster: <b>{hp['ch4_raster']} ppb</b><br>
+            🛰 GEE récent: <b>{ch4_gee_str}</b><br>
+            🤖 IA: <b>{hp['statut_ia']}</b> (score {hp['score_ia']})<br>
+        </div>
+        """
+
+        # Marqueur pulsant pour les fuites critiques
+        if color == "red":
+            folium.CircleMarker(
+                location=[hp["lat"], hp["lon"]],
+                radius=14,
+                color="darkred",
+                fill=True,
+                fill_color="red",
+                fill_opacity=0.25,
+                tooltip=f"Zone critique #{hp['rank']}"
+            ).add_to(fg_leaks)
+
+        folium.CircleMarker(
+            location=[hp["lat"], hp["lon"]],
+            radius=8,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.85,
+            tooltip=f"#{hp['rank']} | {hp['ch4_raster']} ppb",
+            popup=folium.Popup(popup_html, max_width=220)
+        ).add_to(fg_leaks)
+
+        # Numéro du point
+        folium.Marker(
+            location=[hp["lat"], hp["lon"]],
+            icon=folium.DivIcon(
+                html=f'<div style="font-size:10px;font-weight:bold;color:white;'
+                     f'background:{color};border-radius:50%;width:18px;height:18px;'
+                     f'line-height:18px;text-align:center;margin-top:-9px;margin-left:-9px">'
+                     f'{hp["rank"]}</div>',
+                icon_size=(18, 18),
+                icon_anchor=(9, 9)
+            )
+        ).add_to(fg_leaks)
+
+    fg_leaks.add_to(m)
+
+    # Légende
+    legend_html = """
+    <div style='position:fixed;bottom:30px;left:30px;z-index:1000;background:rgba(255,255,255,0.9);
+         padding:10px 14px;border-radius:8px;font-size:12px;font-family:sans-serif;
+         box-shadow:0 2px 6px rgba(0,0,0,0.2)'>
+    <b>Légende</b><br>
+    <span style='color:red'>●</span> Fuite critique (&gt;1920 ppb)<br>
+    <span style='color:orange'>●</span> Suspect (&gt;1880 ppb)<br>
+    <span style='color:green'>●</span> Normal
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    st.write("### 🗺️ Carte des points de fuite détectés")
+    st_folium(m, width=None, height=520, returned_objects=[])
+
+    # -------- Résumé HSE --------
+    n_critical = sum(1 for hp in hotspots if "critique" in hp["statut_ia"])
+    n_suspect = sum(1 for hp in hotspots if "Suspect" in hp["statut_ia"])
+
+    if n_critical > 0:
+        st.error(f"⚠️ {n_critical} point(s) de fuite **critique(s)** détecté(s) — inspection terrain requise immédiatement.")
+    if n_suspect > 0:
+        st.warning(f"🔎 {n_suspect} zone(s) **suspecte(s)** — surveillance renforcée recommandée.")
+    if n_critical == 0 and n_suspect == 0:
+        st.success("✅ Aucune anomalie critique détectée sur les hotspots sélectionnés.")
 
 
 
