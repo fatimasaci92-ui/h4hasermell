@@ -825,15 +825,57 @@ st.info(
 )
 
 # -------- Token depuis secrets (jamais exposé côté JS) --------
-try:
-    CM_TOKEN = st.secrets["CARBON_MAPPER_TOKEN"]
-    token_ok = bool(CM_TOKEN)
-except Exception:
-    CM_TOKEN = ""
-    token_ok = False
+CM_TOKEN = ""
+token_ok = False
+
+def _read_token():
+    """
+    Tente de lire le token dans cet ordre :
+    1. st.secrets (Streamlit Cloud ou .streamlit/secrets.toml)
+    2. secrets.toml à la racine du projet (cas où le fichier est mal placé)
+    """
+    # --- Tentative 1 : st.secrets ---
+    try:
+        tok = st.secrets.get("CARBON_MAPPER_TOKEN", "")
+        if not tok:
+            tok = st.secrets.get("carbon_mapper", {}).get("CARBON_MAPPER_TOKEN", "")
+        if not tok:
+            tok = st.secrets.get("carbon_mapper_token", "")
+        if tok:
+            return str(tok).strip()
+    except Exception:
+        pass
+
+    # --- Tentative 2 : secrets.toml à la racine (votre cas) ---
+    import os, re
+    for path in ["secrets.toml", ".streamlit/secrets.toml"]:
+        full = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
+        if os.path.exists(full):
+            try:
+                content = open(full, encoding="utf-8").read()
+                m = re.search(r'CARBON_MAPPER_TOKEN\s*=\s*["\']([^"\']+)["\']', content)
+                if m:
+                    return m.group(1).strip()
+            except Exception:
+                pass
+    return ""
+
+CM_TOKEN = _read_token()
+token_ok = len(CM_TOKEN) > 10
 
 if not token_ok:
-    st.warning("⚠️ Token Carbon Mapper manquant dans `.streamlit/secrets.toml` → clé `CARBON_MAPPER_TOKEN`")
+    try:
+        keys = list(st.secrets.keys())
+    except Exception:
+        keys = []
+    st.error(
+        "❌ Token Carbon Mapper introuvable.\n\n"
+        f"Clés détectées dans st.secrets : `{keys}`\n\n"
+        "**Solution A — Streamlit Cloud :** Settings → Secrets → ajoutez :\n"
+        "```\nCARBON_MAPPER_TOKEN = \"votre_token_ici\"\n```\n\n"
+        "**Solution B — En local :** créez `.streamlit/secrets.toml` avec :\n"
+        "```\nCARBON_MAPPER_TOKEN = \"votre_token_ici\"\n```"
+    )
 
 # -------- Paramètres utilisateur --------
 col1, col2 = st.columns(2)
