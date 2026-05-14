@@ -1205,7 +1205,6 @@ if st.button("📥 Générer rapport PDF", key="cm_pdf"):
         file_name=f"rapport_carbonmapper_{cm_gas}_{today_dt.strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
-```python
 import requests
 
 url = "https://api.carbonmapper.org/api/v1/docs"
@@ -1217,4 +1216,3 @@ try:
 
 except Exception as e:
     st.error(e)
-```
