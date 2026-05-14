@@ -898,11 +898,18 @@ cm_sector = st.selectbox(
 def fetch_carbon_mapper_plumes(token, bbox, gas, date_start, date_end, sector, max_pages=10):
     """
     Appel API Carbon Mapper côté serveur Streamlit.
+    Essaie plusieurs endpoints connus (l'API a changé d'URL à plusieurs reprises).
     Retourne une liste de dicts normalisés, ou lève une exception.
     """
-    base_url = "https://api.carbonmapper.org/api/v1/catalog/plumes/"
+    # Endpoints à essayer dans l'ordre (du plus récent au plus ancien)
+    candidate_urls = [
+        "https://api.carbonmapper.org/api/v1/plumes/",           # v1 actuel
+        "https://api.carbonmapper.org/api/v1/catalog/plumes/",   # ancien
+        "https://api.carbonmapper.org/api/v1/data/plumes/",      # variante
+    ]
+
     headers = {"Authorization": f"Bearer {token}"}
-    params = {
+    base_params = {
         "bbox": bbox,
         "gas": gas,
         "date_start": str(date_start),
@@ -911,32 +918,54 @@ def fetch_carbon_mapper_plumes(token, bbox, gas, date_start, date_end, sector, m
         "offset": 0,
     }
     if sector and sector != "Tous":
-        params["sector"] = sector
+        base_params["sector"] = sector
 
+    # Trouver le bon endpoint
+    working_url = None
+    last_error = ""
+    for url in candidate_urls:
+        try:
+            test = requests.get(url, headers=headers, params={**base_params, "limit": 1}, timeout=15)
+            if test.status_code == 401:
+                raise ValueError("Token invalide ou expiré (401). Vérifiez votre token Carbon Mapper.")
+            if test.status_code == 403:
+                raise ValueError("Accès refusé (403). Votre compte n'a pas les droits API.")
+            if test.status_code == 200:
+                working_url = url
+                break
+            last_error = f"{url} → {test.status_code}"
+        except ValueError:
+            raise
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    if not working_url:
+        raise ValueError(
+            f"Aucun endpoint Carbon Mapper ne répond correctement.\n"
+            f"Dernière erreur : {last_error}\n"
+            f"Vérifiez votre connexion ou consultez https://api.carbonmapper.org/api/v1/docs"
+        )
+
+    # Récupération paginée
     all_plumes = []
+    params = {**base_params}
 
     for page in range(max_pages):
-        resp = requests.get(base_url, headers=headers, params=params, timeout=30)
-
-        if resp.status_code == 401:
-            raise ValueError("Token Carbon Mapper invalide ou expiré (401).")
-        if resp.status_code == 403:
-            raise ValueError("Accès refusé (403). Vérifiez les droits du token.")
+        resp = requests.get(working_url, headers=headers, params=params, timeout=30)
         if not resp.ok:
-            raise ValueError(f"Erreur API Carbon Mapper {resp.status_code} : {resp.text[:200]}")
+            raise ValueError(f"Erreur API {resp.status_code} : {resp.text[:200]}")
 
         data = resp.json()
         results = data.get("results") or data.get("features") or []
-
         for p in results:
             all_plumes.append(_parse_plume(p))
 
-        # Pagination : arrêt si pas de page suivante
         if not data.get("next") or len(results) < 200:
             break
-        params["offset"] += 200
+        params["offset"] = params.get("offset", 0) + 200
 
-    return all_plumes
+    return all_plumes, working_url
 
 
 def _parse_plume(p):
@@ -979,7 +1008,7 @@ if st.button("🛰️ Rechercher les fuites", disabled=not token_ok):
 
     with st.spinner("Interrogation Carbon Mapper…"):
         try:
-            plumes = fetch_carbon_mapper_plumes(
+            plumes, api_url_used = fetch_carbon_mapper_plumes(
                 token=CM_TOKEN,
                 bbox=bbox,
                 gas=cm_gas,
@@ -987,6 +1016,7 @@ if st.button("🛰️ Rechercher les fuites", disabled=not token_ok):
                 date_end=cm_date_end,
                 sector=cm_sector,
             )
+            st.caption(f"✅ Endpoint utilisé : `{api_url_used}`")
         except ValueError as e:
             st.error(f"❌ {e}")
             st.stop()
