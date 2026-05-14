@@ -190,3 +190,15 @@ if st.button("🔍 Lancer analyse Carbon Mapper"):
             buffer,
             file_name="CH4_CarbonMapper_report.pdf"
         )
+        import requests
+
+headers = {
+    "Authorization": f"Bearer {CM_TOKEN}"
+}
+
+url = "https://api.carbonmapper.org/api/v1/catalog/plumes/annotated?limit=1"
+
+r = requests.get(url, headers=headers)
+
+st.write("STATUS:", r.status_code)
+st.write("RESPONSE:", r.text[:500])
