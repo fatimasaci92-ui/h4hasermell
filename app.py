@@ -993,14 +993,27 @@ async function run(){{
   setStatus('Recherche du bon endpoint...');
 
 
+
 const params = {{
   bbox: BBOX,
-  plume_gas: GAS,
-  datetime: DATE_START + "T00:00:00Z/" + DATE_END + "T23:59:59Z",
   limit: 200,
-  offset: 0
+  offset: 0,
+  sort: "desc"
 }};
-if (SECTOR) params.sectors = SECTOR;
+
+if (GAS) {{
+  params.gas = GAS;
+}}
+
+if (SECTOR) {{
+  params.sector = SECTOR;
+}}
+
+if (DATE_START && DATE_END) {{
+  params.datetime =
+    DATE_START + "T00:00:00Z/" +
+    DATE_END + "T23:59:59Z";
+}}
 
 
   // Trouver le bon endpoint
