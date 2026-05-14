@@ -144,34 +144,58 @@ if "plume_df" in st.session_state:
 
 
 # ================= =================
-# 🗺️ MAP (REAL PLUMES)
+# 🗺️ MAP (REAL PLUMES FIXED)
 # ================= =================
 st.markdown("## 🗺️ Plume Map")
 
-# default map center
-m = folium.Map(location=[32.8, 3.2], zoom_start=6)
+m = folium.Map(
+    location=[32.8, 3.2],
+    zoom_start=6,
+    tiles="OpenStreetMap"
+)
 
 if "plume_df" in st.session_state:
     df = st.session_state["plume_df"]
 
-    # Try to extract lat/lon safely
     for _, row in df.iterrows():
         try:
-            lat = float(row.get("lat"))
-            lon = float(row.get("lon"))
+            # ✅ FIXED COLUMN NAMES (YOUR REAL DATA)
+            lat = float(row["plume_latitude"])
+            lon = float(row["plume_longitude"])
+            emission = row.get("emission_auto", 0)
+            gas = row.get("gas", "N/A")
 
-            folium.Circle(
+            # 🎨 COLOR SCALE
+            if emission > 1000:
+                color = "red"
+                radius = 12
+            elif emission > 300:
+                color = "orange"
+                radius = 8
+            else:
+                color = "green"
+                radius = 5
+
+            folium.CircleMarker(
                 location=[lat, lon],
-                radius=50000,
-                color="red",
+                radius=radius,
+                color=color,
                 fill=True,
-                fill_opacity=0.4
+                fill_color=color,
+                fill_opacity=0.7,
+                popup=f"""
+                <b>Plume ID:</b> {row.get('plume_id','N/A')}<br>
+                <b>Emission:</b> {emission} kg/h<br>
+                <b>Gas:</b> {gas}<br>
+                <b>Sector:</b> {row.get('ipcc_sector','N/A')}<br>
+                <b>Instrument:</b> {row.get('instrument','N/A')}<br>
+                <b>Date:</b> {row.get('datetime','N/A')}
+                """
             ).add_to(m)
 
-        except:
-            pass
+        except Exception as e:
+            continue
 
-# show map
 st_folium(m, width=1200, height=600)
 
 
