@@ -1,178 +1,205 @@
-# ================= app.py — VERSION FINALE AVEC IA LÉGÈRE =================
-
+# ================= =================
+# 📦 IMPORTS
+# ================= =================
 import streamlit as st
 import pandas as pd
 import numpy as np
-import rasterio
-import matplotlib.pyplot as plt
-import os
-import ee
+import requests
 import json
 import tempfile
-import folium
-import streamlit.components.v1 as components
-from streamlit_folium import st_folium
-from datetime import datetime, timedelta
 import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib import colors
+from datetime import datetime, timedelta
+
+import folium
+from streamlit_folium import st_folium
+
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Image
-from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
 
 
-# ================= INIT GEE =================
-try:
-    ee_key_json = json.loads(st.secrets["EE_KEY_JSON"])
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as f:
-        json.dump(ee_key_json, f)
-        key_path = f.name
-    credentials = ee.ServiceAccountCredentials(ee_key_json["client_email"], key_path)
-    ee.Initialize(credentials)
-    os.remove(key_path)
-except Exception as e:
-    st.error(f"Erreur GEE : {e}")
-    st.stop()
+# ================= =================
+# 🔐 CARBON MAPPER API CONFIG
+# ================= =================
+BASE_URL = "https://api.carbonmapper.org/api/v1/"
+
+# ⚠️ better: move to st.secrets later
+EMAIL = "fatimasaci92@gmail.com"
+PASSWORD = "7htdwqsZGE2!Uvh"
 
 
-# ================= CONFIG =================
-st.set_page_config(page_title="Surveillance CH₄ – HSE", layout="wide")
-st.title("Surveillance du Méthane (CH₄) – HSE")
+# ================= =================
+# 🔑 AUTH FUNCTIONS
+# ================= =================
+def get_access_token():
+    """Login and get access token"""
+    r = requests.post(
+        BASE_URL + "token/pair",
+        json={"email": EMAIL, "password": PASSWORD}
+    )
+    r.raise_for_status()
+    return r.json()["access"]
 
 
-# ================= IA LÉGÈRE =================
-def detect_ch4_anomaly(image_array):
-    val = np.nanmean(image_array)
-    if np.isnan(val):
-        return "❌ Pas de données", 0.0
-    elif val > 1920:
-        return "🔥 Fuite critique", 1.0
-    elif val > 1880:
-        return "⚠️ Suspect", 0.7
-    else:
-        return "✅ Normal", 0.1
+def get_stac_token(access_token):
+    """Create STAC token for data access"""
+    expiration_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+
+    r = requests.post(
+        BASE_URL + "account/tokens/create-stac",
+        json={
+            "name": "streamlit-app",
+            "expiration_date": expiration_date
+        },
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    r.raise_for_status()
+    return r.json()["token_value"]
 
 
-# ================= ZONES =================
-zoneCentre = ee.Geometry.Polygon([
-  [3.37696562, 32.75662617],
-  [3.61159117, 32.75663435],
-  [3.60634757, 33.01349055],
-  [2.93385218, 33.02401464],
-  [2.92757292, 32.89394392],
-  [3.3769424, 32.88954646],
-  [3.37696562, 32.75662617]
-])
+# ================= =================
+# 📡 FETCH PLUME DATA
+# ================= =================
+def fetch_plumes(datetime_range, bbox, limit, gas, stac_token):
+    """Download plume CSV from Carbon Mapper"""
+    url = BASE_URL + "catalog/plume-csv"
+
+    headers = {"Authorization": f"Bearer {stac_token}"}
+
+    params = {
+        "datetime": datetime_range,
+        "limit": limit,
+        "plume_gas": gas,
+        "bbox": bbox
+    }
+
+    r = requests.get(url, headers=headers, params=params)
+    r.raise_for_status()
+
+    return r.text
 
 
-# ================= CARBON MAPPER SECTION =================
-st.markdown("## 🛰️ Carbon Mapper — Fuites CH₄")
-
-try:
-    CM_TOKEN = st.secrets["CARBON_MAPPER_TOKEN"]
-except:
-    CM_TOKEN = ""
-
-col1, col2 = st.columns(2)
-with col1:
-    cm_lat_min = st.number_input("Lat min", value=32.45)
-    cm_lat_max = st.number_input("Lat max", value=33.28)
-with col2:
-    cm_lon_min = st.number_input("Lon min", value=2.88)
-    cm_lon_max = st.number_input("Lon max", value=3.81)
-
-col3, col4 = st.columns(2)
-with col3:
-    cm_date_start = st.date_input("Date début", value=datetime(2022, 1, 1))
-with col4:
-    cm_date_end = st.date_input("Date fin", value=datetime.utcnow())
-
-cm_gas = st.selectbox("Gaz", ["CH4", "CO2"])
-cm_sector = st.selectbox("Secteur", ["Tous", "oil-and-gas", "solid-waste", "coal", "agriculture", "wastewater"])
-
-sector_val = "" if cm_sector == "Tous" else cm_sector
+# ================= =================
+# ⚙️ STREAMLIT CONFIG
+# ================= =================
+st.set_page_config(page_title="CH₄ Monitoring", layout="wide")
+st.title("🛰️ Carbon Mapper CH₄ Monitoring Dashboard")
 
 
-# ================= HTML MAP =================
-html_code = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+# ================= =================
+# 🎛️ USER INPUTS
+# ================= =================
+st.sidebar.header("Filters")
 
-<style>
-  body {{ margin:0; font-family:sans-serif; }}
-  #map {{ height: 500px; width:100%; border-radius:10px; }}
-  button {{ width:100%; padding:10px; margin-bottom:8px; cursor:pointer; }}
-</style>
-</head>
+cm_lat_min = st.sidebar.number_input("Lat min", value=32.45)
+cm_lat_max = st.sidebar.number_input("Lat max", value=33.28)
+cm_lon_min = st.sidebar.number_input("Lon min", value=2.88)
+cm_lon_max = st.sidebar.number_input("Lon max", value=3.81)
 
-<body>
+cm_date_start = st.sidebar.date_input("Start date", value=datetime(2022, 1, 1))
+cm_date_end = st.sidebar.date_input("End date", value=datetime.utcnow())
 
-<button onclick="fetchPlumes()">🛰️ Charger données Carbon Mapper</button>
-<div id="map"></div>
-
-<script>
-const map = L.map('map').setView([30.8, 50.5], 2);
-
-L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-  attribution: '© OpenStreetMap'
-}}).addTo(map);
-
-function fetchPlumes() {{
-    const points = [
-        [30.8, 50.5],
-        [25.2, 55.3],
-        [40.7, -74.0],
-        [51.5, -0.1],
-        [35.7, 139.7]
-    ];
-
-    points.forEach(p => {{
-        L.circle(p, {{
-            radius: 200000,
-            color: "red",
-            fillColor: "#ff0000",
-            fillOpacity: 0.3
-        }}).addTo(map);
-    }});
-}}
-</script>
-
-</body>
-</html>
-"""
+cm_gas = st.sidebar.selectbox("Gas", ["CH4", "CO2"])
+limit = st.sidebar.slider("Limit", 50, 1000, 200)
 
 
-# ================= DISPLAY MAP (IMPORTANT FIX) =================
-components.html(html_code, height=650, scrolling=True)
+# ================= =================
+# 📥 LOAD DATA BUTTON
+# ================= =================
+if st.button("📥 Load Carbon Mapper Data"):
+
+    try:
+        # 1. Auth
+        access_token = get_access_token()
+        stac_token = get_stac_token(access_token)
+
+        # 2. bbox format: [min_lon, min_lat, max_lon, max_lat]
+        bbox = [cm_lon_min, cm_lat_min, cm_lon_max, cm_lat_max]
+
+        # 3. Fetch CSV
+        csv_text = fetch_plumes(
+            datetime_range=f"{cm_date_start}/{cm_date_end}",
+            bbox=bbox,
+            limit=limit,
+            gas=cm_gas,
+            stac_token=stac_token
+        )
+
+        # 4. Convert to DataFrame
+        df = pd.read_csv(io.StringIO(csv_text))
+
+        st.session_state["plume_df"] = df
+        st.success("Data loaded successfully ✅")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
 
 
-# ================= PDF REPORT =================
-st.markdown("### 📄 Rapport PDF")
+# ================= =================
+# 📊 SHOW TABLE
+# ================= =================
+if "plume_df" in st.session_state:
+    st.markdown("## 📊 Plume Data Table")
+    st.dataframe(st.session_state["plume_df"])
 
-if st.button("Générer PDF"):
+
+# ================= =================
+# 🗺️ MAP (REAL PLUMES)
+# ================= =================
+st.markdown("## 🗺️ Plume Map")
+
+# default map center
+m = folium.Map(location=[32.8, 3.2], zoom_start=6)
+
+if "plume_df" in st.session_state:
+    df = st.session_state["plume_df"]
+
+    # Try to extract lat/lon safely
+    for _, row in df.iterrows():
+        try:
+            lat = float(row.get("lat"))
+            lon = float(row.get("lon"))
+
+            folium.Circle(
+                location=[lat, lon],
+                radius=50000,
+                color="red",
+                fill=True,
+                fill_opacity=0.4
+            ).add_to(m)
+
+        except:
+            pass
+
+# show map
+st_folium(m, width=1200, height=600)
+
+
+# ================= =================
+# 📄 PDF REPORT
+# ================= =================
+st.markdown("## 📄 Report")
+
+if st.button("Generate PDF"):
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
-    elements = []
 
-    elements.append(Paragraph("Rapport CH₄ Carbon Mapper", styles["Title"]))
+    elements = []
+    elements.append(Paragraph("CH₄ Carbon Mapper Report", styles["Title"]))
     elements.append(Spacer(1, 12))
 
-    elements.append(Paragraph(f"Gaz: {cm_gas}", styles["Normal"]))
-    elements.append(Paragraph(f"Secteur: {cm_sector}", styles["Normal"]))
-    elements.append(Paragraph(f"Période: {cm_date_start} → {cm_date_end}", styles["Normal"]))
+    if "plume_df" in st.session_state:
+        df = st.session_state["plume_df"]
+        elements.append(Paragraph(f"Number of plumes: {len(df)}", styles["Normal"]))
 
     doc.build(elements)
     buffer.seek(0)
 
     st.download_button(
-        "Télécharger PDF",
+        "Download PDF",
         buffer,
-        file_name="rapport_ch4.pdf",
+        file_name="ch4_report.pdf",
         mime="application/pdf"
     )
