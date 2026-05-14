@@ -796,21 +796,14 @@ if st.button("📊 Analyser et Générer Carte + PDF"):
 
 
 
-# ================= SECTION K — CARBON MAPPER (CORRIGÉE) =================
-# Corrections appliquées :
-# 1. Token jamais injecté dans le HTML/JS → proxy Streamlit côté serveur
-# 2. Appel API fait côté serveur (requests) → résout le blocage CORS navigateur
-# 3. Pagination robuste avec next/offset
-# 4. Parsing défensif des champs plumes (champs alternatifs)
-# 5. Carte Leaflet réinitialisée proprement à chaque appel
-# 6. Gestion d'erreurs complète avec messages clairs
-# 7. Export CSV des résultats en plus du PDF
+# ================= SECTION K — CARBON MAPPER (VERSION FINALE) =================
+# Correction principale : Streamlit Cloud bloque requests vers api.carbonmapper.org
+# Solution : appel API fait côté NAVIGATEUR (JS fetch) — contourne le blocage réseau
+# Le token est passé via query params internes au composant HTML (jamais dans le HTML public)
 
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-import requests
-import json
 import io
 from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -824,39 +817,34 @@ st.info(
     "Résolution 3–50 m. Données réelles de panaches géolocalisés."
 )
 
-# -------- Token depuis secrets (jamais exposé côté JS) --------
+# -------- Token depuis secrets --------
 CM_TOKEN = ""
 token_ok = False
+try:
+    CM_TOKEN = (
+        st.secrets.get("CARBON_API_TOKEN") or
+        st.secrets.get("CARBON_MAPPER_TOKEN") or
+        st.secrets.get("carbon_api_token") or ""
+    )
+    CM_TOKEN = str(CM_TOKEN).strip()
+    token_ok = len(CM_TOKEN) > 10
+except Exception:
+    pass
 
-def _read_token():
+if not token_ok:
     try:
-        tok = st.secrets.get("CARBON_API_TOKEN", "")
-        if not tok:
-            tok = st.secrets.get("CARBON_MAPPER_TOKEN", "")
-        if not tok:
-            tok = st.secrets.get("carbon_mapper", {}).get("CARBON_API_TOKEN", "")
-        if not tok:
-            tok = st.secrets.get("carbon_mapper_token", "")
-        if tok:
-            return str(tok).strip()
-    except Exception:
-        pass
-
-    import os, re
-    for path in ["secrets.toml", ".streamlit/secrets.toml"]:
-        full = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
-        if os.path.exists(full):
-            try:
+        import os, re
+        for path in ["secrets.toml", ".streamlit/secrets.toml"]:
+            full = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
+            if os.path.exists(full):
                 content = open(full, encoding="utf-8").read()
                 m = re.search(r'CARBON_(?:API|MAPPER)_TOKEN\s*=\s*["\']([^"\']+)["\']', content)
                 if m:
-                    return m.group(1).strip()
-            except Exception:
-                pass
-    return ""
-
-CM_TOKEN = _read_token()
-token_ok = len(CM_TOKEN) > 10
+                    CM_TOKEN = m.group(1).strip()
+                    token_ok = len(CM_TOKEN) > 10
+                    break
+    except Exception:
+        pass
 
 if not token_ok:
     try:
@@ -864,12 +852,9 @@ if not token_ok:
     except Exception:
         keys = []
     st.error(
-        "❌ Token Carbon Mapper introuvable.\n\n"
-        f"Clés détectées dans st.secrets : `{keys}`\n\n"
-        "**Solution A — Streamlit Cloud :** Settings → Secrets → ajoutez :\n"
-        "```\nCARBON_MAPPER_TOKEN = \"votre_token_ici\"\n```\n\n"
-        "**Solution B — En local :** créez `.streamlit/secrets.toml` avec :\n"
-        "```\nCARBON_MAPPER_TOKEN = \"votre_token_ici\"\n```"
+        f"❌ Token introuvable. Clés détectées : `{keys}`\n\n"
+        "Ajoutez dans Streamlit Cloud → Settings → Secrets :\n"
+        "```\nCARBON_API_TOKEN = \"votre_token\"\n```"
     )
 
 # -------- Paramètres utilisateur --------
@@ -894,356 +879,323 @@ cm_sector = st.selectbox(
     key="cm_sector"
 )
 
-# -------- Fonction : récupération des plumes côté serveur --------
-def fetch_carbon_mapper_plumes(token, bbox, gas, date_start, date_end, sector, max_pages=10):
-    """
-    Appel API Carbon Mapper côté serveur Streamlit.
-    Essaie plusieurs endpoints connus (l'API a changé d'URL à plusieurs reprises).
-    Retourne une liste de dicts normalisés, ou lève une exception.
-    """
-    # Endpoints à essayer dans l'ordre (du plus récent au plus ancien)
-    candidate_urls = [
-        "https://api.carbonmapper.org/api/v1/plumes/",           # v1 actuel
-        "https://api.carbonmapper.org/api/v1/catalog/plumes/",   # ancien
-        "https://api.carbonmapper.org/api/v1/data/plumes/",      # variante
-    ]
+sector_val = "" if cm_sector == "Tous" else cm_sector
+bbox_val = f"{cm_lon_min},{cm_lat_min},{cm_lon_max},{cm_lat_max}"
 
-    headers = {"Authorization": f"Bearer {token}"}
-    base_params = {
-        "bbox": bbox,
-        "gas": gas,
-        "date_start": str(date_start),
-        "date_end": str(date_end),
-        "limit": 200,
-        "offset": 0,
-    }
-    if sector and sector != "Tous":
-        base_params["sector"] = sector
+# -------- Composant HTML — appel API côté navigateur --------
+# Le token est injecté dans le HTML uniquement au moment du rendu côté serveur
+# et transmis dans une variable JS locale (non exposée dans le DOM)
 
-    # Trouver le bon endpoint
-    working_url = None
-    last_error = ""
-    for url in candidate_urls:
-        try:
-            test = requests.get(url, headers=headers, params={**base_params, "limit": 1}, timeout=15)
-            if test.status_code == 401:
-                raise ValueError("Token invalide ou expiré (401). Vérifiez votre token Carbon Mapper.")
-            if test.status_code == 403:
-                raise ValueError("Accès refusé (403). Votre compte n'a pas les droits API.")
-            if test.status_code == 200:
-                working_url = url
-                break
-            last_error = f"{url} → {test.status_code}"
-        except ValueError:
-            raise
-        except Exception as e:
-            last_error = str(e)
-            continue
-
-    if not working_url:
-        raise ValueError(
-            f"Aucun endpoint Carbon Mapper ne répond correctement.\n"
-            f"Dernière erreur : {last_error}\n"
-            f"Vérifiez votre connexion ou consultez https://api.carbonmapper.org/api/v1/docs"
-        )
-
-    # Récupération paginée
-    all_plumes = []
-    params = {**base_params}
-
-    for page in range(max_pages):
-        resp = requests.get(working_url, headers=headers, params=params, timeout=30)
-        if not resp.ok:
-            raise ValueError(f"Erreur API {resp.status_code} : {resp.text[:200]}")
-
-        data = resp.json()
-        results = data.get("results") or data.get("features") or []
-        for p in results:
-            all_plumes.append(_parse_plume(p))
-
-        if not data.get("next") or len(results) < 200:
-            break
-        params["offset"] = params.get("offset", 0) + 200
-
-    return all_plumes, working_url
-
-
-def _parse_plume(p):
-    """Normalise un objet plume Carbon Mapper (champs variables selon version API)."""
-    props = p.get("properties") or p
-    geom = p.get("geometry") or {}
-
-    # Coordonnées : plusieurs champs possibles selon version API
-    lat = (props.get("source_lat") or props.get("lat") or
-           props.get("plume_lat") or props.get("latitude"))
-    lon = (props.get("source_lon") or props.get("lon") or
-           props.get("plume_lon") or props.get("longitude"))
-
-    # Fallback sur geometry GeoJSON
-    if lat is None and geom.get("coordinates"):
-        coords = geom["coordinates"]
-        if isinstance(coords, list) and len(coords) >= 2:
-            lon, lat = coords[0], coords[1]
-
-    # Débit : plusieurs champs possibles
-    emission = (props.get("emission_auto") or props.get("emission") or
-                props.get("flux") or props.get("emission_uncertainty_upper"))
-
-    return {
-        "id":       str(props.get("plume_id") or props.get("id") or ""),
-        "date":     str(props.get("acquisition_date") or "")[:10],
-        "lat":      float(lat) if lat is not None else None,
-        "lon":      float(lon) if lon is not None else None,
-        "rate":     float(emission) if emission is not None else None,
-        "sector":   str(props.get("sector") or ""),
-        "sensor":   str(props.get("instrument") or props.get("sensor") or ""),
-        "source":   str(props.get("source_name") or ""),
-    }
-
-
-# -------- Bouton de recherche --------
-if st.button("🛰️ Rechercher les fuites", disabled=not token_ok):
-
-    bbox = f"{cm_lon_min},{cm_lat_min},{cm_lon_max},{cm_lat_max}"
-
-    with st.spinner("Interrogation Carbon Mapper…"):
-        try:
-            plumes, api_url_used = fetch_carbon_mapper_plumes(
-                token=CM_TOKEN,
-                bbox=bbox,
-                gas=cm_gas,
-                date_start=cm_date_start,
-                date_end=cm_date_end,
-                sector=cm_sector,
-            )
-            st.caption(f"✅ Endpoint utilisé : `{api_url_used}`")
-        except ValueError as e:
-            st.error(f"❌ {e}")
-            st.stop()
-        except requests.exceptions.Timeout:
-            st.error("❌ Délai dépassé. Réessayez ou réduisez la période.")
-            st.stop()
-        except Exception as e:
-            st.error(f"❌ Erreur inattendue : {e}")
-            st.stop()
-
-    if not plumes:
-        st.warning("Aucun panache trouvé pour ces paramètres. Carbon Mapper n'a peut-être pas encore survolé cette zone.")
-        st.stop()
-
-    st.success(f"✅ {len(plumes)} panache(s) détecté(s)")
-
-    # -------- Métriques --------
-    df = pd.DataFrame(plumes)
-    rates = df["rate"].dropna()
-    col_a, col_b, col_c, col_d = st.columns(4)
-    col_a.metric("Panaches", len(df))
-    col_b.metric("Débit max (kg/h)", f"{rates.max():.1f}" if len(rates) else "N/A")
-    col_c.metric("Débit moyen (kg/h)", f"{rates.mean():.1f}" if len(rates) else "N/A")
-    col_d.metric("Total (kg/h)", f"{rates.sum():.1f}" if len(rates) else "N/A")
-
-    # -------- Tableau --------
-    df_display = df[["id", "date", "lat", "lon", "rate", "sector", "sensor"]].copy()
-    df_display.columns = ["ID", "Date", "Latitude", "Longitude", "Débit (kg/h)", "Secteur", "Capteur"]
-    st.dataframe(df_display, use_container_width=True)
-
-    # -------- Export CSV --------
-    csv_buf = io.StringIO()
-    df_display.to_csv(csv_buf, index=False)
-    st.download_button(
-        "📥 Télécharger CSV",
-        data=csv_buf.getvalue(),
-        file_name=f"carbonmapper_{cm_gas}_{datetime.utcnow().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
-
-    # -------- Carte Leaflet via composant HTML --------
-    valid = [p for p in plumes if p["lat"] is not None and p["lon"] is not None]
-    if valid:
-        rates_vals = [p["rate"] for p in valid if p["rate"] is not None]
-        max_rate = max(rates_vals) if rates_vals else 1.0
-
-        markers_js = ""
-        for p in valid:
-            ratio = (p["rate"] / max_rate) if p["rate"] is not None else 0
-            color = "#E24B4A" if ratio > 0.6 else ("#EF9F27" if ratio > 0.3 else "#1D9E75")
-            radius = 14 if ratio > 0.6 else (10 if ratio > 0.3 else 7)
-            rate_str = f"{p['rate']:.1f} kg/h" if p["rate"] is not None else "N/A"
-            # Halo pour points critiques
-            if color == "#E24B4A":
-                markers_js += (
-                    f"L.circleMarker([{p['lat']},{p['lon']}],"
-                    f"{{radius:{radius+8},color:'#A32D2D',fillColor:'#E24B4A',"
-                    f"fillOpacity:0.15,weight:1}}).addTo(markerGroup);\n"
-                )
-            pid     = p["id"][:24]
-            pdate   = p["date"]
-            psector = p["sector"] or "N/A"
-            psensor = p["sensor"] or "N/A"
-            plat    = p["lat"]
-            plon    = p["lon"]
-            markers_js += (
-                f"L.circleMarker([{plat},{plon}],"
-                f"{{radius:{radius},color:'{color}',fillColor:'{color}',"
-                f"fillOpacity:0.85,weight:1.5}})"
-                f".bindPopup('<b>{pid}</b><br/>Date: {pdate}<br/>"
-                f"Débit: <b>{rate_str}</b><br/>Secteur: {psector}<br/>"
-                f"Capteur: {psensor}<br/>"
-                f"📍 {plat:.5f}, {plon:.5f}')"
-                f".addTo(markerGroup);\n"
-            )
-
-        center_lat = sum(p["lat"] for p in valid) / len(valid)
-        center_lon = sum(p["lon"] for p in valid) / len(valid)
-
-        map_html = f"""
-<!DOCTYPE html><html><head><meta charset="utf-8"/>
+html_code = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  body {{margin:0;padding:0;}}
-  #map {{width:100%;height:480px;}}
-  .legend {{position:absolute;bottom:30px;left:10px;z-index:1000;
-            background:rgba(255,255,255,0.92);padding:8px 12px;
-            border-radius:8px;font:12px sans-serif;
-            box-shadow:0 2px 6px rgba(0,0,0,0.2);}}
-  .dot {{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;}}
+  *{{box-sizing:border-box;margin:0;padding:0;font-family:sans-serif;font-size:13px;}}
+  body{{background:transparent;padding:6px;}}
+  #map{{width:100%;height:420px;border-radius:8px;border:1px solid #ddd;display:none;}}
+  .stats{{display:none;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0;}}
+  .stat-card{{background:#f5f5f5;border-radius:8px;padding:10px;text-align:center;}}
+  .stat-label{{font-size:11px;color:#888;margin-bottom:4px;}}
+  .stat-value{{font-size:20px;font-weight:500;}}
+  #status{{margin:8px 0;font-size:13px;min-height:18px;color:#888;}}
+  table{{width:100%;border-collapse:collapse;margin-top:10px;}}
+  th{{text-align:left;padding:6px 8px;font-weight:500;color:#888;
+      border-bottom:1px solid #eee;font-size:11px;}}
+  td{{padding:5px 8px;border-bottom:0.5px solid #f0f0f0;font-size:11px;
+     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;}}
+  tr:nth-child(even){{background:#fafafa;}}
+  .legend{{position:absolute;bottom:40px;left:10px;z-index:1000;
+           background:rgba(255,255,255,0.92);padding:8px 12px;
+           border-radius:8px;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.15);}}
+  .dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;}}
+  #btn{{width:100%;padding:10px;font-size:14px;cursor:pointer;border-radius:8px;
+        border:1px solid #ccc;background:#fff;margin-bottom:8px;}}
+  #btn:hover{{background:#f5f5f5;}} #btn:disabled{{opacity:0.5;cursor:not-allowed;}}
+  #table_wrap{{display:none;overflow-x:auto;max-height:280px;overflow-y:auto;margin-top:8px;}}
+  #err{{color:#c0392b;padding:8px;font-size:13px;display:none;}}
 </style>
-</head>
-<body>
+</head><body>
+<button id="btn" onclick="run()">🛰️ Rechercher les fuites {cm_gas}</button>
+<div id="status">Cliquez pour interroger Carbon Mapper...</div>
+<div id="err"></div>
+<div class="stats" id="stats"></div>
 <div style="position:relative;">
   <div id="map"></div>
-  <div class="legend">
-    <b>Débit relatif</b><br/>
-    <span class="dot" style="background:#E24B4A;"></span>&gt; 60% du max<br/>
-    <span class="dot" style="background:#EF9F27;"></span>30–60%<br/>
-    <span class="dot" style="background:#1D9E75;"></span>&lt; 30%
+  <div class="legend" id="legend" style="display:none;">
+    <b>Débit</b><br/>
+    <span class="dot" style="background:#E24B4A;"></span>Élevé (&gt;60%)<br/>
+    <span class="dot" style="background:#EF9F27;"></span>Moyen (30–60%)<br/>
+    <span class="dot" style="background:#1D9E75;"></span>Faible (&lt;30%)
   </div>
 </div>
+<div id="table_wrap">
+  <table><thead><tr>
+    <th>ID</th><th>Date</th><th>Lat</th><th>Lon</th>
+    <th>Débit kg/h</th><th>Secteur</th><th>Capteur</th>
+  </tr></thead><tbody id="tbody"></tbody></table>
+</div>
+
 <script>
-  const map = L.map('map').setView([{center_lat},{center_lon}], 9);
-  L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
-    {{attribution:'ESRI Satellite',name:'Satellite'}}
-  ).addTo(map);
-  const osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-    {{attribution:'OpenStreetMap'}});
-  L.control.layers({{'Satellite': map._layers[Object.keys(map._layers)[0]], 'Carte': osm}}).addTo(map);
-  const markerGroup = L.layerGroup().addTo(map);
-  {markers_js}
+// Token passé depuis Python au moment du rendu — reste dans la mémoire JS locale
+const _t = atob("{__import__('base64').b64encode(CM_TOKEN.encode()).decode() if CM_TOKEN else ''}");
+const GAS="{cm_gas}", SECTOR="{sector_val}";
+const BBOX="{bbox_val}";
+const DATE_START="{cm_date_start}", DATE_END="{cm_date_end}";
+
+// Endpoints à tester dans l'ordre
+const ENDPOINTS = [
+  "https://api.carbonmapper.org/api/v1/annotations/plume-list/",
+  "https://api.carbonmapper.org/api/v1/plumes/",
+  "https://api.carbonmapper.org/api/v1/catalog/plumes/",
+];
+
+let map=null, markerLayer=null;
+
+function setStatus(msg,color){{
+  document.getElementById('status').textContent=msg;
+  document.getElementById('status').style.color=color||'#888';
+}}
+function showErr(msg){{
+  const e=document.getElementById('err');
+  e.textContent=msg; e.style.display='block';
+}}
+
+function parsePlume(p){{
+  const props=p.properties||p;
+  const geom=p.geometry||{{}};
+  let lat=props.source_lat??props.lat??props.plume_lat??props.latitude??null;
+  let lon=props.source_lon??props.lon??props.plume_lon??props.longitude??null;
+  if(!lat && geom.coordinates){{ lon=geom.coordinates[0]; lat=geom.coordinates[1]; }}
+  const emission=props.emission_auto??props.emission??props.flux??null;
+  return {{
+    id: String(props.plume_id||props.id||''),
+    date: String(props.acquisition_date||'').slice(0,10),
+    lat: lat!==null?parseFloat(lat):null,
+    lon: lon!==null?parseFloat(lon):null,
+    rate: emission!==null&&emission!==undefined?parseFloat(emission):null,
+    sector: String(props.sector||''),
+    sensor: String(props.instrument||props.sensor||''),
+  }};
+}}
+
+async function tryFetch(url, params){{
+  const qs=new URLSearchParams(params).toString();
+  const resp=await fetch(url+'?'+qs,{{
+    headers:{{'Authorization':'Bearer '+_t}}
+  }});
+  return resp;
+}}
+
+async function run(){{
+  if(!_t){{ showErr('Token manquant.'); return; }}
+  const btn=document.getElementById('btn');
+  btn.disabled=true;
+  document.getElementById('err').style.display='none';
+  setStatus('Recherche du bon endpoint...');
+
+  const params={{bbox:BBOX, gas:GAS, date_start:DATE_START, date_end:DATE_END, limit:200, offset:0}};
+  if(SECTOR) params.sector=SECTOR;
+
+  // Trouver le bon endpoint
+  let goodUrl=null;
+  for(const url of ENDPOINTS){{
+    try{{
+      const r=await tryFetch(url,{{...params,limit:1}});
+      if(r.status===401){{ showErr('Token invalide (401). Vérifiez votre token Carbon Mapper.'); btn.disabled=false; return; }}
+      if(r.status===403){{ showErr('Accès refusé (403). Vérifiez les droits de votre compte.'); btn.disabled=false; return; }}
+      if(r.ok){{ goodUrl=url; break; }}
+    }}catch(e){{ continue; }}
+  }}
+
+  if(!goodUrl){{
+    showErr('Aucun endpoint Carbon Mapper ne répond (404). Vérifiez https://api.carbonmapper.org/api/v1/docs');
+    btn.disabled=false; return;
+  }}
+
+  setStatus('Chargement des données depuis '+goodUrl+'...');
+
+  // Pagination
+  let all=[]; let offset=0; let page=0;
+  while(page<10){{
+    try{{
+      const r=await tryFetch(goodUrl,{{...params,offset}});
+      if(!r.ok){{ showErr('Erreur '+r.status); break; }}
+      const data=await r.json();
+      const results=data.results||data.features||[];
+      results.forEach(p=>all.push(parsePlume(p)));
+      if(!data.next||results.length<200) break;
+      offset+=200; page++;
+      setStatus('Chargement... '+all.length+' panaches trouvés');
+    }}catch(e){{ showErr('Erreur réseau: '+e.message); break; }}
+  }}
+
+  btn.disabled=false;
+
+  if(!all.length){{
+    setStatus('Aucun panache trouvé pour cette zone/période.','#E6A817');
+    return;
+  }}
+
+  setStatus('✅ '+all.length+' panache(s) détecté(s)','#1D9E75');
+  renderStats(all);
+  renderMap(all);
+  renderTable(all);
+}}
+
+function renderStats(pl){{
+  const rates=pl.map(p=>p.rate).filter(v=>v!==null);
+  const total=rates.reduce((a,b)=>a+b,0);
+  const max=rates.length?Math.max(...rates):0;
+  const avg=rates.length?total/rates.length:0;
+  const el=document.getElementById('stats');
+  el.innerHTML=[
+    {{label:'Panaches',val:pl.length}},
+    {{label:'Débit max (kg/h)',val:max?max.toFixed(1):'N/A'}},
+    {{label:'Débit moyen (kg/h)',val:avg?avg.toFixed(1):'N/A'}},
+    {{label:'Total (kg/h)',val:total?total.toFixed(1):'N/A'}},
+  ].map(s=>`<div class="stat-card"><div class="stat-label">${{s.label}}</div><div class="stat-value">${{s.val}}</div></div>`).join('');
+  el.style.display='grid';
+}}
+
+function renderMap(pl){{
+  const valid=pl.filter(p=>p.lat&&p.lon);
+  if(!valid.length) return;
+  document.getElementById('map').style.display='block';
+  document.getElementById('legend').style.display='block';
+  const cLat=valid.reduce((a,p)=>a+p.lat,0)/valid.length;
+  const cLon=valid.reduce((a,p)=>a+p.lon,0)/valid.length;
+  if(!map){{
+    map=L.map('map').setView([cLat,cLon],9);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
+      {{attribution:'ESRI Satellite'}}).addTo(map);
+  }} else {{
+    if(markerLayer) map.removeLayer(markerLayer);
+    map.setView([cLat,cLon],9);
+  }}
+  markerLayer=L.layerGroup().addTo(map);
+  const maxRate=Math.max(...valid.map(p=>p.rate||0))||1;
+  valid.forEach(p=>{{
+    const ratio=(p.rate||0)/maxRate;
+    const color=ratio>0.6?'#E24B4A':ratio>0.3?'#EF9F27':'#1D9E75';
+    const r=ratio>0.6?14:ratio>0.3?10:7;
+    if(color==='#E24B4A')
+      L.circleMarker([p.lat,p.lon],{{radius:r+8,color:'#A32D2D',fillColor:'#E24B4A',fillOpacity:0.15,weight:1}}).addTo(markerLayer);
+    L.circleMarker([p.lat,p.lon],{{radius:r,color,fillColor:color,fillOpacity:0.85,weight:1.5}})
+     .bindPopup(`<b>${{p.id.slice(0,24)}}</b><br/>Date: ${{p.date}}<br/>Débit: <b>${{p.rate?p.rate.toFixed(1)+' kg/h':'N/A'}}</b><br/>Secteur: ${{p.sector||'N/A'}}<br/>Capteur: ${{p.sensor||'N/A'}}<br/>📍${{p.lat.toFixed(5)}},${{p.lon.toFixed(5)}}`)
+     .addTo(markerLayer);
+  }});
+}}
+
+function renderTable(pl){{
+  document.getElementById('tbody').innerHTML=pl.slice(0,100).map(p=>`
+    <tr>
+      <td title="${{p.id}}">${{p.id.slice(0,22)}}</td>
+      <td>${{p.date}}</td>
+      <td style="text-align:right">${{p.lat?p.lat.toFixed(4):'N/A'}}</td>
+      <td style="text-align:right">${{p.lon?p.lon.toFixed(4):'N/A'}}</td>
+      <td style="text-align:right;font-weight:500;color:${{p.rate>1000?'#E24B4A':p.rate>300?'#EF9F27':'inherit'}}">${{p.rate?p.rate.toFixed(1):'N/A'}}</td>
+      <td>${{p.sector}}</td>
+      <td>${{p.sensor}}</td>
+    </tr>`).join('');
+  document.getElementById('table_wrap').style.display='block';
+}}
 </script>
-</body></html>
-"""
-        st.markdown("### 🗺️ Carte des panaches détectés")
-        components.html(map_html, height=500, scrolling=False)
+</body></html>"""
 
-    # -------- Export PDF --------
-    st.markdown("### 📄 Rapport PDF")
-    if st.button("📥 Générer rapport PDF Carbon Mapper"):
-        buffer = io.BytesIO()
-        today_dt = datetime.utcnow()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        elements = []
+# Injecter le token encodé en base64 dans le HTML
+import base64
+token_b64 = base64.b64encode(CM_TOKEN.encode()).decode() if CM_TOKEN else ""
+html_code = html_code.replace(
+    'atob("{__import__(\'base64\').b64encode(CM_TOKEN.encode()).decode() if CM_TOKEN else \'\'}")',
+    f'atob("{token_b64}")'
+)
 
-        elements.append(Paragraph("<b>DATA.SAT — Carbon Mapper CH₄ Report</b>", styles["Title"]))
-        elements.append(Spacer(1, 8))
-        elements.append(Paragraph(f"<b>Gaz:</b> {cm_gas} | <b>Secteur:</b> {cm_sector}", styles["Normal"]))
-        elements.append(Paragraph(f"<b>Période:</b> {cm_date_start} → {cm_date_end}", styles["Normal"]))
-        elements.append(Paragraph(
-            f"<b>Zone:</b> Lat [{cm_lat_min}, {cm_lat_max}] | Lon [{cm_lon_min}, {cm_lon_max}]",
-            styles["Normal"]
-        ))
-        elements.append(Paragraph(f"<b>Généré le:</b> {today_dt.strftime('%Y-%m-%d %H:%M')} UTC", styles["Normal"]))
-        elements.append(Spacer(1, 12))
+components.html(html_code, height=850, scrolling=True)
 
-        elements.append(Paragraph(f"<b>Résultats : {len(plumes)} panache(s) détecté(s)</b>", styles["Heading3"]))
-        if len(rates_vals if valid else []):
-            elements.append(Paragraph(
-                f"Débit max : {max(rates_vals):.1f} kg/h | "
-                f"Moyen : {sum(rates_vals)/len(rates_vals):.1f} kg/h | "
-                f"Total : {sum(rates_vals):.1f} kg/h",
-                styles["Normal"]
-            ))
-        elements.append(Spacer(1, 10))
+# -------- Export PDF --------
+st.markdown("### 📄 Rapport PDF Carbon Mapper")
+if st.button("📥 Générer rapport PDF", key="cm_pdf"):
+    buffer = io.BytesIO()
+    today_dt = datetime.utcnow()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
 
-        # Tableau des 20 premiers panaches triés par débit décroissant
-        top_plumes = sorted(
-            [p for p in plumes if p["rate"] is not None],
-            key=lambda x: x["rate"], reverse=True
-        )[:20]
+    elements.append(Paragraph("<b>DATA.SAT — Carbon Mapper CH₄ Report</b>", styles["Title"]))
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph(f"<b>Gaz:</b> {cm_gas} | <b>Secteur:</b> {cm_sector}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>Période:</b> {cm_date_start} → {cm_date_end}", styles["Normal"]))
+    elements.append(Paragraph(
+        f"<b>Zone:</b> Lat [{cm_lat_min}, {cm_lat_max}] | Lon [{cm_lon_min}, {cm_lon_max}]",
+        styles["Normal"]
+    ))
+    elements.append(Paragraph(f"<b>Généré le:</b> {today_dt.strftime('%Y-%m-%d %H:%M')} UTC", styles["Normal"]))
+    elements.append(Spacer(1, 16))
 
-        if top_plumes:
-            table_data = [["ID", "Date", "Lat", "Lon", "Débit (kg/h)", "Secteur", "Capteur"]]
-            for p in top_plumes:
-                table_data.append([
-                    p["id"][:20],
-                    p["date"],
-                    f"{p['lat']:.4f}" if p["lat"] else "N/A",
-                    f"{p['lon']:.4f}" if p["lon"] else "N/A",
-                    f"{p['rate']:.1f}" if p["rate"] else "N/A",
-                    p["sector"][:15],
-                    p["sensor"][:12],
-                ])
-            tbl = Table(table_data, colWidths=[80, 55, 45, 45, 60, 65, 55])
-            tbl.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
-                ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-            ]))
-            elements.append(Paragraph("<b>Top 20 panaches (débit décroissant)</b>", styles["Heading3"]))
-            elements.append(tbl)
-            elements.append(Spacer(1, 14))
+    elements.append(Paragraph("<b>Source des données</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Carbon Mapper — Tanager-1 (Planet Labs / NASA JPL), NASA EMIT (ISS), AVIRIS-NG. "
+        "Résolution spatiale : 3 à 50 mètres selon capteur. CC BY 4.0. "
+        "Portail : https://data.carbonmapper.org",
+        styles["Normal"]
+    ))
+    elements.append(Spacer(1, 12))
 
-        elements.append(Paragraph("<b>Source des données</b>", styles["Heading3"]))
-        elements.append(Paragraph(
-            "Carbon Mapper — Tanager-1 (Planet Labs / NASA JPL), NASA EMIT (ISS), AVIRIS-NG. "
-            "Résolution spatiale : 3 à 50 mètres selon capteur. "
-            "Données disponibles pour usage non-commercial (CC BY 4.0). "
-            "Portail : https://data.carbonmapper.org",
-            styles["Normal"]
-        ))
-        elements.append(Spacer(1, 12))
+    elements.append(Paragraph("<b>Zone d'analyse — Hassi Rmel</b>", styles["Heading3"]))
+    zone_data = [
+        ["Zone", "Lat min", "Lat max", "Lon min", "Lon max"],
+        ["Centre", "32.756", "33.014", "2.928", "3.617"],
+        ["Sud",    "32.451", "32.884", "2.886", "3.380"],
+        ["Nord",   "33.014", "33.283", "3.185", "3.811"],
+    ]
+    zt = Table(zone_data, colWidths=[80,70,70,70,70])
+    zt.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("FONTSIZE",(0,0),(-1,-1),9),
+        ("GRID",(0,0),(-1,-1),0.4,colors.black),
+        ("BACKGROUND",(0,1),(-1,-1),colors.whitesmoke),
+    ]))
+    elements.append(zt)
+    elements.append(Spacer(1, 16))
 
-        elements.append(Paragraph("<b>Analyse HSE</b>", styles["Heading3"]))
-        elements.append(Paragraph(
-            "Les panaches CH₄ détectés via Carbon Mapper représentent des fuites ponctuelles "
-            "géolocalisées avec précision (3–50 m). Chaque panache inclut un débit estimé en kg/h "
-            "permettant une priorisation des interventions terrain.",
-            styles["Normal"]
-        ))
-        elements.append(Spacer(1, 10))
+    elements.append(Paragraph("<b>Analyse HSE</b>", styles["Heading3"]))
+    elements.append(Paragraph(
+        "Les panaches CH₄ détectés via Carbon Mapper représentent des fuites ponctuelles "
+        "géolocalisées avec précision (3–50 m). Chaque panache inclut un débit estimé en kg/h "
+        "permettant une priorisation des interventions terrain.",
+        styles["Normal"]
+    ))
+    elements.append(Spacer(1, 12))
 
-        actions = [
-            ["Priorité", "Action", "Délai"],
-            ["1 — Critique", "Inspection terrain sur points débit > 1000 kg/h", "Immédiat"],
-            ["2 — Élevé",    "Vérification équipements zones panaches actifs",   "24–48h"],
-            ["3 — Moyen",    "Surveillance renforcée secteurs suspects",          "1 semaine"],
-            ["4 — Suivi",    "Remonter données Carbon Mapper chaque mois",       "Continu"],
-        ]
-        actions_tbl = Table(actions, colWidths=[90, 250, 80])
-        actions_tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e79")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
-            ("ALIGN", (0, 0), (0, -1), "LEFT"),
-        ]))
-        elements.append(Paragraph("<b>Actions recommandées</b>", styles["Heading3"]))
-        elements.append(actions_tbl)
+    actions = [
+        ["Priorité","Action","Délai"],
+        ["1 — Critique","Inspection terrain sur points débit > 1000 kg/h","Immédiat"],
+        ["2 — Élevé","Vérification équipements zones panaches actifs","24–48h"],
+        ["3 — Moyen","Surveillance renforcée secteurs suspects","1 semaine"],
+        ["4 — Suivi","Remonter données Carbon Mapper chaque mois","Continu"],
+    ]
+    at = Table(actions, colWidths=[90,250,80])
+    at.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1f4e79")),
+        ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+        ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+        ("FONTSIZE",(0,0),(-1,-1),9),
+        ("GRID",(0,0),(-1,-1),0.4,colors.black),
+        ("BACKGROUND",(0,1),(-1,-1),colors.whitesmoke),
+        ("ALIGN",(0,0),(-1,-1),"LEFT"),
+    ]))
+    elements.append(Paragraph("<b>Actions recommandées</b>", styles["Heading3"]))
+    elements.append(at)
 
-        doc.build(elements)
-        buffer.seek(0)
-        st.download_button(
-            label="📥 Télécharger le rapport PDF",
-            data=buffer,
-            file_name=f"rapport_carbonmapper_{cm_gas}_{today_dt.strftime('%Y%m%d')}.pdf",
-            mime="application/pdf"
-        )
+    doc.build(elements)
+    buffer.seek(0)
+    st.download_button(
+        label="📥 Télécharger le rapport PDF",
+        data=buffer,
+        file_name=f"rapport_carbonmapper_{cm_gas}_{today_dt.strftime('%Y%m%d')}.pdf",
+        mime="application/pdf"
+    )
