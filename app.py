@@ -992,14 +992,16 @@ async function run(){{
   document.getElementById('err').style.display='none';
   setStatus('Recherche du bon endpoint...');
 
-  const params = {
+
+const params = {{
   bbox: BBOX,
   plume_gas: GAS,
   datetime: DATE_START + "T00:00:00Z/" + DATE_END + "T23:59:59Z",
   limit: 200,
   offset: 0
-};
+}};
 if (SECTOR) params.sectors = SECTOR;
+
 
   // Trouver le bon endpoint
   let goodUrl=null;
