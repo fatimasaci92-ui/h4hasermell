@@ -144,51 +144,59 @@ if "plume_df" in st.session_state:
 
 
 # ================= =================
-# 🗺️ MAP (WITH SATELLITE / STREET SWITCH)
+# 🗺️ MAP — ALGERIA FULL CSV PLOTTING
 # ================= =================
-st.markdown("## 🗺️ Plume Map")
+st.markdown("## 🗺️ Algeria CH₄ Plume Map")
 
-# 🎛️ Basemap selector
+import folium
+from streamlit_folium import st_folium
+
+# 🎛️ basemap switch
 basemap = st.radio(
     "Map style",
-    ["🛣️ Street Map", "🌍 Satellite"],
+    ["🛣️ Street", "🌍 Satellite"],
     horizontal=True
 )
 
 # ================= CREATE MAP =================
 if basemap == "🌍 Satellite":
-    m = folium.Map(
-        location=[32.8, 3.2],
-        zoom_start=6,
-        tiles=None
-    )
+    m = folium.Map(location=[28.0, 2.5], zoom_start=5, tiles=None)
 
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="ESRI Satellite",
-        name="Satellite",
-        overlay=False,
-        control=True
+        attr="ESRI Satellite"
     ).add_to(m)
 
 else:
-    m = folium.Map(
-        location=[32.8, 3.2],
-        zoom_start=6,
-        tiles="OpenStreetMap"
-    )
+    m = folium.Map(location=[28.0, 2.5], zoom_start=5, tiles="OpenStreetMap")
 
-# ================= PLOT DATA =================
+
+# ================= ALGERIA FILTER =================
+ALGERIA_LAT_MIN = 18.5
+ALGERIA_LAT_MAX = 37.5
+ALGERIA_LON_MIN = -9.5
+ALGERIA_LON_MAX = 12.0
+
+
 if "plume_df" in st.session_state:
     df = st.session_state["plume_df"]
 
+    # filter ALL Algeria points
+    df = df[
+        (df["plume_latitude"] >= ALGERIA_LAT_MIN) &
+        (df["plume_latitude"] <= ALGERIA_LAT_MAX) &
+        (df["plume_longitude"] >= ALGERIA_LON_MIN) &
+        (df["plume_longitude"] <= ALGERIA_LON_MAX)
+    ]
+
+    # ================= PLOT =================
     for _, row in df.iterrows():
         try:
             lat = float(row["plume_latitude"])
             lon = float(row["plume_longitude"])
-            emission = row.get("emission_auto", 0)
+            emission = float(row.get("emission_auto", 0))
 
-            # 🎨 COLOR SCALE
+            # color scale
             if emission > 1000:
                 color = "red"
                 radius = 12
@@ -207,10 +215,11 @@ if "plume_df" in st.session_state:
                 fill_color=color,
                 fill_opacity=0.7,
                 popup=f"""
-                <b>Plume ID:</b> {row.get('plume_id','N/A')}<br>
+                <b>ID:</b> {row.get('plume_id','N/A')}<br>
                 <b>Emission:</b> {emission} kg/h<br>
                 <b>Gas:</b> {row.get('gas','N/A')}<br>
                 <b>Sector:</b> {row.get('ipcc_sector','N/A')}<br>
+                <b>Instrument:</b> {row.get('instrument','N/A')}<br>
                 <b>Date:</b> {row.get('datetime','N/A')}
                 """
             ).add_to(m)
@@ -218,8 +227,9 @@ if "plume_df" in st.session_state:
         except:
             continue
 
-# ================= DISPLAY =================
-st_folium(m, width=1200, height=600)
+
+# ================= RENDER =================
+st_folium(m, width=1200, height=650)
 # ================= =================
 # 📄 PDF REPORT
 # ================= =================
