@@ -829,16 +829,12 @@ CM_TOKEN = ""
 token_ok = False
 
 def _read_token():
-    """
-    Tente de lire le token dans cet ordre :
-    1. st.secrets (Streamlit Cloud ou .streamlit/secrets.toml)
-    2. secrets.toml à la racine du projet (cas où le fichier est mal placé)
-    """
-    # --- Tentative 1 : st.secrets ---
     try:
-        tok = st.secrets.get("CARBON_MAPPER_TOKEN", "")
+        tok = st.secrets.get("CARBON_API_TOKEN", "")
         if not tok:
-            tok = st.secrets.get("carbon_mapper", {}).get("CARBON_MAPPER_TOKEN", "")
+            tok = st.secrets.get("CARBON_MAPPER_TOKEN", "")
+        if not tok:
+            tok = st.secrets.get("carbon_mapper", {}).get("CARBON_API_TOKEN", "")
         if not tok:
             tok = st.secrets.get("carbon_mapper_token", "")
         if tok:
@@ -846,14 +842,13 @@ def _read_token():
     except Exception:
         pass
 
-    # --- Tentative 2 : secrets.toml à la racine (votre cas) ---
     import os, re
     for path in ["secrets.toml", ".streamlit/secrets.toml"]:
         full = os.path.join(os.path.dirname(os.path.abspath(__file__)), path)
         if os.path.exists(full):
             try:
                 content = open(full, encoding="utf-8").read()
-                m = re.search(r'CARBON_MAPPER_TOKEN\s*=\s*["\']([^"\']+)["\']', content)
+                m = re.search(r'CARBON_(?:API|MAPPER)_TOKEN\s*=\s*["\']([^"\']+)["\']', content)
                 if m:
                     return m.group(1).strip()
             except Exception:
