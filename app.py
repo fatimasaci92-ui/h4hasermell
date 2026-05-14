@@ -144,26 +144,49 @@ if "plume_df" in st.session_state:
 
 
 # ================= =================
-# 🗺️ MAP (REAL PLUMES FIXED)
+# 🗺️ MAP (WITH SATELLITE / STREET SWITCH)
 # ================= =================
 st.markdown("## 🗺️ Plume Map")
 
-m = folium.Map(
-    location=[32.8, 3.2],
-    zoom_start=6,
-    tiles="OpenStreetMap"
+# 🎛️ Basemap selector
+basemap = st.radio(
+    "Map style",
+    ["🛣️ Street Map", "🌍 Satellite"],
+    horizontal=True
 )
 
+# ================= CREATE MAP =================
+if basemap == "🌍 Satellite":
+    m = folium.Map(
+        location=[32.8, 3.2],
+        zoom_start=6,
+        tiles=None
+    )
+
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="ESRI Satellite",
+        name="Satellite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+else:
+    m = folium.Map(
+        location=[32.8, 3.2],
+        zoom_start=6,
+        tiles="OpenStreetMap"
+    )
+
+# ================= PLOT DATA =================
 if "plume_df" in st.session_state:
     df = st.session_state["plume_df"]
 
     for _, row in df.iterrows():
         try:
-            # ✅ FIXED COLUMN NAMES (YOUR REAL DATA)
             lat = float(row["plume_latitude"])
             lon = float(row["plume_longitude"])
             emission = row.get("emission_auto", 0)
-            gas = row.get("gas", "N/A")
 
             # 🎨 COLOR SCALE
             if emission > 1000:
@@ -186,19 +209,17 @@ if "plume_df" in st.session_state:
                 popup=f"""
                 <b>Plume ID:</b> {row.get('plume_id','N/A')}<br>
                 <b>Emission:</b> {emission} kg/h<br>
-                <b>Gas:</b> {gas}<br>
+                <b>Gas:</b> {row.get('gas','N/A')}<br>
                 <b>Sector:</b> {row.get('ipcc_sector','N/A')}<br>
-                <b>Instrument:</b> {row.get('instrument','N/A')}<br>
                 <b>Date:</b> {row.get('datetime','N/A')}
                 """
             ).add_to(m)
 
-        except Exception as e:
+        except:
             continue
 
+# ================= DISPLAY =================
 st_folium(m, width=1200, height=600)
-
-
 # ================= =================
 # 📄 PDF REPORT
 # ================= =================
