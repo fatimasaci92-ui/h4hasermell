@@ -945,9 +945,7 @@ const DATE_START="{cm_date_start}", DATE_END="{cm_date_end}";
 
 // Endpoints à tester dans l'ordre
 const ENDPOINTS = [
-  "https://api.carbonmapper.org/api/v1/annotations/plume-list/",
-  "https://api.carbonmapper.org/api/v1/plumes/",
-  "https://api.carbonmapper.org/api/v1/catalog/plumes/",
+  "https://api.carbonmapper.org/api/v1/catalog/plumes/annotated",
 ];
 
 let map=null, markerLayer=null;
@@ -994,8 +992,14 @@ async function run(){{
   document.getElementById('err').style.display='none';
   setStatus('Recherche du bon endpoint...');
 
-  const params={{bbox:BBOX, gas:GAS, date_start:DATE_START, date_end:DATE_END, limit:200, offset:0}};
-  if(SECTOR) params.sector=SECTOR;
+  const params = {
+  bbox: BBOX,
+  plume_gas: GAS,
+  datetime: DATE_START + "T00:00:00Z/" + DATE_END + "T23:59:59Z",
+  limit: 200,
+  offset: 0
+};
+if (SECTOR) params.sectors = SECTOR;
 
   // Trouver le bon endpoint
   let goodUrl=null;
@@ -1022,7 +1026,7 @@ async function run(){{
       const r=await tryFetch(goodUrl,{{...params,offset}});
       if(!r.ok){{ showErr('Erreur '+r.status); break; }}
       const data=await r.json();
-      const results=data.results||data.features||[];
+      const results = data.items || [];
       results.forEach(p=>all.push(parsePlume(p)));
       if(!data.next||results.length<200) break;
       offset+=200; page++;
