@@ -142,7 +142,84 @@ if "plume_df" in st.session_state:
     st.markdown("## 📊 Plume Data Table")
     st.dataframe(st.session_state["plume_df"])
 
+# ================= =================
+# 🔴 MATRICE DE CRITICITÉ
+# ================= =================
+st.markdown("## 🔴 Matrice de Criticité des Émissions")
 
+if "plume_df" in st.session_state:
+    df = st.session_state["plume_df"]
+
+    df_alg = df[
+        (df["plume_latitude"] >= 18.5) & (df["plume_latitude"] <= 37.5) &
+        (df["plume_longitude"] >= -9.5) & (df["plume_longitude"] <= 12.0)
+    ].copy()
+
+    if "emission_auto" in df_alg.columns:
+        df_alg["emission_auto"] = pd.to_numeric(df_alg["emission_auto"], errors="coerce")
+
+        # ── Définir les classes de fréquence et d'intensité ──────
+        def freq_class(n):
+            if n >= 10: return "Fréquent (≥10)"
+            elif n >= 5: return "Modéré (5–9)"
+            else:        return "Rare (<5)"
+
+        def intens_class(val):
+            if val > 1000: return "Critique (>1000)"
+            elif val > 300: return "Élevé (300–1000)"
+            else:           return "Faible (<300)"
+
+        df_alg["Intensité"] = df_alg["emission_auto"].apply(intens_class)
+
+        # Compter les occurrences par secteur × intensité
+        if "ipcc_sector" in df_alg.columns:
+            pivot = df_alg.groupby(["ipcc_sector", "Intensité"]).size().unstack(fill_value=0)
+        else:
+            df_alg["ipcc_sector"] = "Non classifié"
+            pivot = df_alg.groupby(["ipcc_sector", "Intensité"]).size().unstack(fill_value=0)
+
+        # S'assurer que toutes les colonnes existent
+        for col in ["Faible (<300)", "Élevé (300–1000)", "Critique (>1000)"]:
+            if col not in pivot.columns:
+                pivot[col] = 0
+
+        pivot = pivot[["Faible (<300)", "Élevé (300–1000)", "Critique (>1000)"]]
+        pivot["Total"] = pivot.sum(axis=1)
+        pivot = pivot.sort_values("Total", ascending=False)
+
+        # ── Mise en forme colorée ─────────────────────────────────
+        def color_cell(val):
+            if val == 0:   return "background-color: #f0f0f0; color: #aaa"
+            col_name = ""
+            return ""
+
+        def color_by_col(s):
+            styles = []
+            for v in s:
+                if s.name == "Critique (>1000)":
+                    styles.append("background-color: #fde8e8; color: #c0392b; font-weight: bold" if v > 0 else "color:#aaa")
+                elif s.name == "Élevé (300–1000)":
+                    styles.append("background-color: #fef3e2; color: #e67e22; font-weight: bold" if v > 0 else "color:#aaa")
+                elif s.name == "Faible (<300)":
+                    styles.append("background-color: #eafaf1; color: #27ae60" if v > 0 else "color:#aaa")
+                else:
+                    styles.append("font-weight: bold")
+            return styles
+
+        st.dataframe(
+            pivot.style.apply(color_by_col),
+            use_container_width=True
+        )
+
+        # ── Score de risque global par secteur ───────────────────
+        st.markdown("### 📊 Score de Risque par Secteur")
+        pivot["Score Risque"] = (
+            pivot["Faible (<300)"] * 1 +
+            pivot["Élevé (300–1000)"] * 3 +
+            pivot["Critique (>1000)"] * 9
+        )
+        pivot_sorted = pivot[["Score Risque"]].sort_values("Score Risque", ascending=False)
+        st.bar_chart(pivot_sorted)
 # ================= =================
 # 🗺️ MAP — ALGERIA FULL CSV PLOTTING
 # ================= =================
@@ -524,7 +601,81 @@ if st.button("Générer Rapport PDF"):
             "No data loaded. Please fetch Carbon Mapper data before generating the report.",
             normal_style
         ))
+# ── Matrice de criticité ──────────────────────────────────
+story.append(Paragraph("Criticality Matrix — Sector × Emission Level", section_style))
+story.append(Spacer(1, 2*mm))
 
+if "emission_auto" in df_alg.columns:
+    def intens_class(val):
+        if val > 1000: return "Critical"
+        elif val > 300: return "High"
+        else:           return "Low"
+
+    df_alg["level"] = df_alg["emission_auto"].apply(intens_class)
+    sector_col = "ipcc_sector" if "ipcc_sector" in df_alg.columns else None
+
+    if sector_col:
+        pivot = df_alg.groupby([sector_col, "level"]).size().unstack(fill_value=0)
+    else:
+        df_alg["Sector"] = "Unclassified"
+        pivot = df_alg.groupby(["Sector", "level"]).size().unstack(fill_value=0)
+
+    for col in ["Low", "High", "Critical"]:
+        if col not in pivot.columns:
+            pivot[col] = 0
+
+    pivot = pivot[["Low", "High", "Critical"]]
+    pivot["Risk Score"] = pivot["Low"]*1 + pivot["High"]*3 + pivot["Critical"]*9
+    pivot = pivot.sort_values("Risk Score", ascending=False)
+
+    # En-tête
+    matrix_header = ["Sector", "Low\n(<300 kg/h)", "High\n(300–1000)", "Critical\n(>1000)", "Risk\nScore"]
+    matrix_data = [matrix_header]
+
+    for sector, row in pivot.iterrows():
+        risk = int(row["Risk Score"])
+        risk_color = RED_HIGH if risk > 50 else (ORANGE_MED if risk > 15 else GREEN_LOW)
+        matrix_data.append([
+            Paragraph(str(sector)[:35], normal_style),
+            Paragraph(str(int(row["Low"])),      normal_style),
+            Paragraph(str(int(row["High"])),     normal_style),
+            Paragraph(f'<font color="{risk_color.hexval() if hasattr(risk_color,"hexval") else "#C0392B"}">'
+                      f'<b>{int(row["Critical"])}</b></font>', normal_style),
+            Paragraph(f'<b>{risk}</b>', normal_style),
+        ])
+
+    col_w_matrix = [70*mm, 25*mm, 25*mm, 25*mm, 20*mm]
+    matrix_table = Table(matrix_data, colWidths=col_w_matrix, repeatRows=1)
+    matrix_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), DARK_NAVY),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), WHITE),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0), 8),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [WHITE, LIGHT_GRAY]),
+        ("GRID",          (0, 0), (-1, -1), 0.3, MID_GRAY),
+        ("ALIGN",         (1, 0), (-1, -1), "CENTER"),
+        ("FONTSIZE",      (0, 1), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(matrix_table)
+    story.append(Spacer(1, 4*mm))
+
+    # Légende
+    legend_data = [
+        [Paragraph('<font color="#27AE60">● Low</font>', normal_style),   Paragraph("< 300 kg/h — Score ×1", normal_style)],
+        [Paragraph('<font color="#E67E22">● High</font>', normal_style),  Paragraph("300–1 000 kg/h — Score ×3", normal_style)],
+        [Paragraph('<font color="#C0392B">● Critical</font>', normal_style), Paragraph("> 1 000 kg/h — Score ×9", normal_style)],
+    ]
+    legend_table = Table(legend_data, colWidths=[35*mm, 80*mm])
+    legend_table.setStyle(TableStyle([
+        ("FONTSIZE", (0,0),(-1,-1), 8),
+        ("LEFTPADDING", (0,0),(-1,-1), 4),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 2),
+    ]))
+    story.append(legend_table)
     # ── Build ─────────────────────────────────────────────────────
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     buffer.seek(0)
