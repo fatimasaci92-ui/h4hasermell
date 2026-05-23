@@ -164,10 +164,10 @@ if "plume_df" in st.session_state:
             elif n >= 5: return "Modéré (5–9)"
             else:        return "Rare (<5)"
 
-        def intens_class(val):
-            if val > 1000: return "Critique (>1000)"
-            elif val > 300: return "Élevé (300–1000)"
-            else:           return "Faible (<300)"
+       def intens_class(val):
+    if val > 1000:  return "Super-emitter (>1000)"
+    elif val > 100: return "Detectable (100–1000)"
+    else:           return "Diffuse (<100)"
 
         df_alg["Intensité"] = df_alg["emission_auto"].apply(intens_class)
 
@@ -666,9 +666,9 @@ if st.button("Générer Rapport PDF"):
 
         # Légende
         legend_data = [
-            [Paragraph('<font color="#27AE60">● Low</font>',    normal_style), Paragraph("< 300 kg/h — Score ×1",       normal_style)],
-            [Paragraph('<font color="#E67E22">● High</font>',   normal_style), Paragraph("300–1 000 kg/h — Score ×3",   normal_style)],
-            [Paragraph('<font color="#C0392B">● Critical</font>',normal_style),Paragraph("> 1 000 kg/h — Score ×9",     normal_style)],
+      Paragraph("< 100 kg/h — Diffuse, below detection limit (Sentinel-2)", normal_style),
+      Paragraph("100–1000 kg/h — Detectable point source (GHGSat limit)", normal_style),
+      Paragraph("> 1000 kg/h — Superemitter threshold (Naus et al., 2023, Algeria)", normal_style)
         ]
         legend_table = Table(legend_data, colWidths=[35*mm, 80*mm])
         legend_table.setStyle(TableStyle([
