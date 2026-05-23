@@ -610,3 +610,187 @@ if st.button("Générer Rapport PDF"):
         file_name=f"CH4_Report_Algeria_{datetime.utcnow().strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
+# ── Annex C: MARS Feedback Form ───────────────────────────
+        from reportlab.platypus import PageBreak
+
+        story.append(PageBreak())
+        story.append(Paragraph("Annex C: MARS Feedback Form", title_style))
+        story.append(Spacer(1, 3*mm))
+
+        # En-tête UN IMEO
+        un_header = Table(
+            [[Paragraph('<b>UN ● International Methane<br/>Emissions Observatory</b>', 
+                        ParagraphStyle("UN", fontName="Helvetica-Bold", fontSize=9, 
+                                       textColor=WHITE, leading=12))]],
+            colWidths=[165*mm]
+        )
+        un_header.setStyle(TableStyle([
+            ("BACKGROUND",  (0, 0), (-1, -1), colors.HexColor("#009EDB")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING",  (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING",(0,0), (-1, -1), 6),
+        ]))
+        story.append(un_header)
+
+        mars_title = Table(
+            [[Paragraph('<b>MARS Feedback Form</b>', 
+                        ParagraphStyle("MARSTitle", fontName="Helvetica-Bold", fontSize=11,
+                                       textColor=DARK_NAVY, alignment=1))]],
+            colWidths=[165*mm]
+        )
+        mars_title.setStyle(TableStyle([
+            ("BACKGROUND",  (0, 0), (-1, -1), colors.HexColor("#E8F4FD")),
+            ("TOPPADDING",  (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING",(0,0), (-1, -1), 6),
+        ]))
+        story.append(mars_title)
+        story.append(Spacer(1, 3*mm))
+
+        intro_style = ParagraphStyle("Intro", fontName="Helvetica", fontSize=8,
+                                      textColor=colors.HexColor("#333333"), leading=11)
+        red_style   = ParagraphStyle("Red",   fontName="Helvetica", fontSize=8,
+                                      textColor=colors.HexColor("#C0392B"), leading=11)
+
+        story.append(Paragraph(
+            "IMEO requests feedback on the source and cause of emissions detected through MARS. "
+            "Please provide this feedback using the form below (or any other preferred format). "
+            "<font color='#C0392B'>Part 1 is requested as quickly as possible.</font> "
+            "Subsequent information is valued where possible.", intro_style))
+        story.append(Spacer(1, 2*mm))
+        story.append(Paragraph(
+            "<b>Please note that the content provided in this feedback form is kept confidential.</b> "
+            "It will be used by the IMEO team to better understand emissions as well as to verify "
+            "the success of mitigation measures.", intro_style))
+        story.append(Spacer(1, 3*mm))
+
+        story.append(Paragraph("Date of Completion of Feedback Form (DD-MM-YYYY): _______________", normal_style))
+        story.append(Spacer(1, 4*mm))
+
+        # ── Part 1: Critical Information ─────────────────────────
+        part1_header = Table(
+            [[Paragraph('<b>Part 1: Critical Information</b><br/>'
+                        '<font size="7">The information below is the most important to receive regarding the emissions event. '
+                        'IMEO asks that this information is returned as quickly as possible.</font>',
+                        ParagraphStyle("P1H", fontName="Helvetica-Bold", fontSize=9,
+                                       textColor=WHITE, leading=12))]],
+            colWidths=[165*mm]
+        )
+        part1_header.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#E67E22")),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+        ]))
+        story.append(part1_header)
+        story.append(Spacer(1, 2*mm))
+
+        field_style = ParagraphStyle("Field", fontName="Helvetica-Bold", fontSize=8,
+                                      textColor=DARK_NAVY, leading=11)
+        sub_style   = ParagraphStyle("Sub",   fontName="Helvetica-Oblique", fontSize=7,
+                                      textColor=colors.HexColor("#555555"), leading=10)
+
+        def field_row(label, sublabel="", highlight=False):
+            bg = colors.HexColor("#FEF3E2") if highlight else WHITE
+            content = Paragraph(f'<b>{label}</b>', field_style)
+            sub     = Paragraph(sublabel, sub_style) if sublabel else Paragraph("", sub_style)
+            t = Table([[content], [sub]], colWidths=[165*mm])
+            t.setStyle(TableStyle([
+                ("BACKGROUND",   (0, 0), (-1, -1), bg),
+                ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+                ("TOPPADDING",   (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+                ("LINEBELOW",    (0, 0), (-1, -1), 0.3, MID_GRAY),
+            ]))
+            return t
+
+        story.append(field_row("Source ID",
+            "(please provide the ID of the source provided in the notification)"))
+        story.append(field_row("Plume(s) ID(s)",
+            "(please provide the ID of the plume(s) provided in the notification)"))
+        story.append(field_row("Operator",
+            "(please confirm the name of the correct operator)", highlight=True))
+        story.append(field_row("Emissions cause",
+            "(please provide any known cause for the emissions event, including the result "
+            "of any on-the-ground investigation)"))
+        story.append(field_row("Did the MARS notification alert you to the emissions?",
+            "(please confirm whether these emissions were known, or if the notification "
+            "informed you of the emissions)", highlight=True))
+        story.append(field_row("Have the emissions ceased? Was mitigation action taken to address the emissions?",
+            "(please confirm whether the emissions are ongoing or have ceased, and if direct "
+            "action was taken to stop the emissions)"))
+        story.append(field_row("What date did the mitigation action occur?",
+            "(when mitigation action was taken, please confirm the date(s) on which this "
+            "action started and ended)", highlight=True))
+        story.append(field_row("Executed or planned operator efforts",
+            "(where possible, please detail whether operator efforts have led to the cessation "
+            "of emissions, or if future efforts are planned)"))
+        story.append(Spacer(1, 4*mm))
+
+        # ── Part 2: Additional Facility Information ───────────────
+        part2_header = Table(
+            [[Paragraph('<b>Part 2: Additional Facility Information</b>',
+                        ParagraphStyle("P2H", fontName="Helvetica-Bold", fontSize=9,
+                                       textColor=WHITE, leading=12))]],
+            colWidths=[165*mm]
+        )
+        part2_header.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+        ]))
+        story.append(part2_header)
+        story.append(Spacer(1, 2*mm))
+
+        story.append(field_row("Facility Name",
+            "(please provide the name of the facility where the emission occurred)"))
+        story.append(field_row("Facility Type",
+            "(please select from drop down)  ☐ Choose an item."))
+        story.append(field_row("Facility Contact Information",
+            "(please provide contact details for the manager of the facility where the emissions occurred)"))
+        story.append(field_row("Corporate Contact Information",
+            "(please provide contact details for a central corporate focal point, if appropriate)"))
+        story.append(field_row("OGMP 2.0 Asset Name",
+            "(for OGMP members only, please provide the name of the asset reported to the OGMP 2.0 "
+            "for which this facility corresponds)"))
+        story.append(Spacer(1, 4*mm))
+
+        # ── Part 3: Additional Emissions Information ──────────────
+        part3_header = Table(
+            [[Paragraph('<b>Part 3: Additional Emissions Information</b>',
+                        ParagraphStyle("P3H", fontName="Helvetica-Bold", fontSize=9,
+                                       textColor=WHITE, leading=12))]],
+            colWidths=[165*mm]
+        )
+        part3_header.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+        ]))
+        story.append(part3_header)
+        story.append(Spacer(1, 2*mm))
+
+        story.append(field_row("Emission Source Category",
+            "(please select from the drop down)  ☐ Choose an item."))
+        story.append(field_row("If other, please specify", ""))
+        story.append(field_row("Please provide details of the specific point source within the facility that the emissions came from",
+            "(e.g. specific tank, compressor, flare)"))
+        story.append(field_row("Please briefly describe the root cause of the emissions event. What was the operational situation or activity that led to the emissions?", ""))
+        story.append(field_row("Please select the option that best describes the operational situation or activity that led to the emission",
+            "(please select from the drop down)  ☐ Choose an item."))
+        story.append(field_row("If other, please specify", ""))
+        story.append(field_row("Has the emission ceased or been mitigated or is it ongoing?",
+            "(please select from the drop down)  ☐ Choose an item."))
+        story.append(field_row("If the emission has ceased or been mitigated, please describe the actions that were taken to eliminate the emission?", ""))
+        story.append(field_row("If the emission is ongoing, do you have plans to mitigate the emission?",
+            "(please select from the drop down)  ☐ Choose an item."))
+        story.append(field_row("If yes, please describe the mitigation plans", ""))
+        story.append(field_row("Please indicate the timeline by which you expect to mitigate the emission",
+            "Click or tap to enter a date."))
+        story.append(field_row("Are you able to quantify the emissions from this event?",
+            "(please select from the drop down)  ☐ Choose an item."))
+        story.append(field_row("If yes, please provide the estimate of the total emissions released",
+            "(please provide in kg methane if possible or indicate the units if not)"))
+        story.append(field_row("Please indicate the duration of the event",
+            "(e.g. number of hours or days)"))
