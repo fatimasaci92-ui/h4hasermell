@@ -13,9 +13,14 @@ from datetime import datetime, timedelta
 import folium
 from streamlit_folium import st_folium
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.units import mm
 from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    HRFlowable, PageBreak
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 
 # ================= =================
@@ -123,10 +128,6 @@ if "plume_df" in st.session_state:
 
 # ================= =================
 # 🔴 MATRICE DE CRITICITÉ
-# FIX 1 : intens_class corrigée (seuils Naus et al. 2023)
-# FIX 2 : noms de colonnes cohérents partout
-# FIX 3 : color_by_col mis à jour
-# FIX 4 : score de risque mis à jour
 # ================= =================
 st.markdown("## 🔴 Matrice de Criticité des Émissions")
 st.caption("Seuils basés sur Naus et al. (2023) — *Environ. Sci. Technol.* — Algérie O&G")
@@ -142,11 +143,10 @@ if "plume_df" in st.session_state:
     if "emission_auto" in df_alg.columns:
         df_alg["emission_auto"] = pd.to_numeric(df_alg["emission_auto"], errors="coerce")
 
-        # ── FIX 1 : seuils scientifiques Naus et al. 2023 ────────
         def intens_class(val):
-            if val > 1000:  return "Super-emitter (>1000)"   # Sentinel-2 detection limit, Algeria
-            elif val > 100: return "Detectable (100–1000)"   # GHGSat detection limit ~100 kg/h
-            else:           return "Diffuse (<100)"           # Below individual detection
+            if val > 1000:  return "Super-emitter (>1000)"
+            elif val > 100: return "Detectable (100–1000)"
+            else:           return "Diffuse (<100)"
 
         df_alg["Intensité"] = df_alg["emission_auto"].apply(intens_class)
 
@@ -156,7 +156,6 @@ if "plume_df" in st.session_state:
             df_alg["ipcc_sector"] = "Non classifié"
             pivot = df_alg.groupby(["ipcc_sector", "Intensité"]).size().unstack(fill_value=0)
 
-        # ── FIX 2 : noms de colonnes cohérents avec intens_class ─
         for col in ["Diffuse (<100)", "Detectable (100–1000)", "Super-emitter (>1000)"]:
             if col not in pivot.columns:
                 pivot[col] = 0
@@ -165,7 +164,6 @@ if "plume_df" in st.session_state:
         pivot["Total"] = pivot.sum(axis=1)
         pivot = pivot.sort_values("Total", ascending=False)
 
-        # ── FIX 3 : color_by_col avec nouveaux noms ───────────────
         def color_by_col(s):
             styles = []
             for v in s:
@@ -181,7 +179,6 @@ if "plume_df" in st.session_state:
 
         st.dataframe(pivot.style.apply(color_by_col), use_container_width=True)
 
-        # ── FIX 4 : score de risque avec nouveaux noms ────────────
         st.markdown("### 📊 Score de Risque par Secteur")
         pivot["Score Risque"] = (
             pivot["Diffuse (<100)"]          * 1 +
@@ -193,8 +190,7 @@ if "plume_df" in st.session_state:
 
 
 # ================= =================
-# 🗺️ MAP — ALGERIA FULL CSV PLOTTING
-# FIX 5 : seuils carte alignés avec Naus et al. 2023
+# 🗺️ MAP
 # ================= =================
 st.markdown("## 🗺️ Algeria CH₄ Plume Map")
 
@@ -225,14 +221,13 @@ if "plume_df" in st.session_state:
             lon      = float(row["plume_longitude"])
             emission = float(row.get("emission_auto", 0))
 
-            # ── FIX 5 : seuils alignés sur Naus et al. 2023 ──────
-            if emission > 1000:       # Super-emitter
+            if emission > 1000:
                 color  = "red"
                 radius = 12
-            elif emission > 100:      # Detectable (GHGSat limit)
+            elif emission > 100:
                 color  = "orange"
                 radius = 8
-            else:                     # Diffuse
+            else:
                 color  = "green"
                 radius = 5
 
@@ -259,20 +254,8 @@ st_folium(m, width=1200, height=650)
 
 
 # ================= =================
-# 📄 PDF REPORT — Style GHGSat
-# FIX 6 : matrice PDF avec seuils Naus et al. 2023
-# FIX 7 : légende PDF corrigée (liste de listes)
-# FIX 8 : summary table alignée sur nouveaux seuils
+# 📄 PDF REPORT
 # ================= =================
-from reportlab.lib import colors
-from reportlab.lib.units import mm
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable
-)
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
 st.markdown("## 📄 Rapport Professionnel")
 
 if st.button("Générer Rapport PDF"):
@@ -344,20 +327,20 @@ if st.button("Générer Rapport PDF"):
 
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle("ReportTitle", fontName="Helvetica-Bold", fontSize=16,
-                                  textColor=DARK_NAVY, spaceAfter=4)
+    title_style   = ParagraphStyle("ReportTitle", fontName="Helvetica-Bold", fontSize=16,
+                                    textColor=DARK_NAVY, spaceAfter=4)
     section_style = ParagraphStyle("Section", fontName="Helvetica-Bold", fontSize=11,
                                     textColor=ACCENT_BLUE, spaceBefore=10, spaceAfter=4)
-    normal_style = ParagraphStyle("Body", fontName="Helvetica", fontSize=9,
-                                   textColor=colors.HexColor("#333333"), leading=13)
-    label_style  = ParagraphStyle("Label", fontName="Helvetica-Bold", fontSize=8,
-                                   textColor=MID_GRAY)
+    normal_style  = ParagraphStyle("Body", fontName="Helvetica", fontSize=9,
+                                    textColor=colors.HexColor("#333333"), leading=13)
+    label_style   = ParagraphStyle("Label", fontName="Helvetica-Bold", fontSize=8,
+                                    textColor=MID_GRAY)
     caption_style = ParagraphStyle("Caption", fontName="Helvetica-Oblique", fontSize=7,
                                     textColor=MID_GRAY, spaceAfter=4)
 
     story = []
 
-    # ── Titre ────────────────────────────────────────────────────
+    # ── Titre ─────────────────────────────────────────────────────
     story.append(Paragraph("CH<sub>4</sub> Emission Monitoring Report", title_style))
     story.append(Paragraph("Algeria — Oil &amp; Gas Sector", normal_style))
     story.append(Spacer(1, 4*mm))
@@ -370,7 +353,7 @@ if st.button("Générer Rapport PDF"):
         ["Report Date",    datetime.utcnow().strftime("%Y-%m-%d")],
         ["Gas Species",    "CH4 (Methane)"],
         ["Data Source",    "Carbon Mapper API v1"],
-        ["Region",         "Algeria (18.5°N–37.5°N / 9.5°W–12°E)"],
+        ["Region",         "Algeria (18.5N-37.5N / 9.5W-12E)"],
         ["Sector",         "Oil & Gas"],
         ["Classification", "Proprietary / Confidential"],
         ["Threshold Ref.", "Naus et al. (2023), Environ. Sci. Technol., 57, 19545-19556"],
@@ -408,7 +391,6 @@ if st.button("Générer Rapport PDF"):
             em_mean = df_alg["emission_auto"].mean()
             em_max  = df_alg["emission_auto"].max()
             em_tot  = df_alg["emission_auto"].sum()
-            # ── FIX 8 : seuils alignés sur Naus et al. 2023 ──────
             superem  = int((df_alg["emission_auto"] > 1000).sum())
             detect   = int(((df_alg["emission_auto"] > 100) & (df_alg["emission_auto"] <= 1000)).sum())
             diffuse  = int((df_alg["emission_auto"] <= 100).sum())
@@ -417,13 +399,13 @@ if st.button("Générer Rapport PDF"):
 
         summary_data = [
             ["Metric", "Value"],
-            ["Total Plumes Detected",                    str(total)],
-            ["Mean Emission Rate",                       f"{em_mean:.1f} kg/h" if isinstance(em_mean, float) else "N/A"],
-            ["Max Emission Rate",                        f"{em_max:.1f} kg/h"  if isinstance(em_max,  float) else "N/A"],
-            ["Total Emission (sum)",                     f"{em_tot:.0f} kg/h"  if isinstance(em_tot,  float) else "N/A"],
-            ["Super-emitters  (> 1 000 kg/h)",           str(superem)],
-            ["Detectable sources (100–1 000 kg/h)",      str(detect)],
-            ["Diffuse sources  (< 100 kg/h)",            str(diffuse)],
+            ["Total Plumes Detected",               str(total)],
+            ["Mean Emission Rate",                  f"{em_mean:.1f} kg/h" if isinstance(em_mean, float) else "N/A"],
+            ["Max Emission Rate",                   f"{em_max:.1f} kg/h"  if isinstance(em_max,  float) else "N/A"],
+            ["Total Emission (sum)",                f"{em_tot:.0f} kg/h"  if isinstance(em_tot,  float) else "N/A"],
+            ["Super-emitters  (> 1 000 kg/h)",      str(superem)],
+            ["Detectable sources (100-1 000 kg/h)", str(detect)],
+            ["Diffuse sources  (< 100 kg/h)",       str(diffuse)],
         ]
 
         summary_table = Table(summary_data, colWidths=[100*mm, 65*mm])
@@ -466,7 +448,6 @@ if st.button("Générer Rapport PDF"):
                 if c == "emission_auto":
                     try:
                         v = float(val)
-                        # FIX : couleurs alignées sur nouveaux seuils
                         color_tag = ("red" if v > 1000 else "orange" if v > 100 else "green")
                         val = f'<font color="{color_tag}"><b>{v:.1f}</b></font>'
                     except:
@@ -494,15 +475,14 @@ if st.button("Générer Rapport PDF"):
         story.append(Spacer(1, 6*mm))
 
         # ── Matrice de criticité ──────────────────────────────────
-        story.append(Paragraph("Criticality Matrix — Sector × Emission Level", section_style))
+        story.append(Paragraph("Criticality Matrix — Sector x Emission Level", section_style))
         story.append(Paragraph(
-            "Source: Naus et al. (2023), Environ. Sci. Technol. 57, 19545–19556. "
+            "Source: Naus et al. (2023), Environ. Sci. Technol. 57, 19545-19556. "
             "Superemitter threshold = 1 t/h (Sentinel-2 detection limit, Algeria).",
             caption_style
         ))
         story.append(Spacer(1, 2*mm))
 
-        # ── FIX 6 : seuils PDF alignés sur Naus et al. 2023 ──────
         df_alg["level"] = df_alg["emission_auto"].apply(
             lambda v: "Super-emitter" if v > 1000 else ("Detectable" if v > 100 else "Diffuse")
         )
@@ -527,11 +507,11 @@ if st.button("Générer Rapport PDF"):
         pivot_pdf = pivot_pdf.sort_values("Risk Score", ascending=False)
 
         matrix_header = [
-            Paragraph("Sector",                label_style),
-            Paragraph("Diffuse (<100)",         label_style),
-            Paragraph("Detectable (100–1000)",  label_style),
-            Paragraph("Super-emitter (>1000)",  label_style),
-            Paragraph("Risk Score",             label_style),
+            Paragraph("Sector",               label_style),
+            Paragraph("Diffuse (<100)",        label_style),
+            Paragraph("Detectable (100-1000)", label_style),
+            Paragraph("Super-emitter (>1000)", label_style),
+            Paragraph("Risk Score",            label_style),
         ]
         matrix_data = [matrix_header]
 
@@ -570,18 +550,18 @@ if st.button("Générer Rapport PDF"):
         story.append(matrix_table)
         story.append(Spacer(1, 4*mm))
 
-        # ── FIX 7 : légende PDF — liste de listes (structure correcte) ──
+        # ── Légende ───────────────────────────────────────────────
         legend_data = [
             [
-                Paragraph('<font color="#27AE60"><b>● Diffuse</b></font>', normal_style),
+                Paragraph('<font color="#27AE60"><b>Diffuse</b></font>', normal_style),
                 Paragraph("&lt; 100 kg/h — Below individual detection limit (Sentinel-2)", normal_style),
             ],
             [
-                Paragraph('<font color="#E67E22"><b>● Detectable</b></font>', normal_style),
-                Paragraph("100–1 000 kg/h — GHGSat detection limit (~100 kg/h)", normal_style),
+                Paragraph('<font color="#E67E22"><b>Detectable</b></font>', normal_style),
+                Paragraph("100-1 000 kg/h — GHGSat detection limit (~100 kg/h)", normal_style),
             ],
             [
-                Paragraph('<font color="#C0392B"><b>● Super-emitter</b></font>', normal_style),
+                Paragraph('<font color="#C0392B"><b>Super-emitter</b></font>', normal_style),
                 Paragraph("&gt; 1 000 kg/h — Superemitter threshold (Naus et al., 2023, Algeria)", normal_style),
             ],
         ]
@@ -600,197 +580,260 @@ if st.button("Générer Rapport PDF"):
             normal_style
         ))
 
+    # ═══════════════════════════════════════════════════════════════
+    # ANNEX C: MARS FEEDBACK FORM
+    # ═══════════════════════════════════════════════════════════════
+    story.append(PageBreak())
+
+    annex_title_style = ParagraphStyle("AnnexTitle", fontName="Helvetica-Bold", fontSize=14,
+                                        textColor=DARK_NAVY, spaceAfter=6)
+    field_label_style = ParagraphStyle("FieldLabel", fontName="Helvetica-Bold", fontSize=8,
+                                        textColor=DARK_NAVY, leading=11)
+    field_sub_style   = ParagraphStyle("FieldSub", fontName="Helvetica-Oblique", fontSize=7,
+                                        textColor=colors.HexColor("#555555"), leading=10)
+    intro_style       = ParagraphStyle("Intro", fontName="Helvetica", fontSize=8,
+                                        textColor=colors.HexColor("#333333"), leading=11)
+
+    story.append(Paragraph("Annex C: Feedback Form", annex_title_style))
+    story.append(HRFlowable(width="100%", thickness=1, color=ACCENT_BLUE))
+    story.append(Spacer(1, 3*mm))
+
+    # ── EN-TÊTE UN IMEO ───────────────────────────────────────────
+    un_header = Table(
+        [[Paragraph(
+            '<b>UN    International Methane Emissions Observatory</b>',
+            ParagraphStyle("UNH", fontName="Helvetica-Bold", fontSize=9,
+                           textColor=WHITE, leading=12)
+        )]],
+        colWidths=[165*mm]
+    )
+    un_header.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#009EDB")),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+    ]))
+    story.append(un_header)
+
+    mars_title_tbl = Table(
+        [[Paragraph('<b>MARS Feedback Form</b>',
+                    ParagraphStyle("MARS", fontName="Helvetica-Bold", fontSize=11,
+                                   textColor=DARK_NAVY, alignment=1))]],
+        colWidths=[165*mm]
+    )
+    mars_title_tbl.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#E8F4FD")),
+        ("TOPPADDING",   (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+    ]))
+    story.append(mars_title_tbl)
+    story.append(Spacer(1, 3*mm))
+
+    story.append(Paragraph(
+        "IMEO requests feedback on the source and cause of emissions detected through MARS. "
+        "Please provide this feedback using the form below (or any other preferred format). "
+        "Part 1 is requested as quickly as possible. "
+        "Subsequent information is valued where possible.",
+        intro_style
+    ))
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph(
+        "<b>Please note that the content provided in this feedback form is kept confidential.</b> "
+        "It will be used by the IMEO team to better understand emissions as well as to verify "
+        "the success of mitigation measures.",
+        intro_style
+    ))
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(
+        "Date of Completion of Feedback Form (DD-MM-YYYY):  ___________________________",
+        normal_style
+    ))
+    story.append(Spacer(1, 4*mm))
+
+    # ── Helper: field row ─────────────────────────────────────────
+    def make_field_row(label, sublabel="", highlight=False):
+        bg = colors.HexColor("#FEF3E2") if highlight else WHITE
+        rows = [[Paragraph(f'<b>{label}</b>', field_label_style)]]
+        if sublabel:
+            rows.append([Paragraph(sublabel, field_sub_style)])
+        t = Table(rows, colWidths=[165*mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, -1), bg),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+            ("TOPPADDING",   (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+            ("LINEBELOW",    (0, -1), (-1, -1), 0.3, MID_GRAY),
+        ]))
+        return t
+
+    # ── PART 1 ────────────────────────────────────────────────────
+    part1_hdr = Table(
+        [[Paragraph(
+            '<b>Part 1: Critical Information</b>',
+            ParagraphStyle("P1", fontName="Helvetica-Bold", fontSize=9,
+                           textColor=WHITE, leading=12)
+        )]],
+        colWidths=[165*mm]
+    )
+    part1_hdr.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#E67E22")),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+    ]))
+    story.append(part1_hdr)
+    story.append(Spacer(1, 1*mm))
+
+    story.append(make_field_row(
+        "Source ID",
+        "(please provide the ID of the source provided in the notification)"
+    ))
+    story.append(make_field_row(
+        "Plume(s) ID(s)",
+        "(please provide the ID of the plume(s) provided in the notification)"
+    ))
+    story.append(make_field_row(
+        "Operator",
+        "(please confirm the name of the correct operator)",
+        highlight=True
+    ))
+    story.append(make_field_row(
+        "Emissions cause",
+        "(please provide any known cause for the emissions event, including the result of any on-the-ground investigation)"
+    ))
+    story.append(make_field_row(
+        "Did the MARS notification alert you to the emissions?",
+        "(please confirm whether these emissions were known, or if the notification informed you of the emissions)",
+        highlight=True
+    ))
+    story.append(make_field_row(
+        "Have the emissions ceased? Was mitigation action taken to address the emissions?",
+        "(please confirm whether the emissions are ongoing or have ceased, and if direct action was taken to stop the emissions)"
+    ))
+    story.append(make_field_row(
+        "What date did the mitigation action occur?",
+        "(when mitigation action was taken, please confirm the date(s) on which this action started and ended)",
+        highlight=True
+    ))
+    story.append(make_field_row(
+        "Executed or planned operator efforts",
+        "(where possible, please detail whether operator efforts have led to the cessation of emissions, or if future efforts are planned)"
+    ))
+    story.append(Spacer(1, 4*mm))
+
+    # ── PART 2 ────────────────────────────────────────────────────
+    part2_hdr = Table(
+        [[Paragraph(
+            '<b>Part 2: Additional Facility Information</b>',
+            ParagraphStyle("P2", fontName="Helvetica-Bold", fontSize=9,
+                           textColor=WHITE, leading=12)
+        )]],
+        colWidths=[165*mm]
+    )
+    part2_hdr.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+    ]))
+    story.append(part2_hdr)
+    story.append(Spacer(1, 1*mm))
+
+    story.append(make_field_row(
+        "Facility Name",
+        "(please provide the name of the facility where the emission occurred)"
+    ))
+    story.append(make_field_row(
+        "Facility Type",
+        "(please select from drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row(
+        "Facility Contact Information",
+        "(please provide contact details for the manager of the facility where the emissions occurred)"
+    ))
+    story.append(make_field_row(
+        "Corporate Contact Information",
+        "(please provide contact details for a central corporate focal point, if appropriate)"
+    ))
+    story.append(make_field_row(
+        "OGMP 2.0 Asset Name",
+        "(for OGMP members only, please provide the name of the asset reported to the OGMP 2.0 for which this facility corresponds)"
+    ))
+    story.append(Spacer(1, 4*mm))
+
+    # ── PART 3 ────────────────────────────────────────────────────
+    part3_hdr = Table(
+        [[Paragraph(
+            '<b>Part 3: Additional Emissions Information</b>',
+            ParagraphStyle("P3", fontName="Helvetica-Bold", fontSize=9,
+                           textColor=WHITE, leading=12)
+        )]],
+        colWidths=[165*mm]
+    )
+    part3_hdr.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+    ]))
+    story.append(part3_hdr)
+    story.append(Spacer(1, 1*mm))
+
+    story.append(make_field_row(
+        "Emission Source Category",
+        "(please select from the drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row("If other, please specify", ""))
+    story.append(make_field_row(
+        "Please provide details of the specific point source within the facility that the emissions came from",
+        "(e.g. specific tank, compressor, flare)"
+    ))
+    story.append(make_field_row(
+        "Please briefly describe the root cause of the emissions event. What was the operational situation or activity that led to the emissions?",
+        ""
+    ))
+    story.append(make_field_row(
+        "Please select the option that best describes the operational situation or activity that led to the emission",
+        "(please select from the drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row("If other, please specify", ""))
+    story.append(make_field_row(
+        "Has the emission ceased or been mitigated or is it ongoing?",
+        "(please select from the drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row(
+        "If the emission has ceased or been mitigated, please describe the actions that were taken to eliminate the emission?",
+        ""
+    ))
+    story.append(make_field_row(
+        "If the emission is ongoing, do you have plans to mitigate the emission?",
+        "(please select from the drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row("If yes, please describe the mitigation plans", ""))
+    story.append(make_field_row(
+        "Please indicate the timeline by which you expect to mitigate the emission",
+        "Click or tap to enter a date."
+    ))
+    story.append(make_field_row(
+        "Are you able to quantify the emissions from this event?",
+        "(please select from the drop down)   [ Choose an item ]"
+    ))
+    story.append(make_field_row(
+        "If yes, please provide the estimate of the total emissions released",
+        "(please provide in kg methane if possible or indicate the units if not)"
+    ))
+    story.append(make_field_row(
+        "Please indicate the duration of the event",
+        "(e.g. number of hours or days)"
+    ))
+
     # ── Build ─────────────────────────────────────────────────────
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     buffer.seek(0)
 
     st.download_button(
-        label="⬇️ Télécharger le Rapport PDF",
+        label="Telecharger le Rapport PDF",
         data=buffer,
         file_name=f"CH4_Report_Algeria_{datetime.utcnow().strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
     )
-# ── Annex C: MARS Feedback Form ───────────────────────────
-        from reportlab.platypus import PageBreak
-
-        story.append(PageBreak())
-        story.append(Paragraph("Annex C: MARS Feedback Form", title_style))
-        story.append(Spacer(1, 3*mm))
-
-        # En-tête UN IMEO
-        un_header = Table(
-            [[Paragraph('<b>UN ● International Methane<br/>Emissions Observatory</b>', 
-                        ParagraphStyle("UN", fontName="Helvetica-Bold", fontSize=9, 
-                                       textColor=WHITE, leading=12))]],
-            colWidths=[165*mm]
-        )
-        un_header.setStyle(TableStyle([
-            ("BACKGROUND",  (0, 0), (-1, -1), colors.HexColor("#009EDB")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING",  (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING",(0,0), (-1, -1), 6),
-        ]))
-        story.append(un_header)
-
-        mars_title = Table(
-            [[Paragraph('<b>MARS Feedback Form</b>', 
-                        ParagraphStyle("MARSTitle", fontName="Helvetica-Bold", fontSize=11,
-                                       textColor=DARK_NAVY, alignment=1))]],
-            colWidths=[165*mm]
-        )
-        mars_title.setStyle(TableStyle([
-            ("BACKGROUND",  (0, 0), (-1, -1), colors.HexColor("#E8F4FD")),
-            ("TOPPADDING",  (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING",(0,0), (-1, -1), 6),
-        ]))
-        story.append(mars_title)
-        story.append(Spacer(1, 3*mm))
-
-        intro_style = ParagraphStyle("Intro", fontName="Helvetica", fontSize=8,
-                                      textColor=colors.HexColor("#333333"), leading=11)
-        red_style   = ParagraphStyle("Red",   fontName="Helvetica", fontSize=8,
-                                      textColor=colors.HexColor("#C0392B"), leading=11)
-
-        story.append(Paragraph(
-            "IMEO requests feedback on the source and cause of emissions detected through MARS. "
-            "Please provide this feedback using the form below (or any other preferred format). "
-            "<font color='#C0392B'>Part 1 is requested as quickly as possible.</font> "
-            "Subsequent information is valued where possible.", intro_style))
-        story.append(Spacer(1, 2*mm))
-        story.append(Paragraph(
-            "<b>Please note that the content provided in this feedback form is kept confidential.</b> "
-            "It will be used by the IMEO team to better understand emissions as well as to verify "
-            "the success of mitigation measures.", intro_style))
-        story.append(Spacer(1, 3*mm))
-
-        story.append(Paragraph("Date of Completion of Feedback Form (DD-MM-YYYY): _______________", normal_style))
-        story.append(Spacer(1, 4*mm))
-
-        # ── Part 1: Critical Information ─────────────────────────
-        part1_header = Table(
-            [[Paragraph('<b>Part 1: Critical Information</b><br/>'
-                        '<font size="7">The information below is the most important to receive regarding the emissions event. '
-                        'IMEO asks that this information is returned as quickly as possible.</font>',
-                        ParagraphStyle("P1H", fontName="Helvetica-Bold", fontSize=9,
-                                       textColor=WHITE, leading=12))]],
-            colWidths=[165*mm]
-        )
-        part1_header.setStyle(TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#E67E22")),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-        ]))
-        story.append(part1_header)
-        story.append(Spacer(1, 2*mm))
-
-        field_style = ParagraphStyle("Field", fontName="Helvetica-Bold", fontSize=8,
-                                      textColor=DARK_NAVY, leading=11)
-        sub_style   = ParagraphStyle("Sub",   fontName="Helvetica-Oblique", fontSize=7,
-                                      textColor=colors.HexColor("#555555"), leading=10)
-
-        def field_row(label, sublabel="", highlight=False):
-            bg = colors.HexColor("#FEF3E2") if highlight else WHITE
-            content = Paragraph(f'<b>{label}</b>', field_style)
-            sub     = Paragraph(sublabel, sub_style) if sublabel else Paragraph("", sub_style)
-            t = Table([[content], [sub]], colWidths=[165*mm])
-            t.setStyle(TableStyle([
-                ("BACKGROUND",   (0, 0), (-1, -1), bg),
-                ("LEFTPADDING",  (0, 0), (-1, -1), 6),
-                ("TOPPADDING",   (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
-                ("LINEBELOW",    (0, 0), (-1, -1), 0.3, MID_GRAY),
-            ]))
-            return t
-
-        story.append(field_row("Source ID",
-            "(please provide the ID of the source provided in the notification)"))
-        story.append(field_row("Plume(s) ID(s)",
-            "(please provide the ID of the plume(s) provided in the notification)"))
-        story.append(field_row("Operator",
-            "(please confirm the name of the correct operator)", highlight=True))
-        story.append(field_row("Emissions cause",
-            "(please provide any known cause for the emissions event, including the result "
-            "of any on-the-ground investigation)"))
-        story.append(field_row("Did the MARS notification alert you to the emissions?",
-            "(please confirm whether these emissions were known, or if the notification "
-            "informed you of the emissions)", highlight=True))
-        story.append(field_row("Have the emissions ceased? Was mitigation action taken to address the emissions?",
-            "(please confirm whether the emissions are ongoing or have ceased, and if direct "
-            "action was taken to stop the emissions)"))
-        story.append(field_row("What date did the mitigation action occur?",
-            "(when mitigation action was taken, please confirm the date(s) on which this "
-            "action started and ended)", highlight=True))
-        story.append(field_row("Executed or planned operator efforts",
-            "(where possible, please detail whether operator efforts have led to the cessation "
-            "of emissions, or if future efforts are planned)"))
-        story.append(Spacer(1, 4*mm))
-
-        # ── Part 2: Additional Facility Information ───────────────
-        part2_header = Table(
-            [[Paragraph('<b>Part 2: Additional Facility Information</b>',
-                        ParagraphStyle("P2H", fontName="Helvetica-Bold", fontSize=9,
-                                       textColor=WHITE, leading=12))]],
-            colWidths=[165*mm]
-        )
-        part2_header.setStyle(TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-        ]))
-        story.append(part2_header)
-        story.append(Spacer(1, 2*mm))
-
-        story.append(field_row("Facility Name",
-            "(please provide the name of the facility where the emission occurred)"))
-        story.append(field_row("Facility Type",
-            "(please select from drop down)  ☐ Choose an item."))
-        story.append(field_row("Facility Contact Information",
-            "(please provide contact details for the manager of the facility where the emissions occurred)"))
-        story.append(field_row("Corporate Contact Information",
-            "(please provide contact details for a central corporate focal point, if appropriate)"))
-        story.append(field_row("OGMP 2.0 Asset Name",
-            "(for OGMP members only, please provide the name of the asset reported to the OGMP 2.0 "
-            "for which this facility corresponds)"))
-        story.append(Spacer(1, 4*mm))
-
-        # ── Part 3: Additional Emissions Information ──────────────
-        part3_header = Table(
-            [[Paragraph('<b>Part 3: Additional Emissions Information</b>',
-                        ParagraphStyle("P3H", fontName="Helvetica-Bold", fontSize=9,
-                                       textColor=WHITE, leading=12))]],
-            colWidths=[165*mm]
-        )
-        part3_header.setStyle(TableStyle([
-            ("BACKGROUND",   (0, 0), (-1, -1), colors.HexColor("#6C757D")),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-        ]))
-        story.append(part3_header)
-        story.append(Spacer(1, 2*mm))
-
-        story.append(field_row("Emission Source Category",
-            "(please select from the drop down)  ☐ Choose an item."))
-        story.append(field_row("If other, please specify", ""))
-        story.append(field_row("Please provide details of the specific point source within the facility that the emissions came from",
-            "(e.g. specific tank, compressor, flare)"))
-        story.append(field_row("Please briefly describe the root cause of the emissions event. What was the operational situation or activity that led to the emissions?", ""))
-        story.append(field_row("Please select the option that best describes the operational situation or activity that led to the emission",
-            "(please select from the drop down)  ☐ Choose an item."))
-        story.append(field_row("If other, please specify", ""))
-        story.append(field_row("Has the emission ceased or been mitigated or is it ongoing?",
-            "(please select from the drop down)  ☐ Choose an item."))
-        story.append(field_row("If the emission has ceased or been mitigated, please describe the actions that were taken to eliminate the emission?", ""))
-        story.append(field_row("If the emission is ongoing, do you have plans to mitigate the emission?",
-            "(please select from the drop down)  ☐ Choose an item."))
-        story.append(field_row("If yes, please describe the mitigation plans", ""))
-        story.append(field_row("Please indicate the timeline by which you expect to mitigate the emission",
-            "Click or tap to enter a date."))
-        story.append(field_row("Are you able to quantify the emissions from this event?",
-            "(please select from the drop down)  ☐ Choose an item."))
-        story.append(field_row("If yes, please provide the estimate of the total emissions released",
-            "(please provide in kg methane if possible or indicate the units if not)"))
-        story.append(field_row("Please indicate the duration of the event",
-            "(e.g. number of hours or days)"))
