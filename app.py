@@ -75,9 +75,13 @@ def fetch_plumes(datetime_range, bbox, limit, gas, stac_token):
 # ================= =================
 # ⚙️ STREAMLIT CONFIG
 # ================= =================
-st.set_page_config(page_title="CH₄ Monitoring", layout="wide")
-st.title("🛰️ Carbon Mapper CH₄ Monitoring Dashboard")
-
+st.set_page_config(
+    page_title="SMMS",
+    page_icon="🛰️",
+    layout="wide"
+)
+st.title("🛰️ SpaceMethane Monitoring System (SMMS)")
+st.markdown("### Satellite-based Methane Emissions Monitoring Platform")
 
 # ================= =================
 # 🎛️ USER INPUTS
