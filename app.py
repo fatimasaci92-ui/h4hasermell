@@ -558,15 +558,15 @@ if st.button("Générer Rapport PDF"):
         legend_data = [
             [
                 Paragraph('<font color="#27AE60"><b>Diffuse</b></font>', normal_style),
-                Paragraph("&lt; 100 kg/h — Below individual detection limit (Sentinel-2)", normal_style),
+                Paragraph("&lt; 100 kg/h — Below the individual detection limit of the TANAGER ", normal_style),
             ],
             [
                 Paragraph('<font color="#E67E22"><b>Detectable</b></font>', normal_style),
-                Paragraph("100-1 000 kg/h — GHGSat detection limit (~100 kg/h)", normal_style),
+                Paragraph("100-1 000 kg/h — Emissions detectable by satellite systems such as TANAITHER/EMIT  . (~100 kg/h)", normal_style),
             ],
             [
                 Paragraph('<font color="#C0392B"><b>Super-emitter</b></font>', normal_style),
-                Paragraph("&gt; 1 000 kg/h — Superemitter threshold (Naus et al., 2023, Algeria)", normal_style),
+                Paragraph("&gt; 1 000 kg/h — Very high emissions that can be detected simultaneously by the Carbon Mapper instruments (EMIT and TANAGER), as well as by other satellites. (Naus et al., 2023, Algeria)", normal_style),
             ],
         ]
         legend_table = Table(legend_data, colWidths=[38*mm, 125*mm])
